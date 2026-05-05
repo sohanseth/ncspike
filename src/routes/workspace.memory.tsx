@@ -788,9 +788,9 @@ function InsightCard({
 
 function SidePanel({ item, onClose }: { item: MemItem; onClose: () => void }) {
   const conf = confidenceStyle[item.confidence];
-  const related = item.related
-    ?.map((id) => items.find((i) => i.id === id))
-    .filter(Boolean) as MemItem[] | undefined;
+  const related = (item.relations ?? [])
+    .map((r) => ({ rel: r.label, item: items.find((i) => i.id === r.id) }))
+    .filter((x) => Boolean(x.item)) as { rel: string; item: MemItem }[];
   return (
     <aside className="w-[340px] shrink-0 border-l border-border bg-background/40 backdrop-blur-xl flex flex-col">
       <div className="px-5 pt-5 pb-3 flex items-start justify-between gap-3">
