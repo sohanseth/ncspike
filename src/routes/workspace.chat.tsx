@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Send, Sparkles, Shield, Zap, Brain } from "lucide-react";
+import { Send, Sparkles, Shield, Zap, Brain, Plus, MessageSquare } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useAuth } from "@/lib/auth-context";
 
@@ -11,11 +11,19 @@ export const Route = createFileRoute("/workspace/chat")({
 type Msg = { role: "user" | "assistant"; content: string };
 
 const MODELS = [
-  { id: "google/gemini-3-flash-preview", label: "Flash", sub: "Fast", icon: Zap },
-  { id: "google/gemini-2.5-pro", label: "Gemini Pro", sub: "Smart", icon: Brain },
-  { id: "openai/gpt-5", label: "GPT-5", sub: "Powerful", icon: Sparkles },
-  { id: "google/gemini-2.5-flash-lite", label: "Private", sub: "Lightweight", icon: Shield },
+  { id: "google/gemini-3-flash-preview", label: "Flash", icon: Zap },
+  { id: "google/gemini-2.5-pro", label: "Pro", icon: Brain },
+  { id: "openai/gpt-5", label: "GPT-5", icon: Sparkles },
+  { id: "google/gemini-2.5-flash-lite", label: "Private", icon: Shield },
 ] as const;
+
+type Thread = { id: string; title: string; preview: string; when: string };
+
+const recentThreads: Thread[] = [
+  { id: "t1", title: "Partnership terms with Sarah", preview: "Let's restructure the 70/30…", when: "2h" },
+  { id: "t2", title: "Q2 roadmap draft", preview: "Pull mid-market goals first…", when: "Yesterday" },
+  { id: "t3", title: "Onboarding revamp", preview: "Marcus mentioned…", when: "Mon" },
+];
 
 function ChatPage() {
   const { session } = useAuth();
@@ -30,6 +38,12 @@ function ChatPage() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
+
+  const newChat = () => {
+    setMessages([]);
+    setThreadId(null);
+    setErr(null);
+  };
 
   const send = async (e: FormEvent) => {
     e.preventDefault();
@@ -67,15 +81,14 @@ function ChatPage() {
         body: JSON.stringify({ messages: next, model, threadId }),
       });
 
-      if (resp.status === 429) { setErr("Rate limit reached. Try again in a moment."); setBusy(false); return; }
-      if (resp.status === 402) { setErr("AI credits exhausted. Add credits in Workspace settings."); setBusy(false); return; }
+      if (resp.status === 429) { setErr("Rate limit reached."); setBusy(false); return; }
+      if (resp.status === 402) { setErr("AI credits exhausted."); setBusy(false); return; }
       if (!resp.ok || !resp.body) {
         const t = await resp.text().catch(() => "");
         setErr(`Chat failed (${resp.status}). ${t.slice(0, 140)}`);
         setBusy(false);
         return;
       }
-
       const tid = resp.headers.get("X-Thread-Id");
       if (tid && !threadId) setThreadId(tid);
 
@@ -115,56 +128,91 @@ function ChatPage() {
   const empty = messages.length === 0;
 
   return (
-    <div className="flex flex-col h-screen bg-background">
-      {/* Header */}
-      <header className="border-b border-border px-6 py-4 bg-background/80 backdrop-blur">
-        <div className="max-w-3xl mx-auto flex flex-col items-center gap-3 text-center">
+    <div className="flex-1 flex min-h-0">
+      {/* Threads list */}
+      <div className="w-[300px] shrink-0 border-r border-border flex flex-col">
+        <div className="px-5 pt-6 pb-3 flex items-center justify-between">
           <div>
-            <h1 className="text-base font-semibold">Universal Chat</h1>
-            <p className="text-xs text-muted-foreground">Grounded in your memory graph.</p>
-          </div>
-          <div>
-            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Choose a model</p>
-            <div className="inline-flex items-center gap-1 bg-secondary rounded-lg p-1 ring-1 ring-border">
-              {MODELS.map((m) => {
-                const Icon = m.icon;
-                const active = model === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setModel(m.id)}
-                    title={m.sub}
-                    className={[
-                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
-                      active
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground",
-                    ].join(" ")}
-                  >
-                    <Icon className="size-3.5" />
-                    {m.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Messages or empty state */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        {empty ? (
-          <div className="h-full flex flex-col items-center justify-center px-6">
-            <div className="size-14 rounded-2xl bg-primary/10 text-primary inline-flex items-center justify-center">
-              <Sparkles className="size-7" />
-            </div>
-            <h2 className="mt-5 text-2xl font-semibold tracking-tight">Ask anything.</h2>
-            <p className="text-sm text-muted-foreground mt-2 max-w-md text-center">
-              Once you connect Gmail and Calendar, every answer will be grounded in your real context.
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+              Conversations
             </p>
-            <form onSubmit={send} className="mt-8 w-full max-w-2xl">
-              <div className="flex gap-2 rounded-2xl ring-1 ring-border bg-surface p-2 shadow-soft focus-within:ring-2 focus-within:ring-primary">
+            <h1 className="text-lg font-display font-semibold tracking-tight mt-0.5">Chat</h1>
+          </div>
+          <button
+            onClick={newChat}
+            title="New chat"
+            className="size-8 rounded-lg bg-primary/15 text-primary ring-1 ring-primary/25 inline-flex items-center justify-center hover:bg-primary/25"
+          >
+            <Plus className="size-4" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {recentThreads.map((t) => (
+            <button
+              key={t.id}
+              className="w-full text-left px-3 py-3 rounded-lg hover:bg-white/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />
+                <p className="text-sm font-medium truncate flex-1">{t.title}</p>
+                <span className="text-[10px] font-mono text-muted-foreground">{t.when}</span>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1 truncate pl-5">
+                {t.preview}
+              </p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Conversation pane */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
+          {empty ? (
+            <div className="h-full flex flex-col items-center justify-center px-6 max-w-2xl mx-auto text-center">
+              <div className="size-14 rounded-2xl bg-gradient-to-br from-primary to-primary-glow inline-flex items-center justify-center ring-1 ring-white/10 shadow-[0_8px_32px_-8px_var(--primary)]">
+                <Sparkles className="size-7 text-primary-foreground" />
+              </div>
+              <h2 className="mt-6 text-3xl font-display font-semibold tracking-tight">
+                Ask <span className="text-gradient">anything</span>.
+              </h2>
+              <p className="text-sm text-muted-foreground mt-3 max-w-md">
+                Grounded in your inbox, calendar, and memory graph.
+              </p>
+            </div>
+          ) : (
+            <div className="max-w-3xl mx-auto px-8 py-10 space-y-6">
+              {messages.map((m, i) => (
+                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
+                      m.role === "user"
+                        ? "bg-gradient-to-br from-primary to-primary-glow text-primary-foreground rounded-br-sm whitespace-pre-wrap ring-1 ring-white/10"
+                        : "glass rounded-bl-sm prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-pre:my-2"
+                    }`}
+                  >
+                    {m.role === "assistant" ? (
+                      m.content ? <ReactMarkdown>{m.content}</ReactMarkdown> : <span className="text-muted-foreground">…</span>
+                    ) : (
+                      m.content
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Composer (always visible) */}
+        <form onSubmit={send} className="px-6 pb-6 pt-2">
+          <div className="max-w-3xl mx-auto">
+            {err && (
+              <p className="mb-2 text-xs text-destructive bg-destructive/10 ring-1 ring-destructive/20 rounded px-3 py-2">
+                {err}
+              </p>
+            )}
+            <div className="rounded-2xl glass-elevated p-2 focus-within:ring-2 focus-within:ring-primary/40 transition-all">
+              <div className="flex gap-2">
                 <input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
@@ -174,67 +222,36 @@ function ChatPage() {
                 />
                 <button
                   disabled={busy || !input.trim()}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-60"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-br from-primary to-primary-glow text-primary-foreground px-4 py-2.5 text-sm font-semibold ring-1 ring-white/10 shadow-[0_4px_16px_-4px_var(--primary)] hover:opacity-95 disabled:opacity-50"
                 >
                   <Send className="size-4" />
-                  Send
                 </button>
               </div>
-              {err && (
-                <p className="mt-3 text-xs text-destructive bg-destructive/10 ring-1 ring-destructive/20 rounded px-3 py-2">
-                  {err}
-                </p>
-              )}
-            </form>
-          </div>
-        ) : (
-          <div className="max-w-3xl mx-auto px-6 py-8 space-y-6">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm ${
-                    m.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-br-sm whitespace-pre-wrap"
-                      : "bg-surface ring-1 ring-border rounded-bl-sm prose prose-sm dark:prose-invert max-w-none prose-p:my-2 prose-pre:my-2"
-                  }`}
-                >
-                  {m.role === "assistant" ? (
-                    m.content ? <ReactMarkdown>{m.content}</ReactMarkdown> : <span className="text-muted-foreground">…</span>
-                  ) : (
-                    m.content
-                  )}
-                </div>
+              <div className="flex items-center gap-1 px-1 pt-2 pb-1">
+                {MODELS.map((m) => {
+                  const Icon = m.icon;
+                  const active = model === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModel(m.id)}
+                      className={`inline-flex items-center gap-1 px-2 h-6 rounded-md text-[10px] font-mono uppercase tracking-wider transition-colors ${
+                        active
+                          ? "bg-primary/15 text-primary ring-1 ring-primary/25"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      <Icon className="size-3" />
+                      {m.label}
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-            {err && (
-              <p className="text-xs text-destructive bg-destructive/10 ring-1 ring-destructive/20 rounded px-3 py-2">
-                {err}
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Composer (only when messages exist) */}
-      {!empty && (
-        <form onSubmit={send} className="border-t border-border p-4 bg-background">
-          <div className="max-w-3xl mx-auto flex gap-2 rounded-2xl ring-1 ring-border bg-surface p-2 focus-within:ring-2 focus-within:ring-primary">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Message your assistant…"
-              className="flex-1 bg-transparent px-3 py-2.5 text-sm focus:outline-none"
-            />
-            <button
-              disabled={busy || !input.trim()}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-primary text-primary-foreground px-4 py-2.5 text-sm font-semibold hover:bg-primary/90 disabled:opacity-60"
-            >
-              <Send className="size-4" />
-              Send
-            </button>
+            </div>
           </div>
         </form>
-      )}
+      </div>
     </div>
   );
 }
