@@ -128,7 +128,18 @@ const followups = [
   { title: "Send Q2 roadmap document", who: "Jamie Park", due: "Due May 7", overdue: false },
 ];
 
+type Tab = "actions" | "schedule" | "followups";
+
 function TodayPage() {
+  const [tab, setTab] = useState<Tab>("actions");
+
+  const counts = {
+    actions: suggestions.length,
+    schedule: schedule.length,
+    followups: followups.length,
+  };
+  const overdueCount = followups.filter((f) => f.overdue).length;
+
   return (
     <>
       <Topbar
@@ -142,7 +153,7 @@ function TodayPage() {
 
       <div className="flex-1 px-6 lg:px-10 py-8 max-w-6xl w-full mx-auto">
         {/* Greeting */}
-        <header className="mb-8">
+        <header className="mb-6">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent inline-flex items-center gap-1.5 mb-2">
             <Sparkles className="size-3" />
             Morning briefing
@@ -151,53 +162,76 @@ function TodayPage() {
             Good morning, Jamie.
           </h1>
           <p className="text-sm text-muted-foreground mt-1.5">
-            Here's what your cognitive companion lined up for the day.
+            {counts.actions} suggested actions · {counts.schedule} events · {counts.followups} open
+            follow-ups{overdueCount > 0 && ` (${overdueCount} overdue)`}.
           </p>
         </header>
 
-        {/* Stat tiles */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+        {/* Compact stat tiles */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {stats.map((s) => {
             const Icon = s.icon;
             return (
               <div
                 key={s.label}
-                className="rounded-2xl bg-surface ring-1 ring-border p-5 shadow-soft flex items-center gap-4"
+                className="rounded-xl bg-surface ring-1 ring-border p-3.5 shadow-soft flex items-center gap-3"
               >
-                <div className={`size-12 rounded-xl flex items-center justify-center ${s.tile}`}>
-                  <Icon className="size-5" />
+                <div className={`size-10 rounded-lg flex items-center justify-center ${s.tile}`}>
+                  <Icon className="size-4" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-2xl font-bold tracking-tight leading-none">{s.value}</p>
-                  <p className="text-xs text-muted-foreground mt-1.5">{s.label}</p>
+                  <p className="text-xl font-bold tracking-tight leading-none">{s.value}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1">{s.label}</p>
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Suggested actions */}
-        <section className="mb-10">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-              Suggested actions
-            </h2>
-            <span className="text-xs text-muted-foreground">{suggestions.length} items</span>
+        {/* Sticky tab bar */}
+        <div className="sticky top-0 z-10 -mx-6 lg:-mx-10 px-6 lg:px-10 py-3 mb-5 bg-background/85 backdrop-blur border-b border-border">
+          <div className="inline-flex p-1 rounded-lg bg-muted">
+            <TabButton
+              active={tab === "actions"}
+              onClick={() => setTab("actions")}
+              label="Suggested actions"
+              count={counts.actions}
+              accent="primary"
+            />
+            <TabButton
+              active={tab === "schedule"}
+              onClick={() => setTab("schedule")}
+              label="Schedule"
+              count={counts.schedule}
+            />
+            <TabButton
+              active={tab === "followups"}
+              onClick={() => setTab("followups")}
+              label="Follow-ups"
+              count={counts.followups}
+              badge={overdueCount > 0 ? `${overdueCount} overdue` : undefined}
+            />
           </div>
-          <div className="space-y-2.5">
+        </div>
+
+        {tab === "actions" && (
+          <section className="space-y-2.5">
             {suggestions.map((s) => (
               <SuggestionRow key={s.id} suggestion={s} />
             ))}
-          </div>
-        </section>
+          </section>
+        )}
 
-        {/* Two-column: Schedule + Follow-ups */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {tab === "schedule" && (
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Today's schedule
-              </h2>
+              <p className="text-xs text-muted-foreground">
+                {new Date().toLocaleDateString(undefined, {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
               <Link
                 to="/workspace/calendar"
                 className="text-xs font-medium text-primary inline-flex items-center gap-1 hover:underline"
@@ -209,7 +243,7 @@ function TodayPage() {
               {schedule.map((item) => (
                 <div
                   key={item.title}
-                  className={`relative rounded-xl bg-surface ring-1 ring-border pl-4 pr-4 py-3.5 shadow-soft overflow-hidden ${
+                  className={`relative rounded-xl ring-1 ring-border pl-4 pr-4 py-3.5 shadow-soft overflow-hidden ${
                     item.kind === "focus" ? "bg-tile-mint/40" : "bg-tile-lavender/40"
                   }`}
                 >
@@ -220,7 +254,7 @@ function TodayPage() {
                   />
                   <div className="flex items-start justify-between gap-3">
                     <p className="text-sm font-semibold">{item.title}</p>
-                    <p className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+                    <p className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
                       {item.time}
                     </p>
                   </div>
@@ -240,17 +274,21 @@ function TodayPage() {
               ))}
             </div>
           </section>
+        )}
 
+        {tab === "followups" && (
           <section>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-                Open follow-ups
-              </h2>
+              <p className="text-xs text-muted-foreground">
+                {overdueCount > 0
+                  ? `${overdueCount} overdue · ${counts.followups - overdueCount} upcoming`
+                  : `${counts.followups} upcoming`}
+              </p>
               <Link
                 to="/workspace/followups"
                 className="text-xs font-medium text-primary inline-flex items-center gap-1 hover:underline"
               >
-                View all <ArrowRight className="size-3" />
+                Manage all <ArrowRight className="size-3" />
               </Link>
             </div>
             <div className="rounded-2xl bg-surface ring-1 ring-border shadow-soft divide-y divide-border overflow-hidden">
@@ -262,22 +300,73 @@ function TodayPage() {
                         f.overdue ? "bg-destructive" : "bg-warning"
                       }`}
                     />
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{f.title}</p>
                       <p className="text-xs text-muted-foreground mt-0.5">
                         {f.who} <span className="opacity-50">·</span> {f.due}
                       </p>
                     </div>
+                    {f.overdue && (
+                      <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+                        Overdue
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
             </div>
           </section>
-        </div>
+        )}
       </div>
     </>
   );
 }
+
+function TabButton({
+  active,
+  onClick,
+  label,
+  count,
+  badge,
+  accent,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  badge?: string;
+  accent?: "primary";
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-3 h-9 rounded-md text-xs font-semibold transition-colors inline-flex items-center gap-2 ${
+        active
+          ? "bg-surface text-foreground shadow-soft"
+          : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <span>{label}</span>
+      <span
+        className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded ${
+          active && accent === "primary"
+            ? "bg-primary/10 text-primary"
+            : active
+              ? "bg-muted text-foreground"
+              : "bg-surface ring-1 ring-border text-muted-foreground"
+        }`}
+      >
+        {count}
+      </span>
+      {badge && (
+        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+          {badge}
+        </span>
+      )}
+    </button>
+  );
+}
+
 
 function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
   const [open, setOpen] = useState(false);
