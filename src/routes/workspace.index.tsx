@@ -278,3 +278,179 @@ function TodayPage() {
     </>
   );
 }
+
+function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(suggestion.draft);
+  const [state, setState] = useState<"idle" | "approved" | "skipped">("idle");
+  const Icon = suggestion.icon;
+
+  if (state !== "idle") {
+    return (
+      <div
+        className={`flex items-center gap-3 rounded-2xl ring-1 px-5 py-4 shadow-soft ${
+          state === "approved"
+            ? "bg-success/5 ring-success/30"
+            : "bg-muted/40 ring-border"
+        }`}
+      >
+        <div
+          className={`size-8 rounded-full flex items-center justify-center ${
+            state === "approved"
+              ? "bg-success/15 text-success"
+              : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {state === "approved" ? <Check className="size-4" /> : <X className="size-4" />}
+        </div>
+        <p className="text-sm flex-1 min-w-0 truncate">
+          <span className="font-medium">{suggestion.title}</span>{" "}
+          <span className="text-muted-foreground">
+            · {state === "approved" ? "done" : "skipped"}
+          </span>
+        </p>
+        <button
+          onClick={() => setState("idle")}
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <Undo2 className="size-3.5" /> Undo
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-2xl bg-surface ring-1 ring-border shadow-soft overflow-hidden transition-all hover:ring-primary/30">
+      {/* Row */}
+      <div className="flex items-center gap-4 px-5 py-4">
+        <div className="size-10 rounded-xl bg-secondary text-muted-foreground flex items-center justify-center shrink-0">
+          <Icon className="size-4" />
+        </div>
+        <button
+          onClick={() => setOpen((o) => !o)}
+          className="flex-1 min-w-0 text-left"
+        >
+          <div className="flex items-center gap-2">
+            <span className="size-1.5 rounded-full bg-destructive shrink-0" />
+            <p className="text-sm font-semibold truncate">{suggestion.title}</p>
+          </div>
+          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
+            {suggestion.body}
+          </p>
+        </button>
+
+        {/* Inline actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={() => setState("skipped")}
+            title="Skip"
+            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
+          >
+            <X className="size-4" />
+          </button>
+          <button
+            onClick={() => {
+              setOpen(true);
+              setEditing(true);
+            }}
+            title="Edit"
+            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
+          >
+            <Pencil className="size-4" />
+          </button>
+          <button
+            onClick={() => setState("approved")}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
+          >
+            <Check className="size-3.5" />
+            Approve
+          </button>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            title={open ? "Collapse" : "Preview"}
+            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
+          >
+            {open ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Expanded preview */}
+      {open && (
+        <div className="border-t border-border bg-muted/30 px-5 py-4 space-y-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Suggested draft
+          </p>
+          {editing ? (
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={Math.max(4, draft.split("\n").length)}
+              className="w-full rounded-lg bg-surface ring-1 ring-border p-3 text-sm leading-relaxed focus:outline-none focus:ring-primary/40"
+            />
+          ) : (
+            <p className="text-sm leading-relaxed whitespace-pre-line text-pretty">
+              {draft}
+            </p>
+          )}
+
+          {suggestion.sources.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <span>Used context:</span>
+              {suggestion.sources.map((src) => (
+                <span
+                  key={src}
+                  className="px-2 py-0.5 rounded bg-surface ring-1 ring-border text-foreground/80"
+                >
+                  {src}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-1">
+            {editing ? (
+              <>
+                <button
+                  onClick={() => {
+                    setDraft(suggestion.draft);
+                    setEditing(false);
+                  }}
+                  className="text-xs font-medium px-3 h-8 rounded-lg text-muted-foreground hover:bg-muted"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setEditing(false)}
+                  className="text-xs font-medium px-3 h-8 rounded-lg ring-1 ring-border bg-surface hover:bg-muted"
+                >
+                  Save changes
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={() => setEditing(true)}
+                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 h-8 rounded-lg ring-1 ring-border bg-surface hover:bg-muted"
+              >
+                <Pencil className="size-3.5" />
+                Edit draft
+              </button>
+            )}
+            <button
+              onClick={() => setState("approved")}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 h-8 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              <Send className="size-3.5" />
+              {suggestion.primaryLabel}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
