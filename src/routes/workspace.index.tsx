@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   Mail,
@@ -9,6 +9,8 @@ import {
   Pencil,
   Send,
   Calendar as CalendarIcon,
+  TrendingUp,
+  ArrowUpRight,
 } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/")({
