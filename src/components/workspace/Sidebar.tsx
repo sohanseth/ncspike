@@ -1,4 +1,4 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   Inbox,
@@ -9,10 +9,13 @@ import {
   Settings,
   Sparkles,
   LogOut,
+  MessageSquare,
 } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 
 const nav = [
   { to: "/workspace", label: "Today", icon: LayoutDashboard },
+  { to: "/workspace/chat", label: "Chat", icon: MessageSquare },
   { to: "/workspace/inbox", label: "Inbox", icon: Inbox },
   { to: "/workspace/calendar", label: "Calendar", icon: Calendar },
   { to: "/workspace/compose", label: "Composer", icon: PenLine },
@@ -22,6 +25,8 @@ const nav = [
 
 export function Sidebar() {
   const { pathname } = useLocation();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
@@ -88,13 +93,13 @@ export function Sidebar() {
           <Settings className="size-4" />
           Settings
         </Link>
-        <Link
-          to="/"
-          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
+        <button
+          onClick={async () => { await signOut(); navigate({ to: "/auth" }); }}
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           <LogOut className="size-4" />
           Sign out
-        </Link>
+        </button>
       </div>
     </aside>
   );
