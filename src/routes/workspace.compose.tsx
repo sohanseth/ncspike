@@ -15,7 +15,7 @@ export const Route = createFileRoute("/workspace/compose")({
   component: ComposePage,
 });
 
-const channels = ["Email", "Slack", "Doc", "LinkedIn"] as const;
+const channels = ["Email", "Slack", "WhatsApp", "Doc", "LinkedIn"] as const;
 const tones = ["Professional", "Warm", "Concise", "Persuasive", "Casual"] as const;
 const contextChips = ["Tone profile", "Recent thread", "Memory: Sarah Chen"];
 
