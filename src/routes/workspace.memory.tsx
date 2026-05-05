@@ -118,17 +118,17 @@ const CATEGORIES: {
 ];
 
 const items: MemItem[] = [
-  { id: "m1", category: "people", belief: "Sarah Chen is your biology project partner.", source: "Shared WhatsApp · Mar 2", usedIn: 2, lastUsed: "Used 2 days ago", confidence: "high", related: ["m4"] },
-  { id: "m2", category: "people", belief: "Marcus Lee is an onboarding client (active).", source: "Gmail thread · Apr 18", usedIn: 5, lastUsed: "Used yesterday", confidence: "high" },
-  { id: "m3", category: "people", belief: "Mark and Priya are leadership; recurring 1:1s.", source: "Calendar pattern (8w)", usedIn: 11, lastUsed: "Used today", confidence: "medium" },
-  { id: "m4", category: "projects", belief: "Q3 Launch (Alpha) is your top-priority project.", source: "Pinned · 12 docs · 47 emails", usedIn: 14, lastUsed: "Used today", confidence: "high", related: ["m1"] },
-  { id: "m5", category: "projects", belief: "EU Expansion is in early planning.", source: "Notion · updated Mon", usedIn: 3, lastUsed: "Used 4 days ago", confidence: "medium" },
-  { id: "m6", category: "preferences", belief: "Mornings reserved for deep work (no meetings before 10am).", source: "Calendar + your rule", usedIn: 22, lastUsed: "Used today", confidence: "high" },
-  { id: "m7", category: "preferences", belief: "No Friday afternoon meetings.", source: "You set this · Apr 1", usedIn: 6, lastUsed: "Used last Fri", confidence: "high" },
-  { id: "m8", category: "deadlines", belief: "Q2 roadmap due to Jamie by Wednesday.", source: "Email from Jamie · Apr 30", usedIn: 4, lastUsed: "Used today", confidence: "high" },
-  { id: "m9", category: "writing", belief: "You write replies in a clear, warm tone — short paragraphs.", source: "Learned from 240 sent emails", usedIn: 38, lastUsed: "Used today", confidence: "high" },
-  { id: "m10", category: "recurring", belief: "Weekly 1:1 with Marcus, Tuesdays 2pm.", source: "Calendar series", usedIn: 9, lastUsed: "Used last Tue", confidence: "high" },
-  { id: "m11", category: "ignored", belief: "(Rejected) Auto-send replies to Sarah.", source: "You corrected · Apr 22", usedIn: 0, lastUsed: "Never re-applied", confidence: "high" },
+  { id: "m1", category: "people", short: "Sarah Chen", belief: "Sarah Chen is your biology project partner.", source: "Shared WhatsApp · Mar 2", usedIn: 2, lastUsed: "Used 2 days ago", confidence: "high", recent: true, relations: [{ id: "m4", label: "works on" }, { id: "m8", label: "due for" }] },
+  { id: "m2", category: "people", short: "Marcus Lee", belief: "Marcus Lee is an onboarding client (active).", source: "Gmail thread · Apr 18", usedIn: 5, lastUsed: "Used yesterday", confidence: "high", relations: [{ id: "m10", label: "meets with" }, { id: "m4", label: "related to" }] },
+  { id: "m3", category: "people", short: "Mark & Priya", belief: "Mark and Priya are leadership; recurring 1:1s.", source: "Calendar pattern (8w)", usedIn: 11, lastUsed: "Used today", confidence: "medium", inferred: true, recent: true },
+  { id: "m4", category: "projects", short: "Q3 Launch", belief: "Q3 Launch (Alpha) is your top-priority project.", source: "Pinned · 12 docs · 47 emails", usedIn: 14, lastUsed: "Used today", confidence: "high", recent: true, relations: [{ id: "m1", label: "works on" }, { id: "m8", label: "due for" }] },
+  { id: "m5", category: "projects", short: "EU Expansion", belief: "EU Expansion is in early planning.", source: "Notion · updated Mon", usedIn: 3, lastUsed: "Used 4 days ago", confidence: "medium", inferred: true },
+  { id: "m6", category: "preferences", short: "No meetings before 10am", belief: "Mornings reserved for deep work (no meetings before 10am).", source: "Calendar + your rule", usedIn: 22, lastUsed: "Used today", confidence: "high", recent: true },
+  { id: "m7", category: "preferences", short: "No Friday afternoons", belief: "No Friday afternoon meetings.", source: "You set this · Apr 1", usedIn: 6, lastUsed: "Used last Fri", confidence: "high" },
+  { id: "m8", category: "deadlines", short: "Roadmap due Wed", belief: "Q2 roadmap due to Jamie by Wednesday.", source: "Email from Jamie · Apr 30", usedIn: 4, lastUsed: "Used today", confidence: "high", recent: true },
+  { id: "m9", category: "writing", short: "Warm reply tone", belief: "You write replies in a clear, warm tone — short paragraphs.", source: "Learned from 240 sent emails", usedIn: 38, lastUsed: "Used today", confidence: "high", inferred: true, recent: true },
+  { id: "m10", category: "recurring", short: "1:1 Marcus · Tue 2pm", belief: "Weekly 1:1 with Marcus, Tuesdays 2pm.", source: "Calendar series", usedIn: 9, lastUsed: "Used last Tue", confidence: "high" },
+  { id: "m11", category: "ignored", short: "No auto-send to Sarah", belief: "(Rejected) Auto-send replies to Sarah.", source: "You corrected · Apr 22", usedIn: 0, lastUsed: "Never re-applied", confidence: "high", rejected: true, relations: [{ id: "m1", label: "corrected by user" }] },
 ];
 
 const branches: Branch[] = [
