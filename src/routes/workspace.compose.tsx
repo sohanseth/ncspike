@@ -33,6 +33,25 @@ function ComposePage() {
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [whatsappTo, setWhatsappTo] = useState("");
+  const [sendStatus, setSendStatus] = useState<{ kind: "idle" | "sending" | "ok" | "error"; msg?: string }>({ kind: "idle" });
+  const sendWhatsAppFn = useServerFn(sendWhatsApp);
+
+  async function handleSend() {
+    if (channel !== "WhatsApp") {
+      setSendStatus({ kind: "error", msg: `${channel} sending not wired up yet.` });
+      return;
+    }
+    if (!whatsappTo.trim() || !output.trim()) return;
+    setSendStatus({ kind: "sending" });
+    try {
+      const res = await sendWhatsAppFn({ data: { to: whatsappTo.trim(), body: output } });
+      if (res.success) setSendStatus({ kind: "ok", msg: `Sent · ${res.sid.slice(0, 10)}…` });
+      else setSendStatus({ kind: "error", msg: res.error });
+    } catch (e) {
+      setSendStatus({ kind: "error", msg: e instanceof Error ? e.message : "Send failed" });
+    }
+  }
 
   function polish() {
     if (!input.trim()) return;
