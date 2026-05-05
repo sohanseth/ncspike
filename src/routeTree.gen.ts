@@ -17,6 +17,7 @@ import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
 import { Route as WorkspaceFollowupsRouteImport } from './routes/workspace.followups'
 import { Route as WorkspaceComposeRouteImport } from './routes/workspace.compose'
 import { Route as WorkspaceCalendarRouteImport } from './routes/workspace.calendar'
+import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
   id: '/workspace',
@@ -58,6 +59,11 @@ const WorkspaceCalendarRoute = WorkspaceCalendarRouteImport.update({
   path: '/calendar',
   getParentRoute: () => WorkspaceRoute,
 } as any)
+const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
+  id: '/api/public/whatsapp',
+  path: '/api/public/whatsapp',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -68,6 +74,7 @@ export interface FileRoutesByFullPath {
   '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/memory': typeof WorkspaceMemoryRoute
   '/workspace/': typeof WorkspaceIndexRoute
+  '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,6 +84,7 @@ export interface FileRoutesByTo {
   '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/memory': typeof WorkspaceMemoryRoute
   '/workspace': typeof WorkspaceIndexRoute
+  '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,6 +96,7 @@ export interface FileRoutesById {
   '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/memory': typeof WorkspaceMemoryRoute
   '/workspace/': typeof WorkspaceIndexRoute
+  '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,6 +109,7 @@ export interface FileRouteTypes {
     | '/workspace/inbox'
     | '/workspace/memory'
     | '/workspace/'
+    | '/api/public/whatsapp'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,6 +119,7 @@ export interface FileRouteTypes {
     | '/workspace/inbox'
     | '/workspace/memory'
     | '/workspace'
+    | '/api/public/whatsapp'
   id:
     | '__root__'
     | '/'
@@ -119,11 +130,13 @@ export interface FileRouteTypes {
     | '/workspace/inbox'
     | '/workspace/memory'
     | '/workspace/'
+    | '/api/public/whatsapp'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
+  ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceCalendarRouteImport
       parentRoute: typeof WorkspaceRoute
     }
+    '/api/public/whatsapp': {
+      id: '/api/public/whatsapp'
+      path: '/api/public/whatsapp'
+      fullPath: '/api/public/whatsapp'
+      preLoaderRoute: typeof ApiPublicWhatsappRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -212,6 +232,7 @@ const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
+  ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

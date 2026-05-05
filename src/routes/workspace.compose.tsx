@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Topbar } from "@/components/workspace/Topbar";
 import { useState } from "react";
 import { Sparkles, Wand2, Copy, Send, RefreshCw, FileText, Check } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { sendWhatsApp } from "@/server/whatsapp.functions";
 
 export const Route = createFileRoute("/workspace/compose")({
   head: () => ({
