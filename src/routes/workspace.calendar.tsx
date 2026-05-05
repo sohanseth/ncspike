@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Topbar } from "@/components/workspace/Topbar";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Sparkles, Clock, Users, FileText, ChevronLeft, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/calendar")({
@@ -109,7 +109,7 @@ function CalendarPage() {
   const [selectedId, setSelectedId] = useState<string | null>(nextUpcomingId);
 
   // Reset selection when day changes
-  useMemo(() => {
+  useEffect(() => {
     setSelectedId(nextUpcomingId);
   }, [nextUpcomingId]);
 
