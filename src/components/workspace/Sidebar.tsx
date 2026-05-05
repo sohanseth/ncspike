@@ -28,7 +28,7 @@ export function Sidebar() {
         <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
           <Sparkles className="size-4 text-primary-foreground" />
         </div>
-        <span className="text-sm font-semibold tracking-tight">Operand</span>
+        <span className="text-sm font-semibold tracking-tight">NeuralConnexions</span>
         <span className="ml-auto text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           Beta
         </span>
@@ -76,6 +76,9 @@ export function Sidebar() {
                 {a}
               </span>
             ))}
+            <span className="text-[11px] px-1.5 py-0.5 rounded bg-warning/20 text-warning-foreground ring-1 ring-warning/30">
+              WhatsApp · soon
+            </span>
           </div>
         </div>
         <Link
