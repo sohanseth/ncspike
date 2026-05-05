@@ -17,6 +17,7 @@ import { Route as WorkspaceMemoryRouteImport } from './routes/workspace.memory'
 import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
 import { Route as WorkspaceFollowupsRouteImport } from './routes/workspace.followups'
 import { Route as WorkspaceComposeRouteImport } from './routes/workspace.compose'
+import { Route as WorkspaceChatRouteImport } from './routes/workspace.chat'
 import { Route as WorkspaceCalendarRouteImport } from './routes/workspace.calendar'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 
@@ -60,6 +61,11 @@ const WorkspaceComposeRoute = WorkspaceComposeRouteImport.update({
   path: '/compose',
   getParentRoute: () => WorkspaceRoute,
 } as any)
+const WorkspaceChatRoute = WorkspaceChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 const WorkspaceCalendarRoute = WorkspaceCalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -76,6 +82,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/workspace'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -125,6 +135,7 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -137,6 +148,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/workspace'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -210,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceComposeRouteImport
       parentRoute: typeof WorkspaceRoute
     }
+    '/workspace/chat': {
+      id: '/workspace/chat'
+      path: '/chat'
+      fullPath: '/workspace/chat'
+      preLoaderRoute: typeof WorkspaceChatRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
     '/workspace/calendar': {
       id: '/workspace/calendar'
       path: '/calendar'
@@ -229,6 +248,7 @@ declare module '@tanstack/react-router' {
 
 interface WorkspaceRouteChildren {
   WorkspaceCalendarRoute: typeof WorkspaceCalendarRoute
+  WorkspaceChatRoute: typeof WorkspaceChatRoute
   WorkspaceComposeRoute: typeof WorkspaceComposeRoute
   WorkspaceFollowupsRoute: typeof WorkspaceFollowupsRoute
   WorkspaceInboxRoute: typeof WorkspaceInboxRoute
@@ -238,6 +258,7 @@ interface WorkspaceRouteChildren {
 
 const WorkspaceRouteChildren: WorkspaceRouteChildren = {
   WorkspaceCalendarRoute: WorkspaceCalendarRoute,
+  WorkspaceChatRoute: WorkspaceChatRoute,
   WorkspaceComposeRoute: WorkspaceComposeRoute,
   WorkspaceFollowupsRoute: WorkspaceFollowupsRoute,
   WorkspaceInboxRoute: WorkspaceInboxRoute,
