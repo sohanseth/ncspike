@@ -10,18 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as WorkspaceRouteImport } from './routes/workspace'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceMemoryRouteImport } from './routes/workspace.memory'
 import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
 import { Route as WorkspaceFollowupsRouteImport } from './routes/workspace.followups'
 import { Route as WorkspaceComposeRouteImport } from './routes/workspace.compose'
+import { Route as WorkspaceChatRouteImport } from './routes/workspace.chat'
 import { Route as WorkspaceCalendarRouteImport } from './routes/workspace.calendar'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 
 const WorkspaceRoute = WorkspaceRouteImport.update({
   id: '/workspace',
   path: '/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -54,6 +61,11 @@ const WorkspaceComposeRoute = WorkspaceComposeRouteImport.update({
   path: '/compose',
   getParentRoute: () => WorkspaceRoute,
 } as any)
+const WorkspaceChatRoute = WorkspaceChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 const WorkspaceCalendarRoute = WorkspaceCalendarRouteImport.update({
   id: '/calendar',
   path: '/calendar',
@@ -67,8 +79,10 @@ const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -78,7 +92,9 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -89,8 +105,10 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/workspace': typeof WorkspaceRouteWithChildren
   '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/chat': typeof WorkspaceChatRoute
   '/workspace/compose': typeof WorkspaceComposeRoute
   '/workspace/followups': typeof WorkspaceFollowupsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -102,8 +120,10 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/auth'
     | '/workspace'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -113,7 +133,9 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/auth'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -123,8 +145,10 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/auth'
     | '/workspace'
     | '/workspace/calendar'
+    | '/workspace/chat'
     | '/workspace/compose'
     | '/workspace/followups'
     | '/workspace/inbox'
@@ -135,6 +159,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   WorkspaceRoute: typeof WorkspaceRouteWithChildren
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
 }
@@ -146,6 +171,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace'
       fullPath: '/workspace'
       preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -190,6 +222,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceComposeRouteImport
       parentRoute: typeof WorkspaceRoute
     }
+    '/workspace/chat': {
+      id: '/workspace/chat'
+      path: '/chat'
+      fullPath: '/workspace/chat'
+      preLoaderRoute: typeof WorkspaceChatRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
     '/workspace/calendar': {
       id: '/workspace/calendar'
       path: '/calendar'
@@ -209,6 +248,7 @@ declare module '@tanstack/react-router' {
 
 interface WorkspaceRouteChildren {
   WorkspaceCalendarRoute: typeof WorkspaceCalendarRoute
+  WorkspaceChatRoute: typeof WorkspaceChatRoute
   WorkspaceComposeRoute: typeof WorkspaceComposeRoute
   WorkspaceFollowupsRoute: typeof WorkspaceFollowupsRoute
   WorkspaceInboxRoute: typeof WorkspaceInboxRoute
@@ -218,6 +258,7 @@ interface WorkspaceRouteChildren {
 
 const WorkspaceRouteChildren: WorkspaceRouteChildren = {
   WorkspaceCalendarRoute: WorkspaceCalendarRoute,
+  WorkspaceChatRoute: WorkspaceChatRoute,
   WorkspaceComposeRoute: WorkspaceComposeRoute,
   WorkspaceFollowupsRoute: WorkspaceFollowupsRoute,
   WorkspaceInboxRoute: WorkspaceInboxRoute,
@@ -231,18 +272,10 @@ const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   WorkspaceRoute: WorkspaceRouteWithChildren,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
