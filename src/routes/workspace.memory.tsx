@@ -63,15 +63,21 @@ type Category =
 
 type Confidence = "high" | "medium" | "low";
 
+type Relation = { id: string; label: string };
+
 type MemItem = {
   id: string;
   category: Category;
-  belief: string;
+  short: string;        // short label for graph nodes
+  belief: string;       // full sentence for list & panel
   source: string;
   usedIn: number;
   lastUsed: string;
   confidence: Confidence;
-  related?: string[];
+  inferred?: boolean;   // AI-inferred vs user-confirmed
+  recent?: boolean;     // used in today's brief
+  rejected?: boolean;   // user-corrected
+  relations?: Relation[];
 };
 
 type Branch = {
