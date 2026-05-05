@@ -71,7 +71,7 @@ export function Sidebar() {
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {["Gmail", "Calendar", "Docs", "Slack"].map((a) => (
+            {["Gmail", "Calendar", "Docs", "Slack", "WhatsApp"].map((a) => (
               <span
                 key={a}
                 className="text-[11px] px-1.5 py-0.5 rounded bg-secondary text-secondary-foreground"
@@ -79,9 +79,6 @@ export function Sidebar() {
                 {a}
               </span>
             ))}
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-warning/20 text-warning-foreground ring-1 ring-warning/30">
-              WhatsApp · soon
-            </span>
           </div>
         </div>
         <Link
