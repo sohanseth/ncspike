@@ -14,7 +14,305 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          metadata: Json
+          role: Database["public"]["Enums"]["message_role"]
+          thread_id: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role: Database["public"]["Enums"]["message_role"]
+          thread_id: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          metadata?: Json
+          role?: Database["public"]["Enums"]["message_role"]
+          thread_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "chat_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      chat_threads: {
+        Row: {
+          created_at: string
+          id: string
+          model: string | null
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          model?: string | null
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          model?: string | null
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      connections: {
+        Row: {
+          access_token_encrypted: string | null
+          account_label: string | null
+          created_at: string
+          expires_at: string | null
+          id: string
+          metadata: Json
+          provider: Database["public"]["Enums"]["connection_provider"]
+          refresh_token_encrypted: string | null
+          scopes: string[] | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token_encrypted?: string | null
+          account_label?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          provider: Database["public"]["Enums"]["connection_provider"]
+          refresh_token_encrypted?: string | null
+          scopes?: string[] | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token_encrypted?: string | null
+          account_label?: string | null
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          metadata?: Json
+          provider?: Database["public"]["Enums"]["connection_provider"]
+          refresh_token_encrypted?: string | null
+          scopes?: string[] | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memory_edges: {
+        Row: {
+          created_at: string
+          data: Json
+          from_node: string
+          id: string
+          relation: string
+          to_node: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          from_node: string
+          id?: string
+          relation: string
+          to_node: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          from_node?: string
+          id?: string
+          relation?: string
+          to_node?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memory_edges_from_node_fkey"
+            columns: ["from_node"]
+            isOneToOne: false
+            referencedRelation: "memory_nodes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_edges_to_node_fkey"
+            columns: ["to_node"]
+            isOneToOne: false
+            referencedRelation: "memory_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      memory_nodes: {
+        Row: {
+          created_at: string
+          data: Json
+          id: string
+          importance: number
+          label: string
+          node_type: Database["public"]["Enums"]["node_type"]
+          source: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          data?: Json
+          id?: string
+          importance?: number
+          label: string
+          node_type: Database["public"]["Enums"]["node_type"]
+          source?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          data?: Json
+          id?: string
+          importance?: number
+          label?: string
+          node_type?: Database["public"]["Enums"]["node_type"]
+          source?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          avatar_url: string | null
+          created_at: string
+          display_name: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_endpoints: {
+        Row: {
+          db_url_encrypted: string | null
+          model_key_encrypted: string | null
+          model_url_encrypted: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          db_url_encrypted?: string | null
+          model_key_encrypted?: string | null
+          model_url_encrypted?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          db_url_encrypted?: string | null
+          model_key_encrypted?: string | null
+          model_url_encrypted?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_settings: {
+        Row: {
+          ai_mode: Database["public"]["Enums"]["ai_mode"]
+          created_at: string
+          preferred_model: string
+          storage_mode: Database["public"]["Enums"]["storage_mode"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ai_mode?: Database["public"]["Enums"]["ai_mode"]
+          created_at?: string
+          preferred_model?: string
+          storage_mode?: Database["public"]["Enums"]["storage_mode"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ai_mode?: Database["public"]["Enums"]["ai_mode"]
+          created_at?: string
+          preferred_model?: string
+          storage_mode?: Database["public"]["Enums"]["storage_mode"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      watchers: {
+        Row: {
+          created_at: string
+          enabled: boolean
+          id: string
+          kind: string
+          last_result: Json | null
+          last_run_at: string | null
+          rule: Json
+          target: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind: string
+          last_result?: Json | null
+          last_run_at?: string | null
+          rule?: Json
+          target: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          kind?: string
+          last_result?: Json | null
+          last_run_at?: string | null
+          rule?: Json
+          target?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +321,27 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      ai_mode: "hosted_proprietary" | "hosted_oss" | "byo"
+      connection_provider:
+        | "gmail"
+        | "google_calendar"
+        | "google_drive"
+        | "slack"
+        | "notion"
+        | "outlook"
+        | "whatsapp"
+      message_role: "system" | "user" | "assistant" | "tool"
+      node_type:
+        | "person"
+        | "project"
+        | "product"
+        | "preference"
+        | "priority"
+        | "event"
+        | "note"
+        | "thread"
+        | "other"
+      storage_mode: "standard" | "private" | "sovereign"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +468,30 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      ai_mode: ["hosted_proprietary", "hosted_oss", "byo"],
+      connection_provider: [
+        "gmail",
+        "google_calendar",
+        "google_drive",
+        "slack",
+        "notion",
+        "outlook",
+        "whatsapp",
+      ],
+      message_role: ["system", "user", "assistant", "tool"],
+      node_type: [
+        "person",
+        "project",
+        "product",
+        "preference",
+        "priority",
+        "event",
+        "note",
+        "thread",
+        "other",
+      ],
+      storage_mode: ["standard", "private", "sovereign"],
+    },
   },
 } as const
