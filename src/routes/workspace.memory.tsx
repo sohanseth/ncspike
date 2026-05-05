@@ -1121,7 +1121,7 @@ function GraphView({
   );
 }
 
-function Chip({ children }: { children: React.ReactNode }) {
+function Chip({ children }: { children: ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full glass text-[11px] text-foreground/85">
       <Sparkles className="size-3 text-primary" />
