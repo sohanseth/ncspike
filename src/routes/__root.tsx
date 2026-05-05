@@ -29,13 +29,13 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Operand — The personal AI workspace for everyday work" },
+      { title: "NeuralConnexions — The cognitive companion for everyday connection" },
       {
         name: "description",
         content:
-          "Operand understands your email, calendar, and documents — then drafts the work for your approval.",
+          "NeuralConnexions is the AI workspace that helps you communicate, plan, and nurture every relationship — across email, calendar, and soon WhatsApp.",
       },
-      { name: "author", content: "Operand" },
+      { name: "author", content: "NeuralConnexions" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
     ],
