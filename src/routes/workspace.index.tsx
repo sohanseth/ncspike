@@ -58,24 +58,46 @@ const stats = [
   },
 ];
 
-const suggestions = [
+type Suggestion = {
+  id: string;
+  icon: typeof Mail;
+  title: string;
+  body: string;
+  draft: string;
+  sources: string[];
+  primaryLabel: string;
+};
+
+const suggestions: Suggestion[] = [
   {
+    id: "sarah-reply",
     icon: Mail,
     title: "Reply to Sarah Chen",
     body: "Sarah is following up on a partnership proposal with updated terms (70/30 revenue share, 12-month exclusivity, co-marketing).",
-    to: "/workspace/inbox",
+    draft:
+      "Hi Sarah,\n\nThanks for the updated terms — the 70/30 split and 12-month exclusivity work for us. I'd like to align on co-marketing scope before signing. Free at 1:30 PM today to walk through it?\n\n— Jamie",
+    sources: ["Pricing v3 (Docs)", "Partnership thread", "Tone profile"],
+    primaryLabel: "Approve & Send",
   },
   {
+    id: "sarah-review",
     icon: Bell,
     title: "Reply to Sarah Chen on partnership proposal",
     body: "Review proposal during focus block today (10–11:30am), then send approval or counter-proposal.",
-    to: "/workspace/inbox",
+    draft:
+      "Block 10:00–11:30 AM as focused review of the partnership proposal. At 11:30, draft an approval or counter-proposal reply to Sarah.",
+    sources: ["Calendar · 10–11:30 focus", "Partnership v2 (Docs)"],
+    primaryLabel: "Add to schedule",
   },
   {
+    id: "q2-roadmap",
     icon: Bell,
     title: "Send Q2 roadmap to Jamie",
     body: "Finalize roadmap document and share before the Wednesday deadline.",
-    to: "/workspace/followups",
+    draft:
+      "Hi Jamie,\n\nSharing the finalized Q2 roadmap ahead of Wednesday. Highlights: pricing rollout, EU launch, mid-market motion. Happy to walk through anything that needs more context.\n\n— You",
+    sources: ["Q2 Roadmap (Docs)", "Wednesday deadline"],
+    primaryLabel: "Approve & Send",
   },
 ];
 
