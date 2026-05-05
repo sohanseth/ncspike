@@ -185,28 +185,9 @@ function TodayPage() {
             <span className="text-xs text-muted-foreground">{suggestions.length} items</span>
           </div>
           <div className="space-y-2.5">
-            {suggestions.map((a) => {
-              const Icon = a.icon;
-              return (
-                <Link
-                  key={a.title}
-                  to={a.to}
-                  className="group flex items-center gap-4 rounded-2xl bg-surface ring-1 ring-border px-5 py-4 hover:ring-primary/30 hover:bg-primary/[0.02] transition-all shadow-soft"
-                >
-                  <div className="size-10 rounded-xl bg-secondary text-muted-foreground flex items-center justify-center shrink-0">
-                    <Icon className="size-4" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="size-1.5 rounded-full bg-destructive shrink-0" />
-                      <p className="text-sm font-semibold truncate">{a.title}</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{a.body}</p>
-                  </div>
-                  <ChevronRight className="size-4 text-muted-foreground group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
-                </Link>
-              );
-            })}
+            {suggestions.map((s) => (
+              <SuggestionRow key={s.id} suggestion={s} />
+            ))}
           </div>
         </section>
 
