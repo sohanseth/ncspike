@@ -14,7 +14,7 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         <div className="ml-auto flex items-center gap-3">
           <div className="hidden md:flex items-center gap-2 px-3 h-9 rounded-lg border border-border bg-surface text-sm text-muted-foreground w-72">
             <Search className="size-4" />
-            <span className="flex-1">Ask Operand to do anything…</span>
+            <span className="flex-1">Ask NeuralConnexions to do anything…</span>
             <kbd className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-secondary inline-flex items-center gap-1">
               <Command className="size-3" />K
             </kbd>
