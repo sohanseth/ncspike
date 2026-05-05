@@ -2,6 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { Topbar } from "@/components/workspace/Topbar";
 import { useState } from "react";
 import { Sparkles, Wand2, Copy, Send, RefreshCw, FileText, Check } from "lucide-react";
+import { useServerFn } from "@tanstack/react-start";
+import { sendWhatsApp } from "@/server/whatsapp.functions";
 
 export const Route = createFileRoute("/workspace/compose")({
   head: () => ({
@@ -13,7 +15,7 @@ export const Route = createFileRoute("/workspace/compose")({
   component: ComposePage,
 });
 
-const channels = ["Email", "Slack", "Doc", "LinkedIn"] as const;
+const channels = ["Email", "Slack", "WhatsApp", "Doc", "LinkedIn"] as const;
 const tones = ["Professional", "Warm", "Concise", "Persuasive", "Casual"] as const;
 const contextChips = ["Tone profile", "Recent thread", "Memory: Sarah Chen"];
 
@@ -31,6 +33,25 @@ function ComposePage() {
   const [output, setOutput] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [whatsappTo, setWhatsappTo] = useState("");
+  const [sendStatus, setSendStatus] = useState<{ kind: "idle" | "sending" | "ok" | "error"; msg?: string }>({ kind: "idle" });
+  const sendWhatsAppFn = useServerFn(sendWhatsApp);
+
+  async function handleSend() {
+    if (channel !== "WhatsApp") {
+      setSendStatus({ kind: "error", msg: `${channel} sending not wired up yet.` });
+      return;
+    }
+    if (!whatsappTo.trim() || !output.trim()) return;
+    setSendStatus({ kind: "sending" });
+    try {
+      const res = await sendWhatsAppFn({ data: { to: whatsappTo.trim(), body: output } });
+      if (res.success) setSendStatus({ kind: "ok", msg: `Sent · ${res.sid.slice(0, 10)}…` });
+      else setSendStatus({ kind: "error", msg: res.error });
+    } catch (e) {
+      setSendStatus({ kind: "error", msg: e instanceof Error ? e.message : "Send failed" });
+    }
+  }
 
   function polish() {
     if (!input.trim()) return;
@@ -149,18 +170,37 @@ function ComposePage() {
               )}
             </div>
             {output && (
-              <div className="border-t border-border px-5 py-3 flex items-center justify-end gap-2">
-                <button
-                  onClick={copyOutput}
-                  className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ring-1 ring-border bg-surface text-xs font-medium hover:bg-muted"
-                >
-                  {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
-                  {copied ? "Copied" : "Copy"}
-                </button>
-                <button className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90">
-                  <Send className="size-3.5" />
-                  Send to {channel}
-                </button>
+              <div className="border-t border-border px-5 py-3 flex flex-col gap-2">
+                {channel === "WhatsApp" && (
+                  <input
+                    value={whatsappTo}
+                    onChange={(e) => setWhatsappTo(e.target.value)}
+                    placeholder="Recipient WhatsApp number (E.164, e.g. +15551234567)"
+                    className="h-9 px-3 rounded-lg ring-1 ring-border bg-surface text-xs placeholder:text-muted-foreground focus:outline-none focus:ring-primary/40"
+                  />
+                )}
+                <div className="flex items-center justify-between gap-2">
+                  <p className={`text-[11px] ${sendStatus.kind === "error" ? "text-destructive" : sendStatus.kind === "ok" ? "text-success" : "text-muted-foreground"}`}>
+                    {sendStatus.msg ?? (channel === "WhatsApp" ? "Sends via Twilio" : "")}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={copyOutput}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg ring-1 ring-border bg-surface text-xs font-medium hover:bg-muted"
+                    >
+                      {copied ? <Check className="size-3.5 text-success" /> : <Copy className="size-3.5" />}
+                      {copied ? "Copied" : "Copy"}
+                    </button>
+                    <button
+                      onClick={handleSend}
+                      disabled={sendStatus.kind === "sending" || (channel === "WhatsApp" && !whatsappTo.trim())}
+                      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <Send className="size-3.5" />
+                      {sendStatus.kind === "sending" ? "Sending…" : `Send to ${channel}`}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
