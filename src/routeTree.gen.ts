@@ -9,38 +9,132 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as WorkspaceRouteImport } from './routes/workspace'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as WorkspaceMemoryRouteImport } from './routes/workspace.memory'
+import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
+import { Route as WorkspaceFollowupsRouteImport } from './routes/workspace.followups'
+import { Route as WorkspaceComposeRouteImport } from './routes/workspace.compose'
+import { Route as WorkspaceCalendarRouteImport } from './routes/workspace.calendar'
 
+const WorkspaceRoute = WorkspaceRouteImport.update({
+  id: '/workspace',
+  path: '/workspace',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceMemoryRoute = WorkspaceMemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceInboxRoute = WorkspaceInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceFollowupsRoute = WorkspaceFollowupsRouteImport.update({
+  id: '/followups',
+  path: '/followups',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceComposeRoute = WorkspaceComposeRouteImport.update({
+  id: '/compose',
+  path: '/compose',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
+const WorkspaceCalendarRoute = WorkspaceCalendarRouteImport.update({
+  id: '/calendar',
+  path: '/calendar',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
+  '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/compose': typeof WorkspaceComposeRoute
+  '/workspace/followups': typeof WorkspaceFollowupsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
+  '/workspace/memory': typeof WorkspaceMemoryRoute
+  '/workspace/': typeof WorkspaceIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/compose': typeof WorkspaceComposeRoute
+  '/workspace/followups': typeof WorkspaceFollowupsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
+  '/workspace/memory': typeof WorkspaceMemoryRoute
+  '/workspace': typeof WorkspaceIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
+  '/workspace/calendar': typeof WorkspaceCalendarRoute
+  '/workspace/compose': typeof WorkspaceComposeRoute
+  '/workspace/followups': typeof WorkspaceFollowupsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
+  '/workspace/memory': typeof WorkspaceMemoryRoute
+  '/workspace/': typeof WorkspaceIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/workspace'
+    | '/workspace/calendar'
+    | '/workspace/compose'
+    | '/workspace/followups'
+    | '/workspace/inbox'
+    | '/workspace/memory'
+    | '/workspace/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/workspace/calendar'
+    | '/workspace/compose'
+    | '/workspace/followups'
+    | '/workspace/inbox'
+    | '/workspace/memory'
+    | '/workspace'
+  id:
+    | '__root__'
+    | '/'
+    | '/workspace'
+    | '/workspace/calendar'
+    | '/workspace/compose'
+    | '/workspace/followups'
+    | '/workspace/inbox'
+    | '/workspace/memory'
+    | '/workspace/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  WorkspaceRoute: typeof WorkspaceRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/workspace': {
+      id: '/workspace'
+      path: '/workspace'
+      fullPath: '/workspace'
+      preLoaderRoute: typeof WorkspaceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -48,11 +142,76 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/': {
+      id: '/workspace/'
+      path: '/'
+      fullPath: '/workspace/'
+      preLoaderRoute: typeof WorkspaceIndexRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/memory': {
+      id: '/workspace/memory'
+      path: '/memory'
+      fullPath: '/workspace/memory'
+      preLoaderRoute: typeof WorkspaceMemoryRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/inbox': {
+      id: '/workspace/inbox'
+      path: '/inbox'
+      fullPath: '/workspace/inbox'
+      preLoaderRoute: typeof WorkspaceInboxRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/followups': {
+      id: '/workspace/followups'
+      path: '/followups'
+      fullPath: '/workspace/followups'
+      preLoaderRoute: typeof WorkspaceFollowupsRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/compose': {
+      id: '/workspace/compose'
+      path: '/compose'
+      fullPath: '/workspace/compose'
+      preLoaderRoute: typeof WorkspaceComposeRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
+    '/workspace/calendar': {
+      id: '/workspace/calendar'
+      path: '/calendar'
+      fullPath: '/workspace/calendar'
+      preLoaderRoute: typeof WorkspaceCalendarRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
   }
 }
 
+interface WorkspaceRouteChildren {
+  WorkspaceCalendarRoute: typeof WorkspaceCalendarRoute
+  WorkspaceComposeRoute: typeof WorkspaceComposeRoute
+  WorkspaceFollowupsRoute: typeof WorkspaceFollowupsRoute
+  WorkspaceInboxRoute: typeof WorkspaceInboxRoute
+  WorkspaceMemoryRoute: typeof WorkspaceMemoryRoute
+  WorkspaceIndexRoute: typeof WorkspaceIndexRoute
+}
+
+const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceCalendarRoute: WorkspaceCalendarRoute,
+  WorkspaceComposeRoute: WorkspaceComposeRoute,
+  WorkspaceFollowupsRoute: WorkspaceFollowupsRoute,
+  WorkspaceInboxRoute: WorkspaceInboxRoute,
+  WorkspaceMemoryRoute: WorkspaceMemoryRoute,
+  WorkspaceIndexRoute: WorkspaceIndexRoute,
+}
+
+const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
+  WorkspaceRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  WorkspaceRoute: WorkspaceRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
