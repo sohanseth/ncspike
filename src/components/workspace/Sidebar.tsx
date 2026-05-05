@@ -8,14 +8,15 @@ import {
   Brain,
   Settings,
   Sparkles,
+  LogOut,
 } from "lucide-react";
 
 const nav = [
   { to: "/workspace", label: "Today", icon: LayoutDashboard },
-  { to: "/workspace/inbox", label: "Reply Zero", icon: Inbox },
+  { to: "/workspace/inbox", label: "Inbox", icon: Inbox },
   { to: "/workspace/calendar", label: "Calendar", icon: Calendar },
-  { to: "/workspace/followups", label: "Follow-ups", icon: CheckCircle2 },
   { to: "/workspace/compose", label: "Composer", icon: PenLine },
+  { to: "/workspace/followups", label: "Follow-ups", icon: CheckCircle2 },
   { to: "/workspace/memory", label: "Memory", icon: Brain },
 ] as const;
 
@@ -23,18 +24,20 @@ export function Sidebar() {
   const { pathname } = useLocation();
 
   return (
-    <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
-      <div className="flex h-16 items-center gap-2 px-5 border-b border-sidebar-border">
-        <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
+    <aside className="hidden lg:flex w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar">
+      <div className="flex h-16 items-center gap-2.5 px-5 border-b border-sidebar-border">
+        <div className="size-8 rounded-xl bg-primary flex items-center justify-center shadow-soft">
           <Sparkles className="size-4 text-primary-foreground" />
         </div>
-        <span className="text-sm font-semibold tracking-tight">NeuralConnexions</span>
-        <span className="ml-auto text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-          Beta
-        </span>
+        <div className="leading-tight">
+          <p className="text-sm font-semibold tracking-tight">NeuralConnexions</p>
+          <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+            Find · Nurture · Sustain
+          </p>
+        </div>
       </div>
 
-      <nav className="flex-1 px-3 py-4 space-y-0.5">
+      <nav className="flex-1 px-3 py-5 space-y-1">
         {nav.map((item) => {
           const active =
             item.to === "/workspace"
@@ -46,10 +49,10 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
               className={[
-                "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 active
-                  ? "bg-secondary text-foreground"
-                  : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
+                  ? "bg-primary/10 text-primary"
+                  : "text-muted-foreground hover:bg-secondary hover:text-foreground",
               ].join(" ")}
             >
               <Icon className="size-4" />
@@ -59,11 +62,11 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="px-3 pb-3">
+      <div className="px-3 pb-3 space-y-2">
         <div className="rounded-xl border border-border bg-surface p-3">
           <div className="flex items-center gap-2 mb-2">
             <div className="size-1.5 rounded-full bg-success" />
-            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
               Connected
             </p>
           </div>
@@ -83,10 +86,17 @@ export function Sidebar() {
         </div>
         <Link
           to="/workspace"
-          className="mt-2 flex items-center gap-2 px-2.5 py-2 rounded-md text-sm text-muted-foreground hover:bg-secondary/60"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
         >
           <Settings className="size-4" />
           Settings
+        </Link>
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:bg-secondary hover:text-foreground"
+        >
+          <LogOut className="size-4" />
+          Sign out
         </Link>
       </div>
     </aside>
