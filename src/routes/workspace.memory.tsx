@@ -819,20 +819,29 @@ function SidePanel({ item, onClose }: { item: MemItem; onClose: () => void }) {
             {conf.label}
           </span>
         </div>
-        {related && related.length > 0 && (
+        {related.length > 0 && (
           <div>
             <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1.5">
-              Related
+              Connected to
             </p>
             <ul className="space-y-1.5">
-              {related.map((r) => (
-                <li key={r.id} className="text-xs text-muted-foreground rounded-md glass px-2.5 py-1.5">
-                  {r.belief}
+              {related.map(({ rel, item: r }) => (
+                <li key={r.id} className="text-xs rounded-md glass px-2.5 py-1.5">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-primary mr-2">{rel}</span>
+                  <span className="text-foreground/85">{r.short}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
+        <div>
+          <p className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
+            Origin
+          </p>
+          <span className={`inline-flex text-[11px] font-medium px-2 py-0.5 rounded ring-1 ${item.inferred ? "bg-accent/10 text-accent ring-accent/20" : "bg-success/10 text-success ring-success/20"}`}>
+            {item.inferred ? "AI inferred" : "User confirmed"}
+          </span>
+        </div>
       </div>
       <div className="mt-auto p-4 border-t border-border space-y-2">
         <button className="w-full inline-flex items-center justify-center gap-1.5 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium ring-1 ring-white/10">
