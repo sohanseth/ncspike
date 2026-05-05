@@ -1,545 +1,247 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Topbar } from "@/components/workspace/Topbar";
 import {
   Mail,
-  Calendar as CalendarIcon,
   Bell,
-  Clock,
-  ChevronDown,
-  ChevronRight,
-  ArrowRight,
   Sparkles,
   Check,
-  Pencil,
   X,
-  Undo2,
+  Pencil,
   Send,
+  Calendar as CalendarIcon,
 } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/")({
   head: () => ({
     meta: [
       { title: "Today — NeuralConnexions" },
-      {
-        name: "description",
-        content:
-          "Your morning briefing: suggested actions, today's schedule, and open follow-ups.",
-      },
+      { name: "description", content: "Your morning briefing." },
     ],
   }),
   component: TodayPage,
 });
 
-const stats = [
-  {
-    label: "Unread emails",
-    value: "3",
-    icon: Mail,
-    tile: "bg-tile-lavender text-primary",
-  },
-  {
-    label: "Meetings today",
-    value: "1",
-    icon: CalendarIcon,
-    tile: "bg-tile-mint text-success",
-  },
-  {
-    label: "Follow-ups due",
-    value: "3",
-    icon: Bell,
-    tile: "bg-tile-peach text-warning-foreground",
-  },
-  {
-    label: "Focus time",
-    value: "1.5hrs",
-    icon: Clock,
-    tile: "bg-tile-lilac text-accent",
-  },
-];
-
-type Suggestion = {
+type Item = {
   id: string;
+  kind: "action" | "event" | "followup";
   icon: typeof Mail;
   title: string;
+  meta: string;
   body: string;
-  draft: string;
-  sources: string[];
-  primaryLabel: string;
+  draft?: string;
+  sources?: string[];
+  urgent?: boolean;
 };
 
-const suggestions: Suggestion[] = [
+const items: Item[] = [
   {
-    id: "sarah-reply",
+    id: "sarah",
+    kind: "action",
     icon: Mail,
     title: "Reply to Sarah Chen",
+    meta: "Partnership · 2m read",
     body: "Sarah is following up on a partnership proposal with updated terms (70/30 revenue share, 12-month exclusivity, co-marketing).",
     draft:
       "Hi Sarah,\n\nThanks for the updated terms — the 70/30 split and 12-month exclusivity work for us. I'd like to align on co-marketing scope before signing. Free at 1:30 PM today to walk through it?\n\n— Jamie",
-    sources: ["Pricing v3 (Docs)", "Partnership thread", "Tone profile"],
-    primaryLabel: "Approve & Send",
+    sources: ["Pricing v3", "Partnership thread", "Tone profile"],
+    urgent: true,
   },
   {
-    id: "sarah-review",
-    icon: Bell,
-    title: "Reply to Sarah Chen on partnership proposal",
-    body: "Review proposal during focus block today (10–11:30am), then send approval or counter-proposal.",
-    draft:
-      "Block 10:00–11:30 AM as focused review of the partnership proposal. At 11:30, draft an approval or counter-proposal reply to Sarah.",
-    sources: ["Calendar · 10–11:30 focus", "Partnership v2 (Docs)"],
-    primaryLabel: "Add to schedule",
-  },
-  {
-    id: "q2-roadmap",
-    icon: Bell,
+    id: "q2",
+    kind: "action",
+    icon: Mail,
     title: "Send Q2 roadmap to Jamie",
+    meta: "Due Wed",
     body: "Finalize roadmap document and share before the Wednesday deadline.",
     draft:
-      "Hi Jamie,\n\nSharing the finalized Q2 roadmap ahead of Wednesday. Highlights: pricing rollout, EU launch, mid-market motion. Happy to walk through anything that needs more context.\n\n— You",
-    sources: ["Q2 Roadmap (Docs)", "Wednesday deadline"],
-    primaryLabel: "Approve & Send",
+      "Hi Jamie,\n\nSharing the finalized Q2 roadmap ahead of Wednesday. Highlights: pricing rollout, EU launch, mid-market motion.\n\n— You",
+    sources: ["Q2 Roadmap"],
   },
-];
-
-const schedule = [
   {
+    id: "standup",
+    kind: "event",
+    icon: CalendarIcon,
     title: "Team Standup",
-    time: "10:00 AM – 10:15 AM",
-    attendees: ["J", "P", "T"],
-    kind: "meeting",
+    meta: "10:00 – 10:15 AM",
+    body: "Daily sync with Priya and Theo.",
   },
   {
-    title: "Focus Time — Partnership",
-    time: "11:00 AM – 12:30 PM",
-    attendees: [],
-    kind: "focus",
-  },
-  {
+    id: "marcus",
+    kind: "event",
+    icon: CalendarIcon,
     title: "1:1 with Marcus",
-    time: "2:00 PM – 2:30 PM",
-    attendees: ["M", "J"],
-    kind: "meeting",
+    meta: "2:00 – 2:30 PM",
+    body: "Onboarding check-in.",
+  },
+  {
+    id: "alex",
+    kind: "followup",
+    icon: Bell,
+    title: "Confirm coffee with Alex",
+    meta: "Overdue · May 5",
+    body: "You promised to confirm by Monday.",
+    urgent: true,
   },
 ];
 
-const followups = [
-  { title: "Reply to Sarah Chen on partnership proposal", who: "Sarah Chen", due: "Due May 9", overdue: true },
-  { title: "Confirm coffee meetup with Alex", who: "Alex Rivera", due: "Due May 5", overdue: true },
-  { title: "Send Q2 roadmap document", who: "Jamie Park", due: "Due May 7", overdue: false },
-];
-
-type Tab = "actions" | "schedule" | "followups";
+const filters = [
+  { id: "all", label: "All" },
+  { id: "action", label: "Actions" },
+  { id: "event", label: "Schedule" },
+  { id: "followup", label: "Follow-ups" },
+] as const;
 
 function TodayPage() {
-  const [tab, setTab] = useState<Tab>("actions");
+  const [filter, setFilter] = useState<(typeof filters)[number]["id"]>("all");
+  const [selectedId, setSelectedId] = useState<string>(items[0].id);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(items[0].draft ?? "");
 
-  const counts = {
-    actions: suggestions.length,
-    schedule: schedule.length,
-    followups: followups.length,
+  const filtered = items.filter((i) => filter === "all" || i.kind === filter);
+  const selected = items.find((i) => i.id === selectedId) ?? filtered[0];
+
+  const select = (it: Item) => {
+    setSelectedId(it.id);
+    setDraft(it.draft ?? "");
+    setEditing(false);
   };
-  const overdueCount = followups.filter((f) => f.overdue).length;
 
   return (
-    <>
-      <Topbar
-        title="Today"
-        subtitle={new Date().toLocaleDateString(undefined, {
-          weekday: "long",
-          month: "long",
-          day: "numeric",
-        })}
-      />
-
-      <div className="flex-1 px-6 lg:px-10 py-8 max-w-6xl w-full mx-auto">
-        {/* Greeting */}
-        <header className="mb-6">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-accent inline-flex items-center gap-1.5 mb-2">
-            <Sparkles className="size-3" />
-            Morning briefing
+    <div className="flex-1 flex min-h-0">
+      {/* List pane */}
+      <div className="w-[340px] shrink-0 border-r border-border flex flex-col">
+        <div className="px-5 pt-6 pb-3">
+          <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            Tuesday
           </p>
-          <h1 className="text-3xl font-semibold tracking-tight text-balance">
+          <h1 className="text-xl font-display font-semibold tracking-tight mt-0.5">
             Good morning, Jamie.
           </h1>
-          <p className="text-sm text-muted-foreground mt-1.5">
-            {counts.actions} suggested actions · {counts.schedule} events · {counts.followups} open
-            follow-ups{overdueCount > 0 && ` (${overdueCount} overdue)`}.
-          </p>
-        </header>
+        </div>
+        <div className="px-3 pb-2 flex gap-1">
+          {filters.map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors ${
+                filter === f.id
+                  ? "bg-primary/15 text-primary ring-1 ring-primary/25"
+                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Compact stat tiles */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          {stats.map((s) => {
-            const Icon = s.icon;
+        <div className="flex-1 overflow-y-auto px-2 pb-4">
+          {filtered.map((it) => {
+            const Icon = it.icon;
+            const active = it.id === selected?.id;
             return (
-              <div
-                key={s.label}
-                className="rounded-xl bg-surface ring-1 ring-border p-3.5 shadow-soft flex items-center gap-3"
+              <button
+                key={it.id}
+                onClick={() => select(it)}
+                className={`w-full text-left px-3 py-3 rounded-lg flex gap-3 items-start transition-colors ${
+                  active
+                    ? "bg-white/5 ring-1 ring-primary/25"
+                    : "hover:bg-white/5"
+                }`}
               >
-                <div className={`size-10 rounded-lg flex items-center justify-center ${s.tile}`}>
-                  <Icon className="size-4" />
+                <div className="size-8 rounded-lg bg-white/5 ring-1 ring-white/10 inline-flex items-center justify-center text-muted-foreground shrink-0 mt-0.5">
+                  <Icon className="size-3.5" />
                 </div>
-                <div className="min-w-0">
-                  <p className="text-xl font-bold tracking-tight leading-none">{s.value}</p>
-                  <p className="text-[11px] text-muted-foreground mt-1">{s.label}</p>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    {it.urgent && (
+                      <span className="size-1.5 rounded-full bg-destructive shrink-0" />
+                    )}
+                    <p className="text-sm font-medium truncate">{it.title}</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                    {it.meta}
+                  </p>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
-
-        {/* Sticky tab bar */}
-        <div className="sticky top-0 z-10 -mx-6 lg:-mx-10 px-6 lg:px-10 py-3 mb-5 bg-background/85 backdrop-blur border-b border-border">
-          <div className="inline-flex p-1 rounded-lg bg-muted">
-            <TabButton
-              active={tab === "actions"}
-              onClick={() => setTab("actions")}
-              label="Suggested actions"
-              count={counts.actions}
-              accent="primary"
-            />
-            <TabButton
-              active={tab === "schedule"}
-              onClick={() => setTab("schedule")}
-              label="Schedule"
-              count={counts.schedule}
-            />
-            <TabButton
-              active={tab === "followups"}
-              onClick={() => setTab("followups")}
-              label="Follow-ups"
-              count={counts.followups}
-              badge={overdueCount > 0 ? `${overdueCount} overdue` : undefined}
-            />
-          </div>
-        </div>
-
-        {tab === "actions" && (
-          <section className="space-y-2.5">
-            {suggestions.map((s) => (
-              <SuggestionRow key={s.id} suggestion={s} />
-            ))}
-          </section>
-        )}
-
-        {tab === "schedule" && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-muted-foreground">
-                {new Date().toLocaleDateString(undefined, {
-                  weekday: "long",
-                  month: "long",
-                  day: "numeric",
-                })}
-              </p>
-              <Link
-                to="/workspace/calendar"
-                className="text-xs font-medium text-primary inline-flex items-center gap-1 hover:underline"
-              >
-                Full calendar <ArrowRight className="size-3" />
-              </Link>
-            </div>
-            <div className="space-y-2.5">
-              {schedule.map((item) => (
-                <div
-                  key={item.title}
-                  className={`relative rounded-xl ring-1 ring-border pl-4 pr-4 py-3.5 shadow-soft overflow-hidden ${
-                    item.kind === "focus" ? "bg-tile-mint/40" : "bg-tile-lavender/40"
-                  }`}
-                >
-                  <span
-                    className={`absolute left-0 top-2 bottom-2 w-1 rounded-r ${
-                      item.kind === "focus" ? "bg-success" : "bg-primary"
-                    }`}
-                  />
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="text-sm font-semibold">{item.title}</p>
-                    <p className="text-[11px] tabular-nums text-muted-foreground whitespace-nowrap">
-                      {item.time}
-                    </p>
-                  </div>
-                  {item.attendees.length > 0 && (
-                    <div className="flex items-center gap-1 mt-2">
-                      {item.attendees.map((a) => (
-                        <span
-                          key={a}
-                          className="size-6 rounded-full bg-surface ring-1 ring-border text-[10px] font-semibold text-muted-foreground inline-flex items-center justify-center"
-                        >
-                          {a}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-
-        {tab === "followups" && (
-          <section>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs text-muted-foreground">
-                {overdueCount > 0
-                  ? `${overdueCount} overdue · ${counts.followups - overdueCount} upcoming`
-                  : `${counts.followups} upcoming`}
-              </p>
-              <Link
-                to="/workspace/followups"
-                className="text-xs font-medium text-primary inline-flex items-center gap-1 hover:underline"
-              >
-                Manage all <ArrowRight className="size-3" />
-              </Link>
-            </div>
-            <div className="rounded-2xl bg-surface ring-1 ring-border shadow-soft divide-y divide-border overflow-hidden">
-              {followups.map((f) => (
-                <div key={f.title} className="px-5 py-4 hover:bg-muted/40 transition-colors">
-                  <div className="flex items-start gap-2.5">
-                    <span
-                      className={`mt-1.5 size-1.5 rounded-full shrink-0 ${
-                        f.overdue ? "bg-destructive" : "bg-warning"
-                      }`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold">{f.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {f.who} <span className="opacity-50">·</span> {f.due}
-                      </p>
-                    </div>
-                    {f.overdue && (
-                      <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
-                        Overdue
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-    </>
-  );
-}
-
-function TabButton({
-  active,
-  onClick,
-  label,
-  count,
-  badge,
-  accent,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-  badge?: string;
-  accent?: "primary";
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 h-9 rounded-md text-xs font-semibold transition-colors inline-flex items-center gap-2 ${
-        active
-          ? "bg-surface text-foreground shadow-soft"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`text-[10px] tabular-nums px-1.5 py-0.5 rounded ${
-          active && accent === "primary"
-            ? "bg-primary/10 text-primary"
-            : active
-              ? "bg-muted text-foreground"
-              : "bg-surface ring-1 ring-border text-muted-foreground"
-        }`}
-      >
-        {count}
-      </span>
-      {badge && (
-        <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
-          {badge}
-        </span>
-      )}
-    </button>
-  );
-}
-
-
-function SuggestionRow({ suggestion }: { suggestion: Suggestion }) {
-  const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(suggestion.draft);
-  const [state, setState] = useState<"idle" | "approved" | "skipped">("idle");
-  const Icon = suggestion.icon;
-
-  if (state !== "idle") {
-    return (
-      <div
-        className={`flex items-center gap-3 rounded-2xl ring-1 px-5 py-4 shadow-soft ${
-          state === "approved"
-            ? "bg-success/5 ring-success/30"
-            : "bg-muted/40 ring-border"
-        }`}
-      >
-        <div
-          className={`size-8 rounded-full flex items-center justify-center ${
-            state === "approved"
-              ? "bg-success/15 text-success"
-              : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {state === "approved" ? <Check className="size-4" /> : <X className="size-4" />}
-        </div>
-        <p className="text-sm flex-1 min-w-0 truncate">
-          <span className="font-medium">{suggestion.title}</span>{" "}
-          <span className="text-muted-foreground">
-            · {state === "approved" ? "done" : "skipped"}
-          </span>
-        </p>
-        <button
-          onClick={() => setState("idle")}
-          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-        >
-          <Undo2 className="size-3.5" /> Undo
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-2xl bg-surface ring-1 ring-border shadow-soft overflow-hidden transition-all hover:ring-primary/30">
-      {/* Row */}
-      <div className="flex items-center gap-4 px-5 py-4">
-        <div className="size-10 rounded-xl bg-secondary text-muted-foreground flex items-center justify-center shrink-0">
-          <Icon className="size-4" />
-        </div>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex-1 min-w-0 text-left"
-        >
-          <div className="flex items-center gap-2">
-            <span className="size-1.5 rounded-full bg-destructive shrink-0" />
-            <p className="text-sm font-semibold truncate">{suggestion.title}</p>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-            {suggestion.body}
-          </p>
-        </button>
-
-        {/* Inline actions */}
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => setState("skipped")}
-            title="Skip"
-            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
-          >
-            <X className="size-4" />
-          </button>
-          <button
-            onClick={() => {
-              setOpen(true);
-              setEditing(true);
-            }}
-            title="Edit"
-            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
-          >
-            <Pencil className="size-4" />
-          </button>
-          <button
-            onClick={() => setState("approved")}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90"
-          >
-            <Check className="size-3.5" />
-            Approve
-          </button>
-          <button
-            onClick={() => setOpen((o) => !o)}
-            title={open ? "Collapse" : "Preview"}
-            className="size-8 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground inline-flex items-center justify-center"
-          >
-            {open ? (
-              <ChevronDown className="size-4" />
-            ) : (
-              <ChevronRight className="size-4" />
-            )}
-          </button>
-        </div>
       </div>
 
-      {/* Expanded preview */}
-      {open && (
-        <div className="border-t border-border bg-muted/30 px-5 py-4 space-y-3">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Suggested draft
-          </p>
-          {editing ? (
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={Math.max(4, draft.split("\n").length)}
-              className="w-full rounded-lg bg-surface ring-1 ring-border p-3 text-sm leading-relaxed focus:outline-none focus:ring-primary/40"
-            />
-          ) : (
-            <p className="text-sm leading-relaxed whitespace-pre-line text-pretty">
-              {draft}
+      {/* Detail pane */}
+      <div className="flex-1 min-w-0 overflow-y-auto">
+        {selected ? (
+          <article className="max-w-2xl mx-auto px-10 py-12">
+            <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-accent inline-flex items-center gap-1.5">
+              <Sparkles className="size-3" /> {selected.kind}
             </p>
-          )}
+            <h2 className="text-3xl font-display font-semibold tracking-tight mt-2 text-balance">
+              {selected.title}
+            </h2>
+            <p className="text-sm text-muted-foreground mt-2">{selected.meta}</p>
+            <p className="text-base text-foreground/85 mt-8 leading-relaxed text-pretty">
+              {selected.body}
+            </p>
 
-          {suggestion.sources.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <span>Used context:</span>
-              {suggestion.sources.map((src) => (
-                <span
-                  key={src}
-                  className="px-2 py-0.5 rounded bg-surface ring-1 ring-border text-foreground/80"
-                >
-                  {src}
-                </span>
-              ))}
-            </div>
-          )}
+            {selected.draft && (
+              <div className="mt-10">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    Suggested draft
+                  </p>
+                  <button
+                    onClick={() => setEditing((e) => !e)}
+                    className="text-[11px] inline-flex items-center gap-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="size-3" /> {editing ? "Done" : "Edit"}
+                  </button>
+                </div>
+                {editing ? (
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={Math.max(6, draft.split("\n").length)}
+                    className="w-full rounded-xl glass p-4 text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  />
+                ) : (
+                  <div className="rounded-xl glass p-5 text-sm leading-relaxed whitespace-pre-line text-pretty">
+                    {draft}
+                  </div>
+                )}
 
-          <div className="flex items-center justify-end gap-2 pt-1">
-            {editing ? (
-              <>
-                <button
-                  onClick={() => {
-                    setDraft(suggestion.draft);
-                    setEditing(false);
-                  }}
-                  className="text-xs font-medium px-3 h-8 rounded-lg text-muted-foreground hover:bg-muted"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setEditing(false)}
-                  className="text-xs font-medium px-3 h-8 rounded-lg ring-1 ring-border bg-surface hover:bg-muted"
-                >
-                  Save changes
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setEditing(true)}
-                className="inline-flex items-center gap-1.5 text-xs font-medium px-3 h-8 rounded-lg ring-1 ring-border bg-surface hover:bg-muted"
-              >
-                <Pencil className="size-3.5" />
-                Edit draft
-              </button>
+                {selected.sources && (
+                  <div className="flex flex-wrap gap-1.5 mt-4">
+                    {selected.sources.map((s) => (
+                      <span
+                        key={s}
+                        className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/5 ring-1 ring-white/10 text-muted-foreground"
+                      >
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 mt-6">
+                  <button className="inline-flex items-center gap-1.5 h-9 px-4 rounded-lg bg-gradient-to-r from-primary to-primary-glow text-primary-foreground text-xs font-semibold ring-1 ring-white/10 shadow-[0_4px_16px_-4px_var(--primary)] hover:opacity-95">
+                    <Send className="size-3.5" /> Approve & Send
+                  </button>
+                  <button className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground">
+                    <Check className="size-3.5" /> Mark done
+                  </button>
+                  <button className="inline-flex items-center gap-1.5 h-9 px-3 rounded-lg text-xs font-medium text-muted-foreground hover:bg-white/5 hover:text-foreground">
+                    <X className="size-3.5" /> Skip
+                  </button>
+                </div>
+              </div>
             )}
-            <button
-              onClick={() => setState("approved")}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 h-8 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              <Send className="size-3.5" />
-              {suggestion.primaryLabel}
-            </button>
+          </article>
+        ) : (
+          <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+            Nothing to show.
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
