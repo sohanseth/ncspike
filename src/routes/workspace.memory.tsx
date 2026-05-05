@@ -871,29 +871,72 @@ function Field({ label, value }: { label: string; value: string }) {
 
 /* ─────────────── Graph view ─────────────── */
 
+const CATEGORY_LABELS: Record<Category, string> = {
+  people: "People",
+  projects: "Projects",
+  preferences: "Preferences",
+  deadlines: "Deadlines",
+  writing: "Writing style",
+  recurring: "Recurring",
+  ignored: "Corrections",
+};
+
+type GraphMode = "all" | "people" | "projects" | "preferences" | "recent" | "review";
+
+const GRAPH_MODES: { id: GraphMode; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "people", label: "People" },
+  { id: "projects", label: "Projects" },
+  { id: "preferences", label: "Preferences" },
+  { id: "recent", label: "Recently used" },
+  { id: "review", label: "Needs review" },
+];
+
 function GraphNode({
   data,
 }: {
-  data: MemItem & { onClick: () => void; selected: boolean };
+  data: MemItem & { onClick: () => void; selected: boolean; dimmed: boolean };
 }) {
+  const ringCls = data.rejected
+    ? "ring-2 ring-destructive/60"
+    : data.selected
+      ? "ring-2 ring-primary"
+      : data.inferred
+        ? "ring-1 ring-dashed ring-accent/50"
+        : "ring-1 ring-success/40";
+  const glow = data.recent && !data.rejected ? "shadow-[0_0_24px_-6px_var(--primary)]" : "";
   return (
     <div
       onClick={data.onClick}
-      className={`cursor-pointer rounded-xl px-3 py-2 backdrop-blur-xl ring-1 transition-all bg-surface-elevated max-w-[180px] ${
-        data.selected ? "ring-primary/60 ring-2" : "ring-white/10 hover:ring-primary/30"
-      }`}
+      className={`cursor-pointer rounded-xl px-2.5 py-1.5 backdrop-blur-xl bg-surface-elevated transition-all ${ringCls} ${glow} ${data.dimmed ? "opacity-30" : ""}`}
+      style={{ minWidth: 120 }}
     >
       <Handle type="target" position={Position.Top} className="!opacity-0" />
       <div className="flex items-center gap-2">
-        <div className={`size-5 rounded-md bg-gradient-to-br ${categoryStyle[data.category]} ring-1 ring-white/10 shrink-0`} />
-        <p className="text-[11px] font-medium leading-tight line-clamp-2">{data.belief}</p>
+        <div className={`size-4 rounded-md bg-gradient-to-br ${categoryStyle[data.category]} ring-1 ring-white/10 shrink-0 ${data.rejected ? "grayscale" : ""}`} />
+        <p className={`text-[11px] font-medium leading-tight whitespace-nowrap ${data.rejected ? "line-through text-muted-foreground" : ""}`}>
+          {data.short}
+        </p>
       </div>
       <Handle type="source" position={Position.Bottom} className="!opacity-0" />
     </div>
   );
 }
 
-const nodeTypes = { mem: GraphNode };
+function ClusterNode({ data }: { data: { label: string; w: number; h: number } }) {
+  return (
+    <div
+      className="rounded-3xl ring-1 ring-white/5 bg-white/[0.015] backdrop-blur-sm pointer-events-none"
+      style={{ width: data.w, height: data.h }}
+    >
+      <p className="px-3 pt-2 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70">
+        {data.label}
+      </p>
+    </div>
+  );
+}
+
+const nodeTypes = { mem: GraphNode, cluster: ClusterNode };
 
 function GraphView({
   filterCat,
@@ -906,81 +949,193 @@ function GraphView({
   selectedId: string | null;
   onJumpToList: () => void;
 }) {
-  const visible = items.filter((i) => filterCat === "all" || i.category === filterCat);
+  const [mode, setMode] = useState<GraphMode>("all");
 
-  const nodes: Node[] = useMemo(() => {
-    const byCat: Record<string, MemItem[]> = {};
-    visible.forEach((it) => {
-      byCat[it.category] = byCat[it.category] || [];
-      byCat[it.category].push(it);
+  const visible = useMemo(() => {
+    return items.filter((i) => {
+      if (filterCat !== "all" && i.category !== filterCat) return false;
+      if (mode === "all") return true;
+      if (mode === "recent") return i.recent;
+      if (mode === "review") return i.inferred || i.rejected || i.confidence !== "high";
+      // category-style modes
+      if (mode === "people") return i.category === "people";
+      if (mode === "projects") return i.category === "projects";
+      if (mode === "preferences") return i.category === "preferences";
+      return true;
     });
-    const cats = Object.keys(byCat);
-    const out: Node[] = [];
+  }, [filterCat, mode]);
+
+  // Cluster layout: arrange categories on a grid
+  const layout = useMemo(() => {
+    const byCat = new Map<Category, MemItem[]>();
+    visible.forEach((it) => {
+      const arr = byCat.get(it.category) ?? [];
+      arr.push(it);
+      byCat.set(it.category, arr);
+    });
+    const cats = Array.from(byCat.keys());
+    const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(cats.length))));
+    const colW = 320;
+    const rowH = 240;
+    const padX = 24;
+    const padY = 36;
+    const nodes: Node[] = [];
+
     cats.forEach((cat, ci) => {
-      const list = byCat[cat];
-      const angle0 = (ci / Math.max(cats.length, 1)) * Math.PI * 2 - Math.PI / 2;
-      const cx = 420 + Math.cos(angle0) * 280;
-      const cy = 320 + Math.sin(angle0) * 220;
+      const list = byCat.get(cat)!;
+      const col = ci % cols;
+      const row = Math.floor(ci / cols);
+      const cx = col * colW;
+      const cy = row * rowH;
+      // cluster halo node
+      nodes.push({
+        id: `cluster-${cat}`,
+        type: "cluster",
+        position: { x: cx, y: cy },
+        data: { label: CATEGORY_LABELS[cat], w: colW - 24, h: rowH - 24 },
+        draggable: false,
+        selectable: false,
+        zIndex: -1,
+      });
+      // arrange items in a soft grid inside the cluster
+      const innerCols = Math.min(2, list.length);
       list.forEach((it, i) => {
-        const a = (i / Math.max(list.length, 1)) * Math.PI * 1.4 - Math.PI * 0.7;
-        out.push({
+        const ic = i % innerCols;
+        const ir = Math.floor(i / innerCols);
+        nodes.push({
           id: it.id,
           type: "mem",
-          position: { x: cx + Math.cos(a) * 90, y: cy + Math.sin(a) * 70 },
+          position: { x: cx + padX + ic * 140, y: cy + padY + ir * 52 },
           draggable: false,
-          data: { ...it, onClick: () => onSelect(it.id), selected: selectedId === it.id },
+          data: {
+            ...it,
+            onClick: () => onSelect(it.id),
+            selected: selectedId === it.id,
+            dimmed: selectedId !== null && selectedId !== it.id && !((items.find(x => x.id === selectedId)?.relations ?? []).some(r => r.id === it.id)),
+          },
+        });
+      });
+    });
+    return nodes;
+  }, [visible, selectedId]);
+
+  const edges: Edge[] = useMemo(() => {
+    const visibleIds = new Set(visible.map((v) => v.id));
+    const out: Edge[] = [];
+    visible.forEach((it) => {
+      it.relations?.forEach((rel) => {
+        if (!visibleIds.has(rel.id)) return;
+        const isSelected = selectedId === it.id || selectedId === rel.id;
+        const isCorrection = it.rejected || rel.label === "corrected by user";
+        out.push({
+          id: `${it.id}-${rel.id}`,
+          source: it.id,
+          target: rel.id,
+          label: isSelected ? rel.label : "",
+          labelStyle: { fill: "oklch(0.85 0 0)", fontSize: 10, fontFamily: "var(--font-mono)" },
+          labelBgStyle: { fill: "oklch(0.18 0.02 280)" },
+          labelBgPadding: [4, 2],
+          labelBgBorderRadius: 4,
+          style: {
+            stroke: isCorrection
+              ? "oklch(0.65 0.2 25 / 0.5)"
+              : isSelected
+                ? "oklch(0.75 0.2 290 / 0.9)"
+                : "oklch(0.7 0.18 290 / 0.25)",
+            strokeWidth: isSelected ? 1.5 : 1,
+            strokeDasharray: isCorrection ? "4 3" : undefined,
+          },
         });
       });
     });
     return out;
-  }, [filterCat, selectedId]);
+  }, [visible, selectedId]);
 
-  const edges: Edge[] = useMemo(() => {
-    const out: Edge[] = [];
-    visible.forEach((it) => {
-      it.related?.forEach((rid) => {
-        if (visible.find((v) => v.id === rid)) {
-          out.push({
-            id: `${it.id}-${rid}`,
-            source: it.id,
-            target: rid,
-            style: { stroke: "oklch(0.7 0.18 290 / 0.4)", strokeWidth: 1 },
-          });
-        }
-      });
-    });
-    return out;
-  }, [filterCat]);
+  const recentCount = items.filter((i) => i.recent).length;
+  const correctionCount = items.filter((i) => i.rejected).length;
+  const deadlineLinked = items.filter((i) => i.category === "projects" && (i.relations ?? []).some((r) => items.find((x) => x.id === r.id)?.category === "deadlines")).length;
 
   return (
-    <div className="flex-1 mx-8 mb-8 rounded-2xl glass-elevated overflow-hidden relative min-h-[480px]">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.25 }}
-        proOptions={{ hideAttribution: true }}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        elementsSelectable
-        panOnDrag
-        zoomOnScroll
-        minZoom={0.5}
-        maxZoom={1.6}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="oklch(1 0 0 / 0.05)" />
-        <Controls
-          showInteractive={false}
-          className="!bg-surface-elevated !border-border !rounded-lg overflow-hidden [&_button]:!bg-transparent [&_button]:!border-border [&_button]:!text-foreground"
-        />
-      </ReactFlow>
-      <button
-        onClick={onJumpToList}
-        className="absolute top-4 left-4 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg glass-elevated text-xs font-medium hover:ring-1 hover:ring-primary/30"
-      >
-        <ListIcon className="size-3.5" /> Back to editable list
-      </button>
+    <div className="flex-1 mx-8 mb-8 flex flex-col min-h-[520px]">
+      {/* Insight chips */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <Chip>{recentCount} memories used in today's brief</Chip>
+        <Chip>{correctionCount} correction changed future drafts</Chip>
+        <Chip>{deadlineLinked} project memories connected to deadlines</Chip>
+      </div>
+
+      {/* Graph mode filters */}
+      <div className="flex flex-wrap items-center gap-1 mb-3">
+        {GRAPH_MODES.map((m) => (
+          <button
+            key={m.id}
+            onClick={() => setMode(m.id)}
+            className={`px-2.5 h-7 rounded-md text-[11px] font-medium transition-colors ${
+              mode === m.id
+                ? "bg-primary/15 text-primary ring-1 ring-primary/25"
+                : "text-muted-foreground hover:text-foreground hover:bg-white/5"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+        <span className="ml-auto inline-flex items-center gap-3 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          <LegendDot cls="ring-success/60" label="Confirmed" />
+          <LegendDot cls="ring-accent/60 ring-dashed" label="Inferred" />
+          <LegendDot cls="ring-destructive/60" label="Corrected" />
+          <LegendDot cls="ring-primary shadow-[0_0_8px_-2px_var(--primary)]" label="Recent" />
+        </span>
+      </div>
+
+      <div className="flex-1 rounded-2xl glass-elevated overflow-hidden relative min-h-[440px]">
+        <ReactFlow
+          nodes={layout}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          fitViewOptions={{ padding: 0.2 }}
+          proOptions={{ hideAttribution: true }}
+          nodesDraggable={false}
+          nodesConnectable={false}
+          elementsSelectable
+          panOnDrag
+          zoomOnScroll
+          minZoom={0.4}
+          maxZoom={1.6}
+          onPaneClick={() => onSelect("")}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="oklch(1 0 0 / 0.05)" />
+          <Controls
+            showInteractive={false}
+            className="!bg-surface-elevated !border-border !rounded-lg overflow-hidden [&_button]:!bg-transparent [&_button]:!border-border [&_button]:!text-foreground"
+          />
+        </ReactFlow>
+        <button
+          onClick={onJumpToList}
+          className="absolute top-4 left-4 inline-flex items-center gap-1.5 px-3 h-8 rounded-lg glass-elevated text-xs font-medium hover:ring-1 hover:ring-primary/30"
+        >
+          <ListIcon className="size-3.5" /> Back to editable list
+        </button>
+      </div>
     </div>
   );
 }
+
+function Chip({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 px-2.5 h-7 rounded-full glass text-[11px] text-foreground/85">
+      <Sparkles className="size-3 text-primary" />
+      {children}
+    </span>
+  );
+}
+
+function LegendDot({ cls, label }: { cls: string; label: string }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={`size-2.5 rounded-full bg-surface-elevated ring-2 ${cls}`} />
+      {label}
+    </span>
+  );
+}
+
