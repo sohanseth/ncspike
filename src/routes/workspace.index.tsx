@@ -1,13 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { Topbar } from "@/components/workspace/Topbar";
 import {
   Mail,
   Calendar as CalendarIcon,
   Bell,
   Clock,
+  ChevronDown,
   ChevronRight,
   ArrowRight,
   Sparkles,
+  Check,
+  Pencil,
+  X,
+  Undo2,
+  Send,
 } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/")({
