@@ -248,3 +248,30 @@ function TodayPage() {
     </div>
   );
 }
+
+function PatternCard() {
+  return (
+    <Link
+      to="/workspace/memory"
+      className="block mb-8 rounded-2xl glass-elevated p-4 ring-1 ring-primary/20 hover:ring-primary/40 transition-all group"
+    >
+      <div className="flex items-start gap-3">
+        <div className="size-9 rounded-xl bg-gradient-to-br from-primary to-accent ring-1 ring-white/10 inline-flex items-center justify-center shrink-0">
+          <TrendingUp className="size-4 text-primary-foreground" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-primary">
+            Pattern you may be missing
+          </p>
+          <p className="text-sm font-medium mt-1 text-pretty">
+            AI travel coordination — appearing across 9 searches, 3 notes and 2 conversations over 5 weeks.
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-1.5">
+            Connecting your hobby and work domains. Open Signals →
+          </p>
+        </div>
+        <ArrowUpRight className="size-4 text-muted-foreground group-hover:text-primary shrink-0" />
+      </div>
+    </Link>
+  );
+}
