@@ -117,34 +117,37 @@ function ChatPage() {
   return (
     <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border px-6 py-3 bg-background/80 backdrop-blur">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
+      <header className="border-b border-border px-6 py-4 bg-background/80 backdrop-blur">
+        <div className="max-w-3xl mx-auto flex flex-col items-center gap-3 text-center">
           <div>
             <h1 className="text-base font-semibold">Universal Chat</h1>
             <p className="text-xs text-muted-foreground">Grounded in your memory graph.</p>
           </div>
-          <div className="flex items-center gap-1 bg-secondary rounded-lg p-1">
-            {MODELS.map((m) => {
-              const Icon = m.icon;
-              const active = model === m.id;
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setModel(m.id)}
-                  title={m.sub}
-                  className={[
-                    "inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors",
-                    active
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
-                  ].join(" ")}
-                >
-                  <Icon className="size-3.5" />
-                  {m.label}
-                </button>
-              );
-            })}
+          <div>
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">Choose a model</p>
+            <div className="inline-flex items-center gap-1 bg-secondary rounded-lg p-1 ring-1 ring-border">
+              {MODELS.map((m) => {
+                const Icon = m.icon;
+                const active = model === m.id;
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setModel(m.id)}
+                    title={m.sub}
+                    className={[
+                      "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                      active
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground",
+                    ].join(" ")}
+                  >
+                    <Icon className="size-3.5" />
+                    {m.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
