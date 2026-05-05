@@ -174,6 +174,7 @@ function TodayPage() {
       <div className="flex-1 min-w-0 overflow-y-auto">
         {selected ? (
           <article className="max-w-2xl mx-auto px-10 py-12">
+            <PatternCard />
             <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-accent inline-flex items-center gap-1.5">
               <Sparkles className="size-3" /> {selected.kind}
             </p>
