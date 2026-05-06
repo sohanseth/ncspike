@@ -621,8 +621,8 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
       <ActionQueue onCompose={onCompose} onRunOvernight={onRunOvernight} onDomain={onDomain}/>
 
       {/* Domain bento */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="min-w-[580px] h-full min-h-[420px] grid gap-2.5"
+      <div className="flex-shrink-0 overflow-x-auto">
+        <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
           <div style={{gridArea:"d0"}}><DomainCard domain={DOMAINS[ids[0]]} size="xl" onClick={()=>onDomain(ids[0])}/></div>
           <div style={{gridArea:"d1"}}><DomainCard domain={DOMAINS[ids[1]]} size="lg" onClick={()=>onDomain(ids[1])}/></div>
