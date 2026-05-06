@@ -22,15 +22,32 @@ function ResetPasswordPage() {
   const [done, setDone] = useState(false);
 
   useEffect(() => {
-    // Supabase puts recovery tokens in the URL hash; client auto-handles via onAuthStateChange.
-    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") setReady(true);
+    let cancelled = false;
+    const check = async () => {
+      // Handle PKCE recovery: exchange ?code=... for a session
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get("code");
+      if (code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (!cancelled) {
+          if (error) setError(error.message);
+          // Clean the URL
+          window.history.replaceState({}, "", "/reset-password");
+        }
+      }
+      const { data } = await supabase.auth.getSession();
+      if (!cancelled && data.session) setReady(true);
+    };
+    check();
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session && (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "INITIAL_SESSION")) {
+        setReady(true);
+      }
     });
-    // If already in recovery session
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) setReady(true);
-    });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      cancelled = true;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const onSubmit = async (e: FormEvent) => {
@@ -38,6 +55,10 @@ function ResetPasswordPage() {
     setBusy(true);
     setError(null);
     try {
+      const { data: sess } = await supabase.auth.getSession();
+      if (!sess.session) {
+        throw new Error("Recovery session expired. Please request a new reset link.");
+      }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
       setDone(true);
