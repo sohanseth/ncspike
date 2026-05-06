@@ -606,7 +606,7 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   const ids=sorted.map(d=>d.id);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-3 lg:p-4 gap-3">
+    <div className="flex-1 flex flex-col overflow-y-auto p-3 lg:p-4 gap-3 scrollbar-none">
       {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
@@ -621,8 +621,8 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
       <ActionQueue onCompose={onCompose} onRunOvernight={onRunOvernight} onDomain={onDomain}/>
 
       {/* Domain bento */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="min-w-[580px] h-full min-h-[420px] grid gap-2.5"
+      <div className="flex-shrink-0 overflow-x-auto">
+        <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
           <div style={{gridArea:"d0"}}><DomainCard domain={DOMAINS[ids[0]]} size="xl" onClick={()=>onDomain(ids[0])}/></div>
           <div style={{gridArea:"d1"}}><DomainCard domain={DOMAINS[ids[1]]} size="lg" onClick={()=>onDomain(ids[1])}/></div>
