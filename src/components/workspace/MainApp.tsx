@@ -606,7 +606,7 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   const ids=sorted.map(d=>d.id);
 
   return (
-    <div className="h-full min-h-0 flex flex-col overflow-y-auto p-3 lg:p-4 gap-3 scrollbar-none">
+    <div className="flex flex-col p-3 lg:p-4 gap-3">
       {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
@@ -1710,7 +1710,7 @@ export function MainApp() {
   };
 
   return (
-    <div className="h-[100dvh] min-h-[100dvh] w-full overflow-x-hidden bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
+    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
       {/* Ambient */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute top-[-8%] left-[15%] w-[700px] h-[550px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(109,40,217,0.11) 0%,transparent 65%)"}}/>
@@ -1718,14 +1718,16 @@ export function MainApp() {
         <div className="absolute top-[40%] right-[30%] w-[300px] h-[300px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(251,113,133,0.05) 0%,transparent 70%)"}}/>
       </div>
 
-      <div className="relative z-10 h-full flex flex-col">
-        <TopBar
-          mapView={mapView} setMapView={handleMap}
-          tool={tool} setTool={setTool}
-          onDomain={handleDomain} onVoice={handleVoice} onExplore={handleExplore} onTest={handleTest}
-        />
+      <div className="relative z-10 flex flex-col min-h-[100dvh]">
+        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md">
+          <TopBar
+            mapView={mapView} setMapView={handleMap}
+            tool={tool} setTool={setTool}
+            onDomain={handleDomain} onVoice={handleVoice} onExplore={handleExplore} onTest={handleTest}
+          />
+        </div>
 
-        <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
+        <div className="flex-1 relative flex flex-col" style={{minHeight:"calc(100dvh - 56px)"}}>
           {/* Main canvas */}
           {!mapView && <HomeCanvas onDomain={handleDomain} onRunOvernight={handleSubmitTask} onCompose={()=>setTool("compose")}/>}
           {mapView==="mindmap" && <MindMapCanvas/>}
