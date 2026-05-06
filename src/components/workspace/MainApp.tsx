@@ -1727,7 +1727,7 @@ export function MainApp() {
           />
         </div>
 
-        <div className="flex-1 relative flex flex-col">
+        <div className="flex-1 relative flex flex-col" style={{minHeight:"calc(100dvh - 56px)"}}>
           {/* Main canvas */}
           {!mapView && <HomeCanvas onDomain={handleDomain} onRunOvernight={handleSubmitTask} onCompose={()=>setTool("compose")}/>}
           {mapView==="mindmap" && <MindMapCanvas/>}
