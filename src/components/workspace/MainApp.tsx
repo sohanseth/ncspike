@@ -1719,7 +1719,7 @@ export function MainApp() {
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
-        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-4 lg:pt-6">
+        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-4 lg:pt-6" style={{paddingTop:"max(env(safe-area-inset-top), 1rem)"}}>
           <TopBar
             mapView={mapView} setMapView={handleMap}
             tool={tool} setTool={setTool}
