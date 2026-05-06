@@ -606,7 +606,7 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   const ids=sorted.map(d=>d.id);
 
   return (
-    <div className="flex flex-col px-3 lg:px-4 pt-6 lg:pt-8 pb-4 gap-3">
+    <div className="flex flex-col p-3 lg:p-4 gap-3">
       {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
@@ -1719,7 +1719,7 @@ export function MainApp() {
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
-        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md">
+        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-4 lg:pt-6">
           <TopBar
             mapView={mapView} setMapView={handleMap}
             tool={tool} setTool={setTool}
