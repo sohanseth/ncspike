@@ -1,6 +1,6 @@
-import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
-import { IconRail } from "@/components/workspace/IconRail";
+import MainApp from "@/components/workspace/MainApp";
 import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/workspace")({
@@ -23,12 +23,5 @@ function WorkspaceLayout() {
     );
   }
 
-  return (
-    <div className="min-h-screen flex bg-background text-foreground">
-      <IconRail />
-      <main className="flex-1 min-w-0 flex flex-col">
-        <Outlet />
-      </main>
-    </div>
-  );
+  return <MainApp />;
 }
