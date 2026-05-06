@@ -606,7 +606,7 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   const ids=sorted.map(d=>d.id);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-3 lg:p-4 gap-3">
+    <div className="flex-1 flex flex-col overflow-y-auto p-3 lg:p-4 gap-3 scrollbar-none">
       {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
