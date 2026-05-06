@@ -9,7 +9,7 @@ import {
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package,
 } from "lucide-react";
-import { TestPanel } from "./components/TestPanel";
+
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1174,7 +1174,7 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
           {/* Waveform */}
           <div className="flex items-center gap-[3px] h-12">
             {bars.map((h,i)=>(
-              <div key={i} className={`w-[3px] rounded-full transition-all ${phase==="listening"?"bg-primary":"phase"==="thinking"?"bg-primary/40":"bg-white/[0.08]"}`}
+              <div key={i} className={`w-[3px] rounded-full transition-all ${phase==="listening"?"bg-primary":phase==="thinking"?"bg-primary/40":"bg-white/[0.08]"}`}
                 style={{
                   height: phase==="listening" ? `${Math.max(4, h * (0.6 + Math.sin(Date.now()/200+i)*0.4))}px` : phase==="thinking" ? `${4+Math.sin(i*0.8)*4}px` : "4px",
                   background: phase==="listening"
@@ -1748,21 +1748,11 @@ export function MainApp() {
       <VoiceBar   open={voiceOpen}     onClose={()=>setVoiceOpen(false)} onSubmitTask={handleSubmitTask}/>
       <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)}/>
       <ComposePanel open={tool==="compose"} onClose={()=>setTool(null)}/>
-      <TestPanel  open={testOpen}      onClose={()=>setTestOpen(false)}/>
+      
 
       <div className="pointer-events-none fixed top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"/>
     </div>
   );
 }
 
-// Wrapped export with auth
-import { AuthProvider } from '../contexts/AuthContext';
-import { AppWrapper } from './AppWrapper';
-
-export default function App() {
-  return (
-    <AuthProvider>
-      <AppWrapper />
-    </AuthProvider>
-  );
-}
+export default MainApp;
