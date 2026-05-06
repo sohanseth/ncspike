@@ -155,6 +155,13 @@ function AuthPage() {
           >
             {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
           </button>
+          {mode === "signin" && (
+            <div className="text-right">
+              <Link to="/forgot-password" className="text-xs text-muted-foreground hover:text-primary hover:underline">
+                Forgot password?
+              </Link>
+            </div>
+          )}
         </form>
 
         <p className="mt-5 text-xs text-center text-muted-foreground">
