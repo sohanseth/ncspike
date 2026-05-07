@@ -734,13 +734,41 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   onRunOvernight:(text:string)=>void;
   onCompose:()=>void;
 }) {
-  const sorted=(Object.values(DOMAINS) as DomainData[]).sort((a,b)=>b.activity-a.activity);
-  const ids=sorted.map(d=>d.id);
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  const { items: inbox, error: inboxErr } = useInbox();
+
+  // Group live emails by domain → DomainCard items shape
+  const liveByDomain = useMemo(() => {
+    const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
+    (inbox ?? []).filter(i => i.category !== "ignore").forEach(i => {
+      const arr = groups[i.domain] ?? (groups[i.domain] = []);
+      arr.push({
+        id: i.id,
+        text: i.subject,
+        meta: i.from || i.reason || "",
+        urgent: i.category === "urgent",
+        progress: 0,
+      });
+    });
+    return groups;
+  }, [inbox]);
+
+  // Sort domains by live activity (count), fall back to static
+  const sorted = useMemo(() => {
+    const arr = Object.values(DOMAINS) as DomainData[];
+    return arr.slice().sort((a, b) => {
+      const ca = liveByDomain[a.id]?.length ?? -1;
+      const cb = liveByDomain[b.id]?.length ?? -1;
+      if (ca !== cb) return cb - ca;
+      return b.activity - a.activity;
+    });
+  }, [liveByDomain]);
+  const ids = sorted.map(d => d.id);
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
@@ -755,18 +783,24 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
       </div>
 
       {/* Inbox queue (live) */}
-      <InboxQueue onCompose={onCompose}/>
+      <InboxQueue onCompose={onCompose} items={inbox} error={inboxErr}/>
 
 
       {/* Domain bento */}
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
-          <div style={{gridArea:"d0"}}><DomainCard domain={DOMAINS[ids[0]]} size="xl" onClick={()=>onDomain(ids[0])}/></div>
-          <div style={{gridArea:"d1"}}><DomainCard domain={DOMAINS[ids[1]]} size="lg" onClick={()=>onDomain(ids[1])}/></div>
-          <div style={{gridArea:"d2"}}><DomainCard domain={DOMAINS[ids[2]]} size="md" onClick={()=>onDomain(ids[2])}/></div>
-          <div style={{gridArea:"d3"}}><DomainCard domain={DOMAINS[ids[3]]} size="sm" onClick={()=>onDomain(ids[3])}/></div>
-          <div style={{gridArea:"d4"}}><DomainCard domain={DOMAINS[ids[4]]} size="sm" onClick={()=>onDomain(ids[4])}/></div>
+          {[0,1,2,3,4].map(i => {
+            const id = ids[i];
+            const live = liveByDomain[id];
+            const sizes = ["xl","lg","md","sm","sm"] as const;
+            return (
+              <div key={id} style={{gridArea:`d${i}`}}>
+                <DomainCard domain={DOMAINS[id]} size={sizes[i]} onClick={()=>onDomain(id)}
+                  liveItems={live} liveCount={live?.length}/>
+              </div>
+            );
+          })}
           <div style={{gridArea:"signal"}}>
             <div className="h-full rounded-2xl border border-cyan-400/15 flex items-center gap-3 px-4 cursor-default hover:border-cyan-400/30 transition-colors"
               style={{background:"radial-gradient(ellipse at 0% 50%,rgba(6,182,212,0.08) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
