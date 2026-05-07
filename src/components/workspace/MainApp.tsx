@@ -654,9 +654,265 @@ function useInbox() {
   return { items, error };
 }
 
+// ─── Voice Drafts (Slice B / Week 3) ──────────────────────────────────────────
+
+type VoiceDraftsStatus = { featureEnabled: boolean; consented: boolean; consentedAt: string | null };
+
+function useVoiceDraftsStatus() {
+  const [status, setStatus] = useState<VoiceDraftsStatus | null>(null);
+  const refresh = async () => {
+    try {
+      const { getVoiceDraftsStatus } = await import("@/lib/voice-drafts.functions");
+      const s = await getVoiceDraftsStatus();
+      setStatus(s);
+    } catch {
+      setStatus({ featureEnabled: false, consented: false, consentedAt: null });
+    }
+  };
+  useEffect(() => { void refresh(); }, []);
+  return { status, refresh };
+}
+
+function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: () => void; onAccepted: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (!open) return null;
+  async function accept() {
+    setBusy(true); setErr(null);
+    try {
+      const { setVoiceDraftsConsent } = await import("@/lib/voice-drafts.functions");
+      await setVoiceDraftsConsent({ data: { accept: true } });
+      onAccepted();
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not save consent");
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1530] p-5 shadow-2xl">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles size={14} className="text-primary"/>
+          <h2 className="text-sm font-semibold tracking-tight font-display">Turn on Voice Drafts</h2>
+        </div>
+        <p className="text-[12.5px] text-foreground/80 mb-3 leading-relaxed">
+          Before NeuralConnexions writes replies in your voice, please read what this involves:
+        </p>
+        <ul className="text-[12px] text-foreground/75 leading-relaxed space-y-2 mb-4 list-disc pl-4">
+          <li>The incoming email's <strong>subject, sender and snippet</strong> are sent to <strong>Cloudflare Workers AI</strong> together with a small style summary of your writing.</li>
+          <li>Your <strong>full sent folder is never sent</strong> — only a derived voice profile (sign-off, openers, average sentence length).</li>
+          <li>Drafts are saved <strong>encrypted</strong> in your account. <strong>Nothing is sent automatically</strong> — every reply needs your click.</li>
+        </ul>
+        {err && <p className="text-[11px] text-rose-300/80 mb-2">{err}</p>}
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="px-3 py-1.5 rounded-md text-[12px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+            Not now
+          </button>
+          <button onClick={accept} disabled={busy}
+            className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-primary/15 text-primary ring-1 ring-primary/30 hover:bg-primary/20 disabled:opacity-50">
+            {busy ? "Saving…" : "I understand, enable"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type DraftDisplay = {
+  id: string;
+  body: string;
+  charsInDraft: number;
+  template: string;
+};
+
+function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
+  const [phase, setPhase] = useState<"idle" | "generating" | "open" | "sending">("idle");
+  const [draft, setDraft] = useState<DraftDisplay | null>(null);
+  const [body, setBody] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  function extractEmail(s: string): string {
+    const m = s.match(/<([^>]+)>/);
+    return (m ? m[1] : s).trim();
+  }
+
+  async function generate() {
+    setErr(null);
+    if (!consented) {
+      const ok = await onRequestConsent();
+      if (!ok) return;
+    }
+    setPhase("generating");
+    try {
+      const { draftReply } = await import("@/lib/voice-drafts.functions");
+      const d = await draftReply({ data: { memoryNodeId: item.id } });
+      setDraft({ id: d.id, body: d.body, charsInDraft: d.charsInDraft, template: d.template });
+      setBody(d.body);
+      setPhase("open");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Draft failed");
+      setPhase("idle");
+    }
+  }
+
+  async function regenerate() {
+    if (!draft) return;
+    setErr(null);
+    setPhase("generating");
+    try {
+      const { regenerateDraft } = await import("@/lib/voice-drafts.functions");
+      const d = await regenerateDraft({ data: { draftId: draft.id } });
+      setDraft({ id: d.id, body: d.body, charsInDraft: d.charsInDraft, template: d.template });
+      setBody(d.body);
+      setPhase("open");
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Regenerate failed");
+      setPhase("open");
+    }
+  }
+
+  async function send() {
+    if (!draft) return;
+    setPhase("sending");
+    try {
+      const { markDraftSent } = await import("@/lib/voice-drafts.functions");
+      await markDraftSent({ data: { draftId: draft.id, finalBody: body } });
+      const to = extractEmail(item.from);
+      const subj = item.subject.startsWith("Re:") ? item.subject : `Re: ${item.subject}`;
+      const url = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+      setPhase("idle");
+      setDraft(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Send failed");
+      setPhase("open");
+    }
+  }
+
+  async function dismiss() {
+    if (draft) {
+      try {
+        const { dismissDraft } = await import("@/lib/voice-drafts.functions");
+        await dismissDraft({ data: { draftId: draft.id } });
+      } catch { /* keep UI moving */ }
+    }
+    setDraft(null);
+    setPhase("idle");
+  }
+
+  const button =
+    phase === "generating" ? (
+      <span className="text-[10.5px] font-mono text-muted-foreground/60 px-2">Drafting…</span>
+    ) : phase === "idle" ? (
+      <button onClick={generate}
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25 transition-colors"
+        title="Draft a reply in your voice">
+        <Sparkles size={11}/> Draft reply
+      </button>
+    ) : (
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/70 ring-1 ring-primary/25">
+        <Sparkles size={11}/> Drafted
+      </span>
+    );
+
+  const panel = (phase === "open" || phase === "sending") ? (
+    <div className="w-full mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Sparkles size={11} className="text-primary"/>
+        <span className="text-[9px] font-mono uppercase tracking-wider text-primary/70">{draft?.template} draft</span>
+        {err && <span className="text-[10px] text-rose-300/80 ml-auto">{err}</span>}
+      </div>
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={Math.min(12, Math.max(4, body.split("\n").length + 1))}
+        className="w-full bg-transparent border border-white/[0.06] rounded-lg p-2 text-[12.5px] text-foreground/90 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/40 resize-y"
+      />
+      <div className="flex items-center gap-1.5">
+        <button onClick={send} disabled={phase === "sending" || !body.trim()}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
+          <Send size={11}/> {phase === "sending" ? "Logging…" : "Send via Gmail"}
+        </button>
+        <button onClick={regenerate} disabled={phase === "sending"}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+          <RefreshCw size={11}/> Regenerate
+        </button>
+        <button onClick={dismiss} disabled={phase === "sending"}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:bg-white/5 hover:text-foreground disabled:opacity-50 ml-auto">
+          <X size={11}/> Dismiss
+        </button>
+      </div>
+    </div>
+  ) : null;
+
+  return { button, panel };
+}
+
+function InboxRow({
+  item,
+  c,
+  s,
+  consented,
+  onRequestConsent,
+  onCompose,
+  onMarkDone,
+  draftable,
+}: {
+  item: InboxItem;
+  c: typeof C[DomainId];
+  s: typeof CAT_STYLE[InboxItem["category"]];
+  consented: boolean;
+  onRequestConsent: () => Promise<boolean>;
+  onCompose: () => void;
+  onMarkDone: () => void;
+  draftable: boolean;
+}) {
+  const draft = useDraftReply(item, consented, onRequestConsent);
+  return (
+    <div className={`group rounded-2xl border ${s.border} px-4 py-3 transition-all hover:brightness-110`}
+      style={{background:s.bg}}>
+      <div className="flex items-center gap-3">
+        <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+          style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+          <Mail size={12} style={{color:c.icon}}/>
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`}/>
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/55">{s.label}</span>
+            {item.reason && <span className="text-[9px] text-muted-foreground/40 truncate">· {item.reason}</span>}
+          </div>
+          <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
+          <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+          {draftable && draft.button}
+          <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
+          <IconBtn icon={Check}   label="Mark done"     onClick={onMarkDone} color="green"/>
+        </div>
+      </div>
+      {draft.panel}
+    </div>
+  );
+}
+
 function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: InboxItem[]|null; error: string|null }) {
   const [done, setDone] = useState<string[]>([]);
   const [showLow, setShowLow] = useState(false);
+  const { status, refresh } = useVoiceDraftsStatus();
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const requestConsent = async (): Promise<boolean> => {
+    setConsentOpen(true);
+    return new Promise<boolean>((resolve) => { consentResolverRef.current = resolve; });
+  };
+  const closeConsent = (accepted: boolean) => {
+    setConsentOpen(false);
+    consentResolverRef.current?.(accepted);
+    consentResolverRef.current = null;
+  };
 
   if (error) {
     return (
@@ -695,27 +951,20 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
       )}
       {visible.map(item => {
         const s = CAT_STYLE[item.category];
+        const draftable = (item.category === "urgent" || item.category === "today")
+          && (status?.featureEnabled ?? true);
         return (
-          <div key={item.id} className={`group flex items-center gap-3 rounded-2xl border ${s.border} px-4 py-3 transition-all hover:brightness-110`}
-            style={{background:s.bg}}>
-            <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
-              <Mail size={12} style={{color:c.icon}}/>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`}/>
-                <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/55">{s.label}</span>
-                {item.reason && <span className="text-[9px] text-muted-foreground/40 truncate">· {item.reason}</span>}
-              </div>
-              <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
-              <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
-            </div>
-            <div className="flex items-center gap-0.5 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-              <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
-              <IconBtn icon={Check}   label="Mark done"     onClick={()=>setDone(d=>[...d,item.id])} color="green"/>
-            </div>
-          </div>
+          <InboxRow
+            key={item.id}
+            item={item}
+            c={c}
+            s={s}
+            consented={status?.consented ?? false}
+            onRequestConsent={requestConsent}
+            onCompose={onCompose}
+            onMarkDone={() => setDone(d => [...d, item.id])}
+            draftable={draftable}
+          />
         );
       })}
       {!showLow && low.length > 0 && (
@@ -724,6 +973,11 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
           · {low.length} low-priority {low.length === 1 ? "item" : "items"}
         </button>
       )}
+      <ConsentModal
+        open={consentOpen}
+        onClose={() => closeConsent(false)}
+        onAccepted={() => { void refresh(); closeConsent(true); }}
+      />
     </div>
   );
 }

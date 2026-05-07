@@ -218,8 +218,67 @@ export const buildVoiceProfile = createServerFn({ method: "POST" })
   });
 
 // ---------------------------------------------------------------------------
-// Drafts (Week 2)
+// Drafts (Week 2 + Week 3 consent gating)
 // ---------------------------------------------------------------------------
+
+/**
+ * Week 3 gating: voice drafts must be globally enabled (env flag) AND the
+ * user must have explicitly accepted the in-app consent screen. The screen
+ * sets `user_settings.voice_drafts_consent_at` to NOW(); a NULL value means
+ * "not consented yet" and any attempt to call the LLM is rejected.
+ */
+function isFeatureEnabled(): boolean {
+  const v = (process.env.ENABLE_VOICE_DRAFTS ?? "true").toLowerCase();
+  return v === "1" || v === "true" || v === "yes" || v === "on";
+}
+
+async function assertCanDraft(userId: string): Promise<void> {
+  if (!isFeatureEnabled()) {
+    throw new Error("Voice drafts are disabled on this server.");
+  }
+  const { data, error } = await supabaseAdmin
+    .from("user_settings")
+    .select("voice_drafts_consent_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.voice_drafts_consent_at) {
+    throw new Error("Voice drafts require consent. Open the consent screen and accept first.");
+  }
+}
+
+export const getVoiceDraftsStatus = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{
+    featureEnabled: boolean;
+    consented: boolean;
+    consentedAt: string | null;
+  }> => {
+    const featureEnabled = isFeatureEnabled();
+    const { data } = await supabaseAdmin
+      .from("user_settings")
+      .select("voice_drafts_consent_at")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    const consentedAt = data?.voice_drafts_consent_at ?? null;
+    return { featureEnabled, consented: !!consentedAt, consentedAt };
+  });
+
+export const setVoiceDraftsConsent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { accept: boolean }) => d)
+  .handler(async ({ data, context }): Promise<{ consentedAt: string | null }> => {
+    const consentedAt = data.accept ? new Date().toISOString() : null;
+    // Upsert so a brand-new user (no settings row yet) still works.
+    const { error } = await supabaseAdmin
+      .from("user_settings")
+      .upsert(
+        { user_id: context.userId, voice_drafts_consent_at: consentedAt },
+        { onConflict: "user_id" },
+      );
+    if (error) throw error;
+    return { consentedAt };
+  });
 
 export type DraftPayload = {
   id: string;
@@ -324,6 +383,7 @@ export const draftReply = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { memoryNodeId: string }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
+    await assertCanDraft(context.userId);
     const [profile, email] = await Promise.all([
       loadVoiceProfileForUser(context.userId),
       loadIncomingEmail(context.userId, data.memoryNodeId),
@@ -360,6 +420,7 @@ export const regenerateDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { draftId: string }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
+    await assertCanDraft(context.userId);
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from("drafts")
       .select("id, source_node_id, templates_tried, status")

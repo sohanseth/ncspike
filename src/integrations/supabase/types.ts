@@ -258,6 +258,7 @@ export type Database = {
           storage_mode: Database["public"]["Enums"]["storage_mode"]
           updated_at: string
           user_id: string
+          voice_drafts_consent_at: string | null
         }
         Insert: {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
@@ -266,6 +267,7 @@ export type Database = {
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
           user_id: string
+          voice_drafts_consent_at?: string | null
         }
         Update: {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
@@ -274,6 +276,7 @@ export type Database = {
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
           user_id?: string
+          voice_drafts_consent_at?: string | null
         }
         Relationships: []
       }
