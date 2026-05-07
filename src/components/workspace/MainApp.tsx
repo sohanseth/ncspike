@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@/lib/auth-context";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Heart, MessageCircle, Briefcase, ShoppingBag,
