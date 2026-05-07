@@ -617,18 +617,6 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
   );
 }
 
-// ─── Home canvas ──────────────────────────────────────────────────────────────
-
-function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
-  onDomain:(id:DomainId)=>void;
-  onRunOvernight:(text:string)=>void;
-  onCompose:()=>void;
-}) {
-  const sorted=(Object.values(DOMAINS) as DomainData[]).sort((a,b)=>b.activity-a.activity);
-  const ids=sorted.map(d=>d.id);
-
-  return (
-    <div className="flex flex-col p-3 lg:p-4 gap-3">
 function InboxQueue({ onCompose }: { onCompose:()=>void }) {
   const [items, setItems] = useState<Array<{id:string;subject:string;from:string;snippet:string;date:string}>|null>(null);
   const [error, setError] = useState<string|null>(null);
