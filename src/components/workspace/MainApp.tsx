@@ -625,16 +625,18 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
 
 type InboxItem = {
   id: string; subject: string; from: string; snippet: string; date: string;
-  category: "urgent" | "today" | "proactive" | "ignore";
+  category: "urgent" | "today" | "proactive" | "ignore" | "needs_review";
   domain: DomainId;
   reason: string;
+  classifiedBy?: "rules" | "llm";
 };
 
 const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; border: string; bg: string }> = {
-  urgent:    { label: "Urgent",    dot: "bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.7)]", border: "border-red-400/25",    bg: "rgba(248,113,113,0.05)" },
-  today:     { label: "Today",     dot: "bg-amber-400",                                       border: "border-amber-400/20",  bg: "rgba(251,191,36,0.04)" },
-  proactive: { label: "Proactive", dot: "bg-violet-400",                                      border: "border-violet-400/20", bg: "rgba(139,92,246,0.04)" },
-  ignore:    { label: "Low",       dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
+  urgent:       { label: "Urgent",     dot: "bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.7)]", border: "border-red-400/25",    bg: "rgba(248,113,113,0.05)" },
+  today:        { label: "Today",      dot: "bg-amber-400",                                       border: "border-amber-400/20",  bg: "rgba(251,191,36,0.04)" },
+  proactive:    { label: "Proactive",  dot: "bg-violet-400",                                      border: "border-violet-400/20", bg: "rgba(139,92,246,0.04)" },
+  needs_review: { label: "Review",     dot: "bg-cyan-400",                                        border: "border-cyan-400/20",   bg: "rgba(34,211,238,0.04)" },
+  ignore:       { label: "Low",        dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
 };
 
 function useInbox() {

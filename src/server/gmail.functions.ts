@@ -3,9 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "./crypto.server";
-
-type EmailCategory = "urgent" | "today" | "proactive" | "ignore";
-type EmailDomain = "professional" | "learning" | "social" | "family" | "personal";
+import { rulesClassify, type EmailCategory, type EmailDomain } from "./email-rules.server";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
@@ -174,19 +172,49 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
       });
     }
 
-    // Categorize each email with Lovable AI (urgent / today / proactive / ignore)
-    const categories = await categorizeEmails(summaries);
+    // Phase 1: deterministic rules-first triage. No external AI by default.
+    // Ambiguous emails are tagged `needs_review`. Gemini fallback is opt-in
+    // via ENABLE_LLM_FALLBACK=true (off by default — keeps email data local).
+    const llmFallbackEnabled = process.env.ENABLE_LLM_FALLBACK === "true";
+    const ruleResults = summaries.map((s) => rulesClassify(s.from, s.subject));
+
+    const ambiguousIdx = ruleResults
+      .map((r, i) => (r.confidence === "low" ? i : -1))
+      .filter((i) => i !== -1);
+
+    const llmHandled = new Set<number>();
+    if (llmFallbackEnabled && ambiguousIdx.length > 0) {
+      const ambiguousEmails = ambiguousIdx.map((i) => summaries[i]);
+      const llmResults = await categorizeEmails(ambiguousEmails);
+      ambiguousIdx.forEach((origIdx, j) => {
+        const r = llmResults[j];
+        if (r) {
+          ruleResults[origIdx] = {
+            category: r.category as EmailCategory,
+            domain: r.domain,
+            confidence: "high",
+            reason: r.reason,
+          };
+          llmHandled.add(origIdx);
+        }
+      });
+    }
 
     // Persist a memory node per email so NC can "learn" from your inbox.
     if (summaries.length) {
       const rows = summaries.map((s, i) => {
-        const cat = categories[i] ?? { category: "ignore" as const, domain: "personal" as const, reason: "" };
+        const cat = ruleResults[i];
+        const importance =
+          cat.category === "urgent" ? 3 :
+          cat.category === "today" ? 2 :
+          cat.category === "proactive" ? 1 :
+          cat.category === "needs_review" ? 1 : 0;
         return {
           user_id: context.userId,
           node_type: "thread" as const,
           label: s.subject || "(no subject)",
           source: `gmail:${label ?? "me"}`,
-          importance: cat.category === "urgent" ? 3 : cat.category === "today" ? 2 : cat.category === "proactive" ? 1 : 0,
+          importance,
           data: {
             from: s.from,
             date: s.date,
@@ -195,6 +223,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
             category: cat.category,
             domain: cat.domain,
             reason: cat.reason,
+            classified_by: llmHandled.has(i) ? "llm" : "rules",
           },
         };
       });
@@ -230,16 +259,17 @@ export const getInboxItems = createServerFn({ method: "GET" })
     if (error) throw error;
     return {
       items: (data ?? []).map((r) => {
-        const d = (r.data ?? {}) as { from?: string; snippet?: string; date?: string; category?: string; domain?: string; reason?: string };
+        const d = (r.data ?? {}) as { from?: string; snippet?: string; date?: string; category?: string; domain?: string; reason?: string; classified_by?: string };
         return {
           id: r.id as string,
           subject: (r.label as string) || "(no subject)",
           from: d.from ?? "",
           snippet: d.snippet ?? "",
           date: d.date ?? "",
-          category: (d.category as "urgent" | "today" | "proactive" | "ignore" | undefined) ?? "ignore",
-          domain: (d.domain as "professional" | "learning" | "social" | "family" | "personal" | undefined) ?? "personal",
+          category: (d.category as EmailCategory | undefined) ?? "needs_review",
+          domain: (d.domain as EmailDomain | undefined) ?? "personal",
           reason: d.reason ?? "",
+          classifiedBy: (d.classified_by as "rules" | "llm" | undefined) ?? "rules",
         };
       }),
     };
