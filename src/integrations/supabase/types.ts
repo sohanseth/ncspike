@@ -276,6 +276,63 @@ export type Database = {
         }
         Relationships: []
       }
+      research_tasks: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          error: string | null
+          id: string
+          input: Json
+          input_key: string
+          priority: number
+          read_at: string | null
+          result: Json | null
+          scheduled_for: string
+          source: string
+          source_context: string | null
+          started_at: string | null
+          status: string
+          tool_id: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          input?: Json
+          input_key: string
+          priority?: number
+          read_at?: string | null
+          result?: Json | null
+          scheduled_for?: string
+          source?: string
+          source_context?: string | null
+          started_at?: string | null
+          status?: string
+          tool_id: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          input?: Json
+          input_key?: string
+          priority?: number
+          read_at?: string | null
+          result?: Json | null
+          scheduled_for?: string
+          source?: string
+          source_context?: string | null
+          started_at?: string | null
+          status?: string
+          tool_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_endpoints: {
         Row: {
           db_url_encrypted: string | null
