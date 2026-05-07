@@ -4,6 +4,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { encryptToken, decryptToken } from "@/server/crypto.server";
 import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
+import { proposeFreeSlots } from "@/server/calendar.server";
 import {
   extractVoiceProfile,
   parseForwardedSender,
@@ -422,6 +423,19 @@ export const draftReply = createServerFn({ method: "POST" })
     ]);
 
     const template = selectTemplate(email);
+
+    // For schedule asks, try to surface concrete free slots from the user's
+    // calendar so the draft proposes real times instead of "let me know what works".
+    // Best-effort: missing connection or API failure → empty array, draft falls back.
+    if (template === "schedule") {
+      try {
+        const slots = await proposeFreeSlots(context.userId);
+        if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
+      } catch (e) {
+        console.warn("proposeFreeSlots failed, drafting without slots:", e);
+      }
+    }
+
     let body: string;
     try {
       body = await generateDraftBody(profile, template, email);
@@ -473,6 +487,15 @@ export const regenerateDraft = createServerFn({ method: "POST" })
     // Rotate to a template not yet used. If all 5 used, rotate from the start again.
     const exclude = tried.length >= TEMPLATE_IDS.length ? [tried[tried.length - 1]] : tried;
     const template = selectTemplate(email, exclude);
+
+    if (template === "schedule") {
+      try {
+        const slots = await proposeFreeSlots(context.userId);
+        if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
+      } catch (e) {
+        console.warn("proposeFreeSlots failed (regenerate), drafting without slots:", e);
+      }
+    }
 
     const body = await generateDraftBody(profile, template, email);
     const enc = encryptToken(body);

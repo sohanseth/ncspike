@@ -375,7 +375,7 @@ const TEMPLATE_INSTRUCTIONS: Record<TemplateId, string> = {
   decline:
     "Write a polite decline. Be warm but clear. Do not over-explain. Offer a brief reason only if obvious from context. 3–4 sentences.",
   schedule:
-    "Write a short reply proposing to schedule a call or meeting. Suggest checking calendars without committing to a specific time (we don't have calendar access in V1). 2–3 sentences.",
+    "Write a short reply proposing to schedule a call or meeting. If specific free slots are provided in the email context, propose those exact times (use the human-readable form). Otherwise, ask them to share a couple of times that work. 2–3 sentences.",
   ask_info:
     "Write a short reply asking one or two clarifying questions needed before you can respond properly. 2–3 sentences.",
   confirm:
@@ -394,6 +394,12 @@ export type IncomingEmail = {
    * When present, the reply should be addressed to this person, not `from`.
    */
   originalSender?: string;
+  /**
+   * Free meeting slots from the user's calendar, human-readable.
+   * Only populated when template === "schedule" and Google Calendar is connected.
+   * The prompt instructs the model to offer these as concrete options.
+   */
+  proposedSlots?: string[];
 };
 
 /** Heuristic: parse "From: …" line from a forwarded email body. */
@@ -540,6 +546,15 @@ export function renderDraftPrompt(
     `Body:`,
     truncated,
     "",
+  );
+  if (email.proposedSlots && email.proposedSlots.length > 0) {
+    lines.push(
+      `Free slots on the user's calendar (offer these as concrete options):`,
+      ...email.proposedSlots.map((s) => `  - ${s}`),
+      "",
+    );
+  }
+  lines.push(
     `Task: ${TEMPLATE_INSTRUCTIONS[template]}`,
     `Reply to ${recipient || "the sender"} based on what they actually wrote — reference specific details from the body. Do NOT just acknowledge receipt.`,
     greeting,

@@ -23,18 +23,21 @@ async function refreshAccessToken(refreshToken: string): Promise<{
   return res.json();
 }
 
-export async function getValidGmailAccessToken(
+export type GoogleProvider = "gmail" | "google_calendar";
+
+export async function getValidGoogleAccessToken(
   userId: string,
+  provider: GoogleProvider,
 ): Promise<{ token: string; label: string | null }> {
   const { data: conn, error } = await supabaseAdmin
     .from("connections")
     .select("id, access_token_encrypted, refresh_token_encrypted, expires_at, account_label")
     .eq("user_id", userId)
-    .eq("provider", "gmail")
+    .eq("provider", provider)
     .maybeSingle();
 
   if (error) throw error;
-  if (!conn) throw new Error("Gmail not connected");
+  if (!conn) throw new Error(`${provider} not connected`);
 
   const expiresAt = conn.expires_at ? new Date(conn.expires_at).getTime() : 0;
   const fresh = expiresAt - Date.now() > 60_000;
@@ -43,7 +46,7 @@ export async function getValidGmailAccessToken(
     return { token: decryptToken(conn.access_token_encrypted), label: conn.account_label };
   }
 
-  if (!conn.refresh_token_encrypted) throw new Error("No refresh token; please reconnect Gmail");
+  if (!conn.refresh_token_encrypted) throw new Error(`No refresh token; please reconnect ${provider}`);
   const refreshed = await refreshAccessToken(decryptToken(conn.refresh_token_encrypted));
   await supabaseAdmin
     .from("connections")
@@ -53,4 +56,9 @@ export async function getValidGmailAccessToken(
     })
     .eq("id", conn.id);
   return { token: refreshed.access_token, label: conn.account_label };
+}
+
+/** Back-compat alias — Gmail-specific call sites keep working. */
+export async function getValidGmailAccessToken(userId: string) {
+  return getValidGoogleAccessToken(userId, "gmail");
 }
