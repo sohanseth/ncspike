@@ -216,6 +216,29 @@ export const getConnections = createServerFn({ method: "GET" })
 export const getInboxItems = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { data, error } = await supabaseAdmin
+      .from("memory_nodes")
+      .select("id, label, data, source, created_at, importance")
+      .eq("user_id", context.userId)
+      .like("source", "gmail:%")
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (error) throw error;
+    return {
+      items: (data ?? []).map((r) => {
+        const d = (r.data ?? {}) as { from?: string; snippet?: string; date?: string; category?: string; reason?: string };
+        return {
+          id: r.id as string,
+          subject: (r.label as string) || "(no subject)",
+          from: d.from ?? "",
+          snippet: d.snippet ?? "",
+          date: d.date ?? "",
+          category: (d.category as "urgent" | "today" | "proactive" | "ignore" | undefined) ?? "ignore",
+          reason: d.reason ?? "",
+        };
+      }),
+    };
   });
 
 export const disconnectProvider = createServerFn({ method: "POST" })
