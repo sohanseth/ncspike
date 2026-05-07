@@ -24,6 +24,8 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Json } from "@/integrations/supabase/types";
 import { dispatchAgentTool, AGENT_TOOLS } from "@/server/agent-tools";
 
+const researchTasks = () => (supabaseAdmin as any).from("research_tasks");
+
 export type EnqueueArgs = {
   toolId: string;
   input: Record<string, unknown>;
@@ -85,8 +87,7 @@ export async function enqueueResearchTask(
 
   const inputKey = canonicalKey(args.toolId, args.input);
 
-  const { data: existing } = await supabaseAdmin
-    .from("research_tasks")
+  const { data: existing } = await researchTasks()
     .select("id")
     .eq("user_id", userId)
     .eq("tool_id", args.toolId)
@@ -95,8 +96,7 @@ export async function enqueueResearchTask(
     .maybeSingle();
   if (existing?.id) return { status: "duplicate", existingTaskId: existing.id };
 
-  const { data, error } = await supabaseAdmin
-    .from("research_tasks")
+  const { data, error } = await researchTasks()
     .insert({
       user_id: userId,
       tool_id: args.toolId,
@@ -113,8 +113,7 @@ export async function enqueueResearchTask(
     // Race: another caller inserted the same key between our SELECT and INSERT.
     // The unique partial index catches it; surface as duplicate, not error.
     if (error.code === "23505") {
-      const { data: dup } = await supabaseAdmin
-        .from("research_tasks")
+      const { data: dup } = await researchTasks()
         .select("id")
         .eq("user_id", userId)
         .eq("tool_id", args.toolId)
@@ -147,8 +146,7 @@ export async function listResearchTasks(
   userId: string,
   opts: { status?: TaskRow["status"][]; limit?: number; unreadOnly?: boolean } = {},
 ): Promise<TaskRow[]> {
-  let q = supabaseAdmin
-    .from("research_tasks")
+  let q = researchTasks()
     .select("id, tool_id, status, source, source_context, scheduled_for, created_at, completed_at, result, error, read_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false })
@@ -177,8 +175,7 @@ export async function markResearchTasksRead(
   taskIds: string[],
 ): Promise<{ updated: number }> {
   if (taskIds.length === 0) return { updated: 0 };
-  const { data, error } = await supabaseAdmin
-    .from("research_tasks")
+  const { data, error } = await researchTasks()
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", userId)
     .in("id", taskIds)
@@ -195,8 +192,7 @@ export async function cancelResearchTask(
   // Only `pending` is cancellable — once `running` we let the executor finish
   // so we never orphan a partially-applied side effect (e.g. a calendar event
   // already created by a tool mid-call).
-  const { data, error } = await supabaseAdmin
-    .from("research_tasks")
+  const { data, error } = await researchTasks()
     .update({ status: "cancelled", completed_at: new Date().toISOString() })
     .eq("user_id", userId)
     .eq("id", taskId)
@@ -262,15 +258,13 @@ export async function runResearchBatch(
   // dedupe slots and gives the work another shot after a runner crash. Done
   // before the claim query so the reaped rows are eligible in this same batch.
   const reaperCutoff = new Date(Date.now() - STUCK_RUNNING_AFTER_MS).toISOString();
-  await supabaseAdmin
-    .from("research_tasks")
+  await researchTasks()
     .update({ status: "pending", started_at: null })
     .eq("user_id", userId)
     .eq("status", "running")
     .lt("started_at", reaperCutoff);
 
-  const { data: tasks, error } = await supabaseAdmin
-    .from("research_tasks")
+  const { data: tasks, error } = await researchTasks()
     .select("id, tool_id, input")
     .eq("user_id", userId)
     .eq("status", "pending")
@@ -283,8 +277,7 @@ export async function runResearchBatch(
   const summary: RunBatchSummary = { attempted: 0, succeeded: 0, failed: 0, results: [] };
   for (const t of tasks ?? []) {
     // Optimistic claim. If another runner beat us to this row, skip it.
-    const { data: claimed, error: claimErr } = await supabaseAdmin
-      .from("research_tasks")
+    const { data: claimed, error: claimErr } = await researchTasks()
       .update({ status: "running", started_at: new Date().toISOString() })
       .eq("id", t.id)
       .eq("user_id", userId)
@@ -299,8 +292,7 @@ export async function runResearchBatch(
         PER_TASK_TIMEOUT_MS,
         `tool ${t.tool_id}`,
       );
-      await supabaseAdmin
-        .from("research_tasks")
+      await researchTasks()
         .update({
           status: "done",
           completed_at: new Date().toISOString(),
@@ -312,8 +304,7 @@ export async function runResearchBatch(
       summary.results.push({ taskId: t.id, toolId: t.tool_id as string, status: "done" });
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      await supabaseAdmin
-        .from("research_tasks")
+      await researchTasks()
         .update({
           status: "error",
           completed_at: new Date().toISOString(),
@@ -331,13 +322,11 @@ export async function getResearchQueueCounts(
   userId: string,
 ): Promise<{ pending: number; unreadDone: number }> {
   const [pendingRes, unreadRes] = await Promise.all([
-    supabaseAdmin
-      .from("research_tasks")
+    researchTasks()
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("status", "pending"),
-    supabaseAdmin
-      .from("research_tasks")
+    researchTasks()
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("status", "done")
