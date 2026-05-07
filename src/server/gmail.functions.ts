@@ -5,15 +5,16 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "./crypto.server";
 
 type EmailCategory = "urgent" | "today" | "proactive" | "ignore";
+type EmailDomain = "professional" | "learning" | "social" | "family" | "personal";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
-): Promise<Array<{ category: EmailCategory; reason: string }>> {
+): Promise<Array<{ category: EmailCategory; domain: EmailDomain; reason: string }>> {
   if (!emails.length) return [];
   const apiKey = process.env.LOVABLE_API_KEY;
   if (!apiKey) {
     console.warn("LOVABLE_API_KEY missing; defaulting all emails to 'ignore'");
-    return emails.map(() => ({ category: "ignore" as const, reason: "" }));
+    return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
   }
 
   const list = emails
@@ -33,7 +34,7 @@ async function categorizeEmails(
           {
             role: "system",
             content:
-              "You triage a user's inbox. For each email, assign one category: 'urgent' (needs reply within 24h, e.g. deadlines, time-sensitive asks from real people), 'today' (calendar/event reminder happening today), 'proactive' (interesting opportunity worth following up on later), or 'ignore' (newsletters, promotions, notifications, no action needed). Reason must be under 10 words.",
+              "You triage a user's inbox. For each email, assign a category and a life domain.\n\nCategory:\n- 'urgent' = needs reply within 24h (deadlines, time-sensitive asks from real people)\n- 'today' = calendar/event reminder happening today\n- 'proactive' = interesting opportunity worth following up on later\n- 'ignore' = newsletters, promotions, automated notifications, no action\n\nDomain:\n- 'professional' = work, recruiters, clients, partnerships, business\n- 'learning' = courses, books, research, newsletters, tutorials\n- 'social' = friends, social events, casual chats, social platforms\n- 'family' = kids, school, household, partner, family logistics\n- 'personal' = shopping, travel, hobbies, personal admin, security alerts\n\nReason must be under 10 words.",
           },
           { role: "user", content: `Categorize these ${emails.length} emails:\n\n${list}` },
         ],
@@ -42,7 +43,7 @@ async function categorizeEmails(
             type: "function",
             function: {
               name: "categorize_emails",
-              description: "Return a category for each email in order.",
+              description: "Return a category and life domain for each email in order.",
               parameters: {
                 type: "object",
                 properties: {
@@ -52,9 +53,10 @@ async function categorizeEmails(
                       type: "object",
                       properties: {
                         category: { type: "string", enum: ["urgent", "today", "proactive", "ignore"] },
+                        domain: { type: "string", enum: ["professional", "learning", "social", "family", "personal"] },
                         reason: { type: "string" },
                       },
-                      required: ["category", "reason"],
+                      required: ["category", "domain", "reason"],
                       additionalProperties: false,
                     },
                   },
@@ -70,18 +72,18 @@ async function categorizeEmails(
     });
     if (!res.ok) {
       console.error("AI categorize failed:", res.status, await res.text());
-      return emails.map(() => ({ category: "ignore" as const, reason: "" }));
+      return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
     }
     const json = await res.json();
     const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
-    if (!args) return emails.map(() => ({ category: "ignore" as const, reason: "" }));
-    const parsed = JSON.parse(args) as { results: Array<{ category: EmailCategory; reason: string }> };
+    if (!args) return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
+    const parsed = JSON.parse(args) as { results: Array<{ category: EmailCategory; domain: EmailDomain; reason: string }> };
     const out = parsed.results ?? [];
-    while (out.length < emails.length) out.push({ category: "ignore", reason: "" });
+    while (out.length < emails.length) out.push({ category: "ignore", domain: "personal", reason: "" });
     return out.slice(0, emails.length);
   } catch (e) {
     console.error("AI categorize threw:", e);
-    return emails.map(() => ({ category: "ignore" as const, reason: "" }));
+    return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
   }
 }
 
