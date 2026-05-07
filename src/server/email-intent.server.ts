@@ -171,6 +171,12 @@ function coerceAnalysis(raw: unknown): EmailAnalysis {
     });
   }
 
+  // Stable render order: prep_time → availability → everything else.
+  // The UI's "Use my calendar" suggestion on the availability question depends
+  // on prep_time being answered first, so prep_time must visually come first.
+  const ORDER: Record<string, number> = { prep_time: 0, availability: 1 };
+  questions.sort((a, b) => (ORDER[a.id] ?? 99) - (ORDER[b.id] ?? 99));
+
   return {
     intent: safeIntent,
     needsClarification: questions.length > 0,
