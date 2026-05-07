@@ -460,7 +460,7 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
         {size!=="sm" && (
           <div className="flex items-center gap-1.5">
             <div className="w-10 h-[2.5px] rounded-full bg-white/[0.07] overflow-hidden">
-              <div className={`h-full rounded-full ${c.bar}`} style={{width:`${domain.activity*100}%`,opacity:0.8}}/>
+              <div className={`h-full rounded-full ${c.bar}`} style={{width:`${activity*100}%`,opacity:0.8}}/>
             </div>
           </div>
         )}
