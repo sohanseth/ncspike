@@ -6,6 +6,7 @@ import { encryptToken, decryptToken } from "@/server/crypto.server";
 import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
 import {
   extractVoiceProfile,
+  parseForwardedSender,
   renderDraftPrompt,
   selectTemplate,
   TEMPLATE_IDS,
@@ -328,12 +329,43 @@ async function loadIncomingEmail(
     .maybeSingle();
   if (error) throw error;
   if (!data) throw new Error("Email not found");
-  const meta = (data.data ?? {}) as { from?: string; snippet?: string };
-  return {
-    subject: data.label || "(no subject)",
-    from: meta.from || "",
-    snippet: meta.snippet || "",
-  };
+  const meta = (data.data ?? {}) as { from?: string; snippet?: string; gmail_id?: string };
+  const subject = data.label || "(no subject)";
+  const from = meta.from || "";
+  const snippet = meta.snippet || "";
+
+  // Fetch the full message body so the LLM can reply to actual content,
+  // not just the snippet. Best-effort — if the token is missing, expired,
+  // or the message was deleted from Gmail, we silently fall back to snippet.
+  let body: string | undefined;
+  let originalSender: string | undefined;
+  if (meta.gmail_id) {
+    try {
+      const { token } = await getValidGmailAccessToken(userId);
+      const r = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages/${meta.gmail_id}?format=full`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (r.ok) {
+        const m = (await r.json()) as GmailMessage;
+        const text = extractPlainText(m.payload);
+        if (text) body = text.trim();
+      }
+    } catch (e) {
+      console.warn("loadIncomingEmail: full body fetch failed, using snippet:", e);
+    }
+  }
+
+  // Detect forwards via subject prefix or in-body markers, parse the real sender.
+  const looksForwarded =
+    /^\s*(fwd?|fw):/i.test(subject) ||
+    (!!body && /-+\s*Forwarded message\s*-+|Begin forwarded message/i.test(body));
+  if (looksForwarded && body) {
+    const parsed = parseForwardedSender(body);
+    if (parsed) originalSender = parsed;
+  }
+
+  return { subject, from, snippet, body, originalSender };
 }
 
 async function generateDraftBody(

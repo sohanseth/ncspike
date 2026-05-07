@@ -386,7 +386,35 @@ export type IncomingEmail = {
   subject: string;
   from: string;
   snippet: string;
+  /** Full plain-text body if we could fetch it. Falls back to snippet. */
+  body?: string;
+  /**
+   * For forwarded emails ("Fwd: …"): the parsed original sender header
+   * found inside the body, e.g. "Alexandra Breslin <alex@nearform.com>".
+   * When present, the reply should be addressed to this person, not `from`.
+   */
+  originalSender?: string;
 };
+
+/** Heuristic: parse "From: …" line from a forwarded email body. */
+export function parseForwardedSender(body: string): string | null {
+  if (!body) return null;
+  // Match "From: Name <email>" — first occurrence after a forward marker.
+  const lines = body.split(/\r?\n/);
+  let inForward = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (/^[-]+\s*Forwarded message\s*[-]+/i.test(line) || /^Begin forwarded message/i.test(line)) {
+      inForward = true;
+      continue;
+    }
+    if (inForward || /^From:\s+/i.test(line)) {
+      const m = line.match(/^From:\s*(.+)$/i);
+      if (m) return m[1].trim().replace(/^"|"$/g, "");
+    }
+  }
+  return null;
+}
 
 /**
  * Pick the most appropriate template for an incoming email using cheap
@@ -397,7 +425,7 @@ export function selectTemplate(
   email: IncomingEmail,
   exclude: TemplateId[] = [],
 ): TemplateId {
-  const text = `${email.subject}\n${email.snippet}`.toLowerCase();
+  const text = `${email.subject}\n${email.body ?? email.snippet}`.toLowerCase();
   const has = (re: RegExp) => re.test(text);
 
   // Order matters — first match wins among non-excluded.
@@ -489,18 +517,33 @@ export function renderDraftPrompt(
     "- Keep it tight. No filler.",
   ].join("\n");
 
-  const recipient = senderFirstName(email.from);
+  // For forwarded mail, the real recipient of the reply is the original sender,
+  // not whoever forwarded it. Address them by first name.
+  const replyTo = email.originalSender || email.from;
+  const recipient = senderFirstName(replyTo);
   const greeting = recipient ? `Address them as "${recipient}".` : "Use a neutral greeting (no name).";
 
-  const user = [
+  // Trim body for the prompt — keep cost bounded and avoid prompt-injection
+  // surface area from very long forwards.
+  const fullBody = (email.body ?? email.snippet ?? "").trim();
+  const truncated = fullBody.length > 4000 ? fullBody.slice(0, 4000) + "\n[...truncated]" : fullBody;
+
+  const lines: string[] = [
     `Incoming email:`,
-    `From: ${email.from}`,
+    `From (envelope): ${email.from}`,
+  ];
+  if (email.originalSender && email.originalSender !== email.from) {
+    lines.push(`This is a FORWARDED message. Reply to the original sender: ${email.originalSender}`);
+  }
+  lines.push(
     `Subject: ${email.subject}`,
-    `Body: ${email.snippet}`,
+    `Body:`,
+    truncated,
     "",
     `Task: ${TEMPLATE_INSTRUCTIONS[template]}`,
+    `Reply to ${recipient || "the sender"} based on what they actually wrote — reference specific details from the body. Do NOT just acknowledge receipt.`,
     greeting,
-  ].join("\n");
+  );
 
-  return { system, user };
+  return { system, user: lines.join("\n") };
 }
