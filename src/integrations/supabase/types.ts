@@ -455,7 +455,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      mark_memory_node_resolved: {
+        Args: { p_action: string; p_node_id: string; p_user_id: string }
+        Returns: undefined
+      }
     }
     Enums: {
       ai_mode: "hosted_proprietary" | "hosted_oss" | "byo"
