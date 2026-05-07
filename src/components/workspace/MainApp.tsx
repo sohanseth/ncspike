@@ -790,8 +790,9 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
-          {[0,1,2,3,4].map(i => {
-            const id = ids[i];
+          {([0,1,2,3,4] as const).map(i => {
+            const id = ids[i] as DomainId | undefined;
+            if (!id) return null;
             const live = liveByDomain[id];
             const sizes = ["xl","lg","md","sm","sm"] as const;
             return (
