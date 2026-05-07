@@ -275,9 +275,11 @@ If any gate is unmet at end of day 1, week 1 starts with a 24-hour countdown to 
 
 ## 10. Open questions
 
-1. **TestFlight / Play access:** does Sneha already have an Apple Developer account ($99/yr) and a Google Play developer account ($25 one-time)? Both are blockers for week 3's signed-build deliverable. **Decision needed by start of week 1.**
+1. **TestFlight / Play access (was G1 + G2; partially resolved 2026-05-07):**
+   - **G1 — Apple Developer account: ✓ Provisioned.** iOS signing + TestFlight unblocked.
+   - **G2 — Google Play developer account: ✗ Not yet provisioned.** $25 one-time. Two paths: (a) provision now in week 1 (~1 day for Google's identity verification) and ship both platforms per plan, or (b) defer Android Play Internal Testing to a week-4 trailing follow-up and ship iOS-only at end of week 3. **Decision still needed.**
 2. **App icon / splash screen:** placeholder NC mark for V1. Real brand pass deferred to a separate design task before TestFlight goes wider than 5 testers.
-3. **`app.neuralconnexions.com` for AASA / Digital Asset Links:** does this hostname exist and serve from a host we can drop `.well-known/` files on? If not, we either provision it in week 1 or fall back to a different hostname (e.g. `nc.app` or whatever's already DNS'd). N7 hard-depends on the answer. **Decision needed by start of week 1.**
+3. **AASA / Digital Asset Links hostname (was G3; partially resolved 2026-05-07):** Sneha owns `neuralconnexions.com` and `neuralconnexions.ai`. Both can host the `.well-known/` files. **Still need to pick:** (a) apex on `neuralconnexions.com/.well-known/*` (simplest, but may conflict if a marketing site lives at the apex), (b) subdomain like `app.neuralconnexions.com` (cleaner separation, requires a DNS record + a static-file host), or (c) use `neuralconnexions.ai` instead. The bundle's Universal-Link domain entitlement will reference whatever we pick and is annoying to change post-install, so this is a single one-shot decision. **Decision needed by start of week 1.**
 4. **Quiet hours for push:** out of scope for Phase 2.5 (per-user preference of three on/off toggles is enough for V1). Quiet hours is a Phase 3 polish item once we see actual push frequency in the wild.
 5. **Sentry / Crashlytics on native:** out of scope for 2.5; rely on Diagnostics screen + user-reported screenshots in beta. Revisit after OCSR data.
 6. **PWA path deprecation:** explicitly *not* deprecated (per N6). Revisit only if both stores approve and we see ≥80% of beta users on native after 30 days.
