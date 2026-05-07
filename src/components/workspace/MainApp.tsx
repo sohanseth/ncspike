@@ -1475,9 +1475,9 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           {prepBlock.phase === "error" && (
             <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
               {prepBlock.reason === "scope" ? (
-                <>Calendar is read-only.{" "}
+                <>Google Calendar is connected with read-only access.{" "}
                   <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
-                    Reconnect Google Calendar →
+                    Reconnect to enable event creation →
                   </Link>
                 </>
               ) : prepBlock.reason === "no_calendar" ? (
@@ -1522,9 +1522,9 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           {followUp.phase === "error" && (
             <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
               {followUp.reason === "scope" ? (
-                <>Calendar is read-only.{" "}
+                <>Google Calendar is connected with read-only access.{" "}
                   <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
-                    Reconnect Google Calendar →
+                    Reconnect to enable event creation →
                   </Link>
                 </>
               ) : followUp.reason === "no_calendar" ? (
