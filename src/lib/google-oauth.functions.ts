@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getRequestHost } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { signState } from "./crypto.server";
+import { signState } from "@/server/crypto.server";
 
 const GMAIL_SCOPES = [
   "openid",
