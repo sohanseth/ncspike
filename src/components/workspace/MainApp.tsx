@@ -761,7 +761,7 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   // Sort domains by live activity (count), fall back to static
   const sorted = useMemo(() => {
     const arr = Object.values(DOMAINS) as DomainData[];
-    return arr.slice().sort((a, b) => {
+    return arr.slice().sort((a: DomainData, b: DomainData) => {
       const ca = liveByDomain[a.id]?.length ?? -1;
       const cb = liveByDomain[b.id]?.length ?? -1;
       if (ca !== cb) return cb - ca;
