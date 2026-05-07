@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { useAuth } from "@/lib/auth-context";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Heart, MessageCircle, Briefcase, ShoppingBag,
@@ -8,7 +9,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package, Plug,
+  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package, Plug, LogOut,
 } from "lucide-react";
 
 
@@ -328,6 +329,9 @@ function TopBar({
   onDomain:(id:DomainId)=>void; onVoice:()=>void; onExplore:()=>void; onTest:()=>void;
 }) {
   const pendingTasks = ACTION_QUEUE.filter(a=>a.type==="proactive").length;
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = async () => { await signOut(); navigate({ to: "/auth" }); };
 
   return (
     <header className="h-14 flex items-center px-4 gap-3 border-b border-border flex-shrink-0 relative z-30">
@@ -418,6 +422,14 @@ function TopBar({
         {/* Avatar */}
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
           style={{background:"linear-gradient(135deg,#6d28d9,#4c1d95)",color:"#ede9fe"}}>S</div>
+
+        {/* Sign out */}
+        <button onClick={handleSignOut} title="Sign out" aria-label="Sign out"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          <LogOut size={13}/>
+          <span className="hidden sm:block">Sign out</span>
+        </button>
       </div>
     </header>
   );
