@@ -629,18 +629,101 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
+function InboxQueue({ onCompose }: { onCompose:()=>void }) {
+  const [items, setItems] = useState<Array<{id:string;subject:string;from:string;snippet:string;date:string}>|null>(null);
+  const [error, setError] = useState<string|null>(null);
+  const [done, setDone] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    import("@/server/gmail.functions").then(({ getInboxItems }) =>
+      getInboxItems()
+        .then((res) => { if (active) setItems(res.items); })
+        .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to load inbox"); })
+    );
+    return () => { active = false; };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-3">
+        <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {error}</p>
+        <Link to="/workspace/connections" className="text-[10.5px] text-primary/70 font-mono hover:text-primary">Connect Gmail →</Link>
+      </div>
+    );
+  }
+  if (!items) {
+    return <div className="flex-shrink-0 rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading inbox…</div>;
+  }
+  if (items.length === 0) {
+    return (
+      <div className="flex-shrink-0 rounded-2xl border border-white/[0.06] px-4 py-3 flex items-center gap-3">
+        <Inbox size={12} className="text-muted-foreground/60"/>
+        <p className="text-[12px] text-muted-foreground/60 flex-1" style={{fontFamily:"'DM Sans',sans-serif"}}>No inbox items yet.</p>
+        <Link to="/workspace/connections" className="text-[10.5px] text-primary/70 font-mono hover:text-primary whitespace-nowrap">Pull emails →</Link>
+      </div>
+    );
+  }
+
+  const visible = items.filter(i => !done.includes(i.id));
+  const c = C.professional;
+
+  return (
+    <div className="flex-shrink-0 flex flex-col gap-1.5">
+      {visible.map(item => (
+        <div key={item.id} className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-3 transition-all hover:border-white/[0.12]">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+            <Mail size={12} style={{color:c.icon}}/>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-1.5 mb-0.5">
+              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sky-400/60"/>
+              <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/45">Inbox</span>
+            </div>
+            <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
+            <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
+          </div>
+          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+            <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
+            <IconBtn icon={Check}   label="Mark done"     onClick={()=>setDone(d=>[...d,item.id])} color="green"/>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Home canvas ──────────────────────────────────────────────────────────────
+
+function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
+  onDomain:(id:DomainId)=>void;
+  onRunOvernight:(text:string)=>void;
+  onCompose:()=>void;
+}) {
+  const sorted=(Object.values(DOMAINS) as DomainData[]).sort((a,b)=>b.activity-a.activity);
+  const ids=sorted.map(d=>d.id);
+  const { user } = useAuth();
+  const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
+  const hour = new Date().getHours();
+  const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  return (
+    <div className="flex flex-col p-3 lg:p-4 gap-3">
       {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
         <span className="flex-1 text-[13px] text-foreground/80 font-medium" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-          Good morning, Sarah — AI-heavy week
+          {greet}, {firstName}
         </span>
-        <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">Tue · May 6</span>
+        <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
       </div>
 
-      {/* Action queue */}
-      <ActionQueue onCompose={onCompose} onRunOvernight={onRunOvernight} onDomain={onDomain}/>
+      {/* Inbox queue (live) */}
+      <InboxQueue onCompose={onCompose}/>
+
 
       {/* Domain bento */}
       <div className="flex-shrink-0 overflow-x-auto">
