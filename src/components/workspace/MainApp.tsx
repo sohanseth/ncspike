@@ -631,12 +631,9 @@ const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; bor
   ignore:    { label: "Low",       dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
 };
 
-function InboxQueue({ onCompose }: { onCompose:()=>void }) {
+function useInbox() {
   const [items, setItems] = useState<InboxItem[]|null>(null);
   const [error, setError] = useState<string|null>(null);
-  const [done, setDone] = useState<string[]>([]);
-  const [showLow, setShowLow] = useState(false);
-
   useEffect(() => {
     let active = true;
     import("@/server/gmail.functions").then(({ getInboxItems }) =>
@@ -646,6 +643,12 @@ function InboxQueue({ onCompose }: { onCompose:()=>void }) {
     );
     return () => { active = false; };
   }, []);
+  return { items, error };
+}
+
+function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: InboxItem[]|null; error: string|null }) {
+  const [done, setDone] = useState<string[]>([]);
+  const [showLow, setShowLow] = useState(false);
 
   if (error) {
     return (
