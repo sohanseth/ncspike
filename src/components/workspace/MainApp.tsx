@@ -644,7 +644,7 @@ function useInbox() {
   const [error, setError] = useState<string|null>(null);
   useEffect(() => {
     let active = true;
-    import("@/server/gmail.functions").then(({ getInboxItems }) =>
+    import("@/lib/gmail.functions").then(({ getInboxItems }) =>
       getInboxItems()
         .then((res) => { if (active) setItems(res.items as InboxItem[]); })
         .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to load inbox"); })

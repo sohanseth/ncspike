@@ -2,12 +2,12 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useEffect, useState } from "react";
 import { Mail, Calendar, Loader2, CheckCircle2, AlertCircle, Plug, Inbox } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
-import { startGoogleOAuth } from "@/server/google-oauth.functions";
+import { startGoogleOAuth } from "@/lib/google-oauth.functions";
 import {
   getConnections,
   disconnectProvider,
   pullRecentEmails,
-} from "@/server/gmail.functions";
+} from "@/lib/gmail.functions";
 
 type ConnectStatus = "ok" | "error" | undefined;
 
