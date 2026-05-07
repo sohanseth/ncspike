@@ -13,6 +13,7 @@ import {
   buildVoiceProfile,
   type VoiceProfileSummary,
 } from "@/lib/voice-drafts.functions";
+import { testProposeSlots } from "@/lib/calendar.functions";
 
 type ConnectStatus = "ok" | "error" | undefined;
 
@@ -55,6 +56,8 @@ function ConnectionsPage() {
   const [pullError, setPullError] = useState<string | null>(null);
   const [voice, setVoice] = useState<VoiceProfileSummary | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [calSlots, setCalSlots] = useState<Array<{ human: string; startIso: string }> | null>(null);
+  const [calError, setCalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
@@ -110,6 +113,20 @@ function ConnectionsPage() {
       setVoice(v);
     } catch (e) {
       setVoiceError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onTestCalendar = async () => {
+    setBusy("calendar-test");
+    setCalError(null);
+    setCalSlots(null);
+    try {
+      const { slots } = await testProposeSlots();
+      setCalSlots(slots);
+    } catch (e) {
+      setCalError(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(null);
     }
