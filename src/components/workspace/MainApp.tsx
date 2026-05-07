@@ -11,6 +11,7 @@ import {
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox,
 } from "lucide-react";
+import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -399,8 +400,12 @@ function TopBar({
           <span className="hidden sm:block">You</span>
         </button>
 
+        {/* Briefings — overnight research queue */}
+        <BriefingsButton/>
+
         {/* Connections */}
         <Link to="/workspace/connections"
+         
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
           style={{fontFamily:"'DM Sans',sans-serif"}}
           title="Connect Gmail & Calendar">
@@ -747,6 +752,16 @@ type ContextState =
   | { phase: "no_history" }
   | { phase: "error"; message: string };
 
+// Overnight-research enqueue state for the draft panel chip. Distinct from
+// ContextState because the user can both schedule overnight AND get a fresh
+// context brief now — they're independent flows over the same agent tool.
+type ScheduleState =
+  | { phase: "idle" }
+  | { phase: "enqueuing" }
+  | { phase: "scheduled"; whenHuman: string }
+  | { phase: "duplicate" }
+  | { phase: "error"; message: string };
+
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
 function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
@@ -781,6 +796,8 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   // Same double-click guard pattern as follow-up — synthesis is idempotent so
   // a second call wouldn't cause damage, but it would burn tokens for nothing.
   const contextInFlight = useRef(false);
+  const [scheduleState, setScheduleState] = useState<ScheduleState>({ phase: "idle" });
+  const scheduleInFlight = useRef(false);
   // Per-question UX state for the availability suggestion button.
   // "loading" → fetching from calendar; "empty" → no slots returned (so we hide
   // the button next time); "error" → soft failure note; "idle" → button visible.
@@ -842,6 +859,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setPrepBlock({ phase: "idle" });
     setFollowUp({ phase: "idle" });
     setContextBrief({ phase: "idle" });
+    setScheduleState({ phase: "idle" });
     try {
       const { draftReply } = await import("@/lib/voice-drafts.functions");
       const d = await draftReply({
@@ -1007,10 +1025,12 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setPrepBlock({ phase: "idle" });
     setFollowUp({ phase: "idle" });
     setContextBrief({ phase: "idle" });
+    setScheduleState({ phase: "idle" });
     // Drop the in-flight guard too — without this, dismissing while a context
     // request is mid-air would leave the ref true and block the next click
     // even after a fresh draft is opened.
     contextInFlight.current = false;
+    scheduleInFlight.current = false;
     setAvailSuggest({ status: "idle" });
     setAvailSlots([]);
     setPhase("idle");
@@ -1062,6 +1082,58 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       });
     } finally {
       contextInFlight.current = false;
+    }
+  }
+
+  /**
+   * Enqueue a research_thread_context task for overnight execution instead of
+   * running it now. Demonstrates the same agent-tool surface used by the
+   * Context chip, but routed through the persistent research queue so the
+   * brief is ready in the morning without burning the user's wait time now.
+   *
+   * "Tonight" = next 03:00 in the browser's local timezone — far enough into
+   * the night that the cron worker (when wired) won't compete with daytime
+   * traffic, and far enough from "now" that batching multiple drafts during
+   * a triage session coalesces nicely.
+   */
+  async function scheduleResearchOvernight() {
+    if (!draft?.id) return;
+    if (scheduleInFlight.current) return;
+    if (scheduleState.phase === "enqueuing" || scheduleState.phase === "scheduled" || scheduleState.phase === "duplicate") return;
+    // Snapshot the draft id so a mid-flight dismiss/switch can't write
+    // "scheduled/duplicate/error" onto the wrong panel — same pattern the
+    // researchContext flow uses to guard its async setState.
+    const draftIdAtCall = draft.id;
+    scheduleInFlight.current = true;
+    setScheduleState({ phase: "enqueuing" });
+    const tonight = new Date();
+    tonight.setHours(3, 0, 0, 0);
+    if (tonight.getTime() <= Date.now()) tonight.setDate(tonight.getDate() + 1);
+    const whenHuman = tonight.toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+    try {
+      const { enqueueResearchTaskFn } = await import("@/lib/voice-drafts.functions");
+      const r = await enqueueResearchTaskFn({
+        data: {
+          toolId: "research_thread_context",
+          input: { draftId: draftIdAtCall },
+          source: "manual",
+          sourceContext: `Draft reply triage — ${item.subject || item.from}`,
+          priority: 80,
+          scheduledFor: tonight.toISOString(),
+        },
+      });
+      if (draftIdAtCall !== draft?.id) return;
+      if (r.status === "enqueued") setScheduleState({ phase: "scheduled", whenHuman });
+      else if (r.status === "duplicate") setScheduleState({ phase: "duplicate" });
+      else setScheduleState({ phase: "error", message: r.message });
+    } catch (e) {
+      if (draftIdAtCall !== draft?.id) return;
+      setScheduleState({
+        phase: "error",
+        message: e instanceof Error ? e.message : "Failed to schedule research",
+      });
+    } finally {
+      scheduleInFlight.current = false;
     }
   }
 
@@ -1342,6 +1414,31 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
             )}
             {contextBrief.phase === "error" && (
               <span className="text-[10.5px] text-rose-300/80">Couldn't load: {contextBrief.message}</span>
+            )}
+            {/* Defer-to-overnight twin chip. Cheap to use repeatedly because
+                the queue dedupes — clicking after a duplicate is a no-op. */}
+            {scheduleState.phase === "idle" && (
+              <button onClick={scheduleResearchOvernight}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground"
+                title="Queue this research for the overnight batch instead of running it now">
+                <Bell size={11}/> Research overnight
+              </button>
+            )}
+            {scheduleState.phase === "enqueuing" && (
+              <span className="text-[10.5px] font-mono text-muted-foreground/70">Scheduling…</span>
+            )}
+            {scheduleState.phase === "scheduled" && (
+              <span className="text-[10.5px] text-emerald-300/80 inline-flex items-center gap-1.5">
+                <Check size={11}/> Queued for {scheduleState.whenHuman}
+              </span>
+            )}
+            {scheduleState.phase === "duplicate" && (
+              <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1.5">
+                <Check size={11}/> Already in tonight's queue
+              </span>
+            )}
+            {scheduleState.phase === "error" && (
+              <span className="text-[10.5px] text-rose-300/80">Couldn't queue: {scheduleState.message}</span>
             )}
           </div>
           {contextBrief.phase === "ok" && (

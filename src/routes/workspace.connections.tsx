@@ -18,10 +18,15 @@ import { testProposeSlots } from "@/lib/calendar.functions";
 type ConnectStatus = "ok" | "error" | undefined;
 
 export const Route = createFileRoute("/workspace/connections")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    connect: s.connect as ConnectStatus,
-    msg: s.msg as string | undefined,
-  }),
+  validateSearch: (s: Record<string, unknown>) => {
+    // Both fields are genuinely optional — emitting them as keyed-undefined
+    // forces every <Link to="/workspace/connections"> to pass `search={...}`.
+    // Omit the keys entirely when absent so callers can link with no search.
+    const out: { connect?: ConnectStatus; msg?: string } = {};
+    if (s.connect) out.connect = s.connect as ConnectStatus;
+    if (typeof s.msg === "string") out.msg = s.msg;
+    return out;
+  },
   head: () => ({
     meta: [{ title: "Connections — NeuralConnexions" }],
   }),

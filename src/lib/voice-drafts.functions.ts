@@ -704,6 +704,73 @@ export const listAgentTools = createServerFn({ method: "GET" })
     })),
   );
 
+// ---------------------------------------------------------------------------
+// Overnight research queue server fns. Thin wrappers around research-queue.ts;
+// every handler is auth-gated so a user can only touch their own queue.
+// ---------------------------------------------------------------------------
+
+export const enqueueResearchTaskFn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator(
+    (d: {
+      toolId: string;
+      input: Record<string, unknown>;
+      source?: "auto" | "manual" | "system";
+      sourceContext?: string;
+      priority?: number;
+      scheduledFor?: string;
+    }) => d,
+  )
+  .handler(async ({ data, context }) => {
+    const { enqueueResearchTask } = await import("@/server/research-queue");
+    return enqueueResearchTask(context.userId, data);
+  });
+
+export const listResearchTasksFn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator(
+    (d?: {
+      status?: ("pending" | "running" | "done" | "error" | "cancelled")[];
+      limit?: number;
+      unreadOnly?: boolean;
+    }) => d ?? {},
+  )
+  .handler(async ({ data, context }) => {
+    const { listResearchTasks } = await import("@/server/research-queue");
+    return listResearchTasks(context.userId, data);
+  });
+
+export const runResearchBatchFn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d?: { limit?: number }) => d ?? {})
+  .handler(async ({ data, context }) => {
+    const { runResearchBatch } = await import("@/server/research-queue");
+    return runResearchBatch(context.userId, data);
+  });
+
+export const markResearchTasksReadFn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { taskIds: string[] }) => d)
+  .handler(async ({ data, context }) => {
+    const { markResearchTasksRead } = await import("@/server/research-queue");
+    return markResearchTasksRead(context.userId, data.taskIds);
+  });
+
+export const cancelResearchTaskFn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { taskId: string }) => d)
+  .handler(async ({ data, context }) => {
+    const { cancelResearchTask } = await import("@/server/research-queue");
+    return cancelResearchTask(context.userId, data.taskId);
+  });
+
+export const getResearchQueueCountsFn = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { getResearchQueueCounts } = await import("@/server/research-queue");
+    return getResearchQueueCounts(context.userId);
+  });
+
 /** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */
 function editDistance(a: string, b: string): number {
   if (a === b) return 0;

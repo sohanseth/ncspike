@@ -50,6 +50,19 @@ export type AgentTool<I, O> = {
   validateInput: (raw: unknown) => I;
   /** Pure executor — auth happens in the dispatcher, not here. */
   execute: (userId: string, input: I) => Promise<O>;
+  /**
+   * True iff this tool is safe to run via the overnight research queue.
+   *
+   * The queue uses a wall-clock timeout to fail tasks that hang, but it
+   * cannot actually cancel an in-flight tool call — JS promises don't carry
+   * a cancellation signal here. So if a tool causes external side effects
+   * (creating calendar events, sending email, mutating connected services),
+   * a "timed out then succeeded later" race could double-apply the side
+   * effect on retry. We restrict the queue to read-only/synthesis tools
+   * (e.g. research_thread_context) until tools either become idempotent or
+   * we add a real cancellation/compensation mechanism.
+   */
+  overnightSafe?: boolean;
 };
 
 // ---------------------------------------------------------------------------
@@ -430,6 +443,7 @@ export async function executeResearchThreadContext(
 export const researchThreadContextTool: AgentTool<ResearchThreadContextInput, ResearchThreadContextOutput> = {
   id: "research_thread_context",
   name: "Research thread context",
+  overnightSafe: true,
   description:
     "Synthesize a 2-3 sentence strategic brief about the sender of a thread, drawing on prior interactions in local memory. Use before replying to a non-trivial email or when the user asks 'what do I know about X?'.",
   inputShape: '{ "draftId"?: "string", "sender"?: "Name <email>", "limit"?: "1-25, default 10" }',
