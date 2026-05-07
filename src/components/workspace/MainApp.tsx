@@ -422,6 +422,14 @@ function TopBar({
         {/* Avatar */}
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
           style={{background:"linear-gradient(135deg,#6d28d9,#4c1d95)",color:"#ede9fe"}}>S</div>
+
+        {/* Sign out */}
+        <button onClick={handleSignOut} title="Sign out" aria-label="Sign out"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          <LogOut size={13}/>
+          <span className="hidden sm:block">Sign out</span>
+        </button>
       </div>
     </header>
   );
