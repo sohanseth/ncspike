@@ -91,16 +91,29 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
       });
     }
 
+    // Categorize each email with Lovable AI (urgent / today / proactive / ignore)
+    const categories = await categorizeEmails(summaries);
+
     // Persist a memory node per email so NC can "learn" from your inbox.
     if (summaries.length) {
-      const rows = summaries.map((s) => ({
-        user_id: context.userId,
-        node_type: "thread" as const,
-        label: s.subject || "(no subject)",
-        source: `gmail:${label ?? "me"}`,
-        importance: 1,
-        data: { from: s.from, date: s.date, snippet: s.snippet, gmail_id: s.id },
-      }));
+      const rows = summaries.map((s, i) => {
+        const cat = categories[i] ?? { category: "ignore", reason: "" };
+        return {
+          user_id: context.userId,
+          node_type: "thread" as const,
+          label: s.subject || "(no subject)",
+          source: `gmail:${label ?? "me"}`,
+          importance: cat.category === "urgent" ? 3 : cat.category === "today" ? 2 : cat.category === "proactive" ? 1 : 0,
+          data: {
+            from: s.from,
+            date: s.date,
+            snippet: s.snippet,
+            gmail_id: s.id,
+            category: cat.category,
+            reason: cat.reason,
+          },
+        };
+      });
       const { error: insErr } = await supabaseAdmin.from("memory_nodes").insert(rows);
       if (insErr) console.error("memory_nodes insert error:", insErr);
     }
