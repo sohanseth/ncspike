@@ -180,7 +180,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     // Persist a memory node per email so NC can "learn" from your inbox.
     if (summaries.length) {
       const rows = summaries.map((s, i) => {
-        const cat = categories[i] ?? { category: "ignore", reason: "" };
+        const cat = categories[i] ?? { category: "ignore" as const, domain: "personal" as const, reason: "" };
         return {
           user_id: context.userId,
           node_type: "thread" as const,
@@ -193,6 +193,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
             snippet: s.snippet,
             gmail_id: s.id,
             category: cat.category,
+            domain: cat.domain,
             reason: cat.reason,
           },
         };
