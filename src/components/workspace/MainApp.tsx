@@ -9,7 +9,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package, Plug, LogOut, Mail, Inbox,
+  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox,
 } from "lucide-react";
 
 
