@@ -211,9 +211,14 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
         .select("data")
         .eq("user_id", context.userId)
         .like("source", "gmail:%");
-      if (exErr) console.error("dedup lookup failed (will insert all):", exErr);
+      if (exErr) {
+        // Fail closed: skip inserts entirely if we can't verify what's already
+        // there, otherwise we'd resurface emails the user already marked done.
+        console.error("dedup lookup failed; skipping insert this pull:", exErr);
+        return { count: summaries.length, inserted: 0, account: label, summaries };
+      }
       const seen = new Set<string>(
-        ((existing ?? []) as Array<{ data: { gmail_id?: string } | null }>)
+        (existing as Array<{ data: { gmail_id?: string } | null }>)
           .map((r) => r.data?.gmail_id)
           .filter((g): g is string => typeof g === "string"),
       );
@@ -247,9 +252,20 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
           };
         });
       if (rows.length) {
-        const { error: insErr } = await supabaseAdmin.from("memory_nodes").insert(rows);
-        if (insErr) console.error("memory_nodes insert error:", insErr);
-        else inserted = rows.length;
+        // App-layer dedup handles the common case. The partial unique index on
+        // (user_id, data->>'gmail_id') is the race backstop — PostgREST can't
+        // ON CONFLICT against an expression index, so we just insert and
+        // swallow 23505 (unique_violation), which means a concurrent pull
+        // already wrote the row.
+        const { error: insErr, data: insData } = await supabaseAdmin
+          .from("memory_nodes")
+          .insert(rows)
+          .select("id");
+        if (insErr && insErr.code !== "23505") {
+          console.error("memory_nodes insert error:", insErr);
+        } else {
+          inserted = insData?.length ?? 0;
+        }
       }
     }
 
@@ -302,26 +318,14 @@ export const markInboxItemDone = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { id: string; action?: "done" | "dismissed" }) => d)
   .handler(async ({ data, context }) => {
-    // Read-modify-write the JSONB so we don't clobber existing fields.
-    const { data: row, error: selErr } = await supabaseAdmin
-      .from("memory_nodes")
-      .select("data")
-      .eq("id", data.id)
-      .eq("user_id", context.userId)
-      .single();
-    if (selErr) throw selErr;
-    const current = (row?.data ?? {}) as Record<string, unknown>;
-    const next = {
-      ...current,
-      resolved_at: new Date().toISOString(),
-      resolved_action: data.action ?? "done",
-    };
-    const { error: updErr } = await supabaseAdmin
-      .from("memory_nodes")
-      .update({ data: next })
-      .eq("id", data.id)
-      .eq("user_id", context.userId);
-    if (updErr) throw updErr;
+    // Atomic JSONB patch via SQL function — avoids the read-modify-write race
+    // where two concurrent updates clobber each other.
+    const { error } = await supabaseAdmin.rpc("mark_memory_node_resolved", {
+      p_node_id: data.id,
+      p_user_id: context.userId,
+      p_action: data.action ?? "done",
+    });
+    if (error) throw error;
     return { ok: true };
   });
 
