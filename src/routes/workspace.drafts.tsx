@@ -4,6 +4,7 @@ import {
   listDrafts,
   dismissDraft,
   markDraftSent,
+  sendDraftViaGmail,
   type DraftPayload,
 } from "@/lib/voice-drafts.functions";
 import { Inbox, Send, Trash2, Check } from "lucide-react";
@@ -66,6 +67,19 @@ function DraftsPage() {
       await reload(tab);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Mark sent failed");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function onSendViaGmail(d: DraftPayload) {
+    setBusy(d.id);
+    setError(null);
+    try {
+      await sendDraftViaGmail({ data: { draftId: d.id, finalBody: d.body } });
+      await reload(tab);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Send via Gmail failed");
     } finally {
       setBusy(null);
     }
@@ -156,8 +170,17 @@ function DraftsPage() {
               {tab === "pending" && (
                 <div className="flex items-center gap-2 mt-3 pt-3 border-t border-white/[0.04]">
                   <button
+                    onClick={() => onSendViaGmail(d)}
+                    disabled={busy === d.id}
+                    title="Send as a real Gmail reply, threaded under the original email"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/15 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50"
+                  >
+                    <Send size={12} /> Send via Gmail
+                  </button>
+                  <button
                     onClick={() => onMarkSent(d)}
                     disabled={busy === d.id}
+                    title="I'll send it manually — just record it as sent here"
                     className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium bg-emerald-400/10 text-emerald-300 ring-1 ring-emerald-400/20 hover:bg-emerald-400/15 disabled:opacity-50"
                   >
                     <Check size={12} /> Mark sent
@@ -179,5 +202,3 @@ function DraftsPage() {
   );
 }
 
-// Avoid unused-import warning if tree-shaking gets quirky
-void Send;

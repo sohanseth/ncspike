@@ -829,6 +829,183 @@ export const markDraftSent = createServerFn({ method: "POST" })
     return rowToPayload(updated);
   });
 
+/**
+ * Send a pending draft via the Gmail API as a real reply, threaded under the
+ * source email. Builds a minimal RFC 2822 message, base64url-encodes it, and
+ * POSTs to gmail.users.messages.send with the original threadId so it lands
+ * in the same conversation. On success, marks the draft as sent (reusing the
+ * same status/edit-distance bookkeeping as markDraftSent).
+ *
+ * Requires the source email's gmail_id (stored on the memory_node) to fetch
+ * Message-ID, References, From, Subject for proper threading. Without it we
+ * can't produce a real reply, so we fail fast — caller can fall back to
+ * "Mark sent" (the manual copy-paste path).
+ */
+export const sendDraftViaGmail = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { draftId: string; finalBody: string }) => d)
+  .handler(async ({ data, context }): Promise<DraftPayload> => {
+    const { data: draft, error: dErr } = await supabaseAdmin
+      .from("drafts")
+      .select("id, body_encrypted, status, chars_in_draft, source_node_id")
+      .eq("user_id", context.userId)
+      .eq("id", data.draftId)
+      .maybeSingle();
+    if (dErr) throw dErr;
+    if (!draft) throw new Error("Draft not found");
+    if (draft.status !== "pending") throw new Error("Draft already resolved");
+    if (!draft.source_node_id) throw new Error("Draft has no source email; use Mark sent instead");
+
+    const { data: node, error: nErr } = await supabaseAdmin
+      .from("memory_nodes")
+      .select("label, data")
+      .eq("user_id", context.userId)
+      .eq("id", draft.source_node_id)
+      .maybeSingle();
+    if (nErr) throw nErr;
+    if (!node) throw new Error("Source email not found");
+    const meta = (node.data ?? {}) as { from?: string; gmail_id?: string };
+    if (!meta.gmail_id) throw new Error("Source email missing gmail_id; use Mark sent instead");
+
+    // Atomic claim: pending → sending. If another caller (double-click, retry)
+    // beat us here, the predicate misses and `claimed` is null → we fail fast
+    // instead of double-sending a real email. We revert to 'pending' on any
+    // downstream failure so the user can try again.
+    const { data: claimed, error: claimErr } = await supabaseAdmin
+      .from("drafts")
+      .update({ status: "sending" })
+      .eq("id", data.draftId)
+      .eq("user_id", context.userId)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!claimed) throw new Error("Draft is already being sent or resolved");
+
+    const revert = async () => {
+      try {
+        await supabaseAdmin
+          .from("drafts")
+          .update({ status: "pending" })
+          .eq("id", data.draftId)
+          .eq("user_id", context.userId)
+          .eq("status", "sending");
+      } catch (e) {
+        console.error("[sendDraftViaGmail] revert to pending failed:", e);
+      }
+    };
+
+    let token: string;
+    let fromAddress: string | null;
+    try {
+      const auth = await getValidGmailAccessToken(context.userId);
+      token = auth.token;
+      fromAddress = auth.label;
+    } catch (e) {
+      await revert();
+      throw e;
+    }
+    if (!fromAddress) {
+      await revert();
+      throw new Error("Gmail account label missing; reconnect Gmail");
+    }
+
+    // Pull headers + threadId from the original message so the reply threads.
+    const origRes = await fetch(
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages/${meta.gmail_id}?format=metadata&metadataHeaders=Message-Id&metadataHeaders=References&metadataHeaders=Subject&metadataHeaders=From&metadataHeaders=Reply-To`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!origRes.ok) {
+      const txt = await origRes.text();
+      await revert();
+      throw new Error(`Failed to fetch original message: ${origRes.status} ${txt}`);
+    }
+    const orig = (await origRes.json()) as {
+      threadId?: string;
+      payload?: { headers?: Array<{ name: string; value: string }> };
+    };
+    const headers = orig.payload?.headers ?? [];
+    const h = (name: string) =>
+      headers.find((x) => x.name.toLowerCase() === name.toLowerCase())?.value ?? "";
+
+    const replyTo = h("Reply-To") || h("From") || meta.from || "";
+    if (!replyTo) {
+      await revert();
+      throw new Error("Could not determine recipient address");
+    }
+    const origSubject = h("Subject") || node.label || "(no subject)";
+    const subject = /^re:\s/i.test(origSubject) ? origSubject : `Re: ${origSubject}`;
+    const messageId = h("Message-Id");
+    const origReferences = h("References");
+    const references = [origReferences, messageId].filter(Boolean).join(" ").trim();
+
+    const headerLines = [
+      `From: ${fromAddress}`,
+      `To: ${replyTo}`,
+      `Subject: ${subject}`,
+      "MIME-Version: 1.0",
+      'Content-Type: text/plain; charset="UTF-8"',
+      "Content-Transfer-Encoding: 7bit",
+    ];
+    if (messageId) headerLines.push(`In-Reply-To: ${messageId}`);
+    if (references) headerLines.push(`References: ${references}`);
+
+    const mime = `${headerLines.join("\r\n")}\r\n\r\n${data.finalBody}`;
+    const raw = Buffer.from(mime, "utf8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/, "");
+
+    const sendRes = await fetch(
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ raw, ...(orig.threadId ? { threadId: orig.threadId } : {}) }),
+      },
+    );
+    if (!sendRes.ok) {
+      const txt = await sendRes.text();
+      await revert();
+      throw new Error(`Gmail send failed: ${sendRes.status} ${txt}`);
+    }
+
+    // From this point the email has been sent. We must finalise the row
+    // (sending → sent|edited_then_sent) and never revert; if the DB write
+    // fails we log loudly because the draft will look "stuck in sending"
+    // until the user manually reconciles.
+    const original = decryptToken(draft.body_encrypted);
+    const editChars = editDistance(original, data.finalBody);
+    const newStatus = editChars === 0 ? "sent" : "edited_then_sent";
+
+    const { data: updated, error: updErr } = await supabaseAdmin
+      .from("drafts")
+      .update({
+        status: newStatus,
+        chars_edited: editChars,
+        body_encrypted: encryptToken(data.finalBody),
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", data.draftId)
+      .eq("user_id", context.userId)
+      .eq("status", "sending")
+      .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
+      .single();
+    if (updErr) {
+      console.error(
+        "[sendDraftViaGmail] CRITICAL: Gmail send succeeded but DB finalise failed for draft",
+        data.draftId,
+        updErr,
+      );
+      throw new Error(`Email sent but draft status update failed: ${updErr.message}`);
+    }
+    return rowToPayload(updated);
+  });
+
 export const dismissDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { draftId: string }) => d)

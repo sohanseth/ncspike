@@ -239,7 +239,8 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
 
 /**
  * Run pending tasks for one user. Designed to be called by:
- *   - a Cloudflare Worker cron at ~03:00 (TODO: wire in workers/cron.ts)
+ *   - the Cloudflare Worker cron at 03:07 UTC (see src/worker.ts +
+ *     wrangler.jsonc triggers.crons; entrypoint is research-cron.ts)
  *   - the user's "Run pending now" button (manual fallback / testing)
  *   - the morning catchup on app open (opportunistic — best-effort)
  *

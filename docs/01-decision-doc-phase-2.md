@@ -83,6 +83,22 @@ Six decisions that resolve the open questions from the Vision review and unblock
 
 ---
 
+## Implementation deltas (recorded 2026-05-07)
+
+The following deviations from the original decisions were taken during build. Each is recorded so we can revisit consciously rather than discover by archaeology.
+
+### A1. Slice A classifier — server-side substitution
+
+The on-device ONNX classifier from D1 was **not** built in V1. The "rules first → low-confidence fallback" flow is implemented and shipped (categories: `urgent` / `today` / `proactive` / `ignore` / `needs_review`), but the fallback is a server-side LLM call (`google/gemini-3-flash-preview` via the Lovable AI Gateway) instead of a browser-side ONNX model. The fallback is gated behind `ENABLE_LLM_FALLBACK=true`; with the flag off, ambiguous emails stay `needs_review` and never leave the device.
+
+**Why we deviated:** the rules engine handled enough of the corpus on its own that the on-device-classifier spike kept losing priority to Slice B and Slice C. Shipping a server-side opt-in fallback unblocked the Inbox UX without committing to a 25–80MB ONNX download we hadn't validated yet.
+
+**What this forecloses (for now):** the "your inbox classification never leaves your device" claim. We can still make it true later by training a model against the `memory_nodes` rows we are already persisting (each row records `classified_by: 'rules' | 'llm'`, which is the labelled corpus we'll need).
+
+**Revisit trigger:** when we have ≥10k labelled rows from real users, or when WebGPU support stabilises enough to make the larger-model variant viable.
+
+---
+
 ## Questions resolved
 
 - **Tiny classifier model:** decision deferred to a 1-day spike at the start of Slice A (week 5). Spike picks between a DistilBERT-class model (~80MB, more accurate) and a MiniLM-class model (~25MB, faster on low-end phones). Default bias: smaller wins ties.
