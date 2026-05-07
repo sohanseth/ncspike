@@ -31,6 +31,7 @@ import {
   type ProposedSlot,
 } from "@/server/calendar.server";
 import { parsePrepTimeToHours } from "@/server/email-intent.server";
+import { generate, InferenceError } from "@/server/inference";
 
 // ---------------------------------------------------------------------------
 // Generic tool contract
@@ -282,6 +283,184 @@ export const suggestAvailabilityTool: AgentTool<SuggestAvailabilityInput, Sugges
 };
 
 // ---------------------------------------------------------------------------
+// Tool: research_thread_context
+// ---------------------------------------------------------------------------
+
+/**
+ * Cross-thread context research. Given a draft (or a sender directly), pulls
+ * prior interactions with the same person from local memory and asks the LLM
+ * to synthesize a short strategic brief — relationship history, recurring
+ * topics, likely subtext. Designed to be the foundation for a richer
+ * deep-research tool later (which would also pull web sources / docs).
+ *
+ * Local-first: uses only data already in `memory_nodes`; no external calls
+ * beyond the LLM provider. Bounded LLM cost (≤200 tokens out, ≤10 prior
+ * messages in).
+ *
+ * Reusable: a future chat agent can call with `{sender}` directly to answer
+ * "what do I know about Maya?" without going through a draft.
+ */
+export type ResearchThreadContextInput = {
+  /** Draft to derive the sender from. Mutually exclusive with `sender`. */
+  draftId?: string;
+  /** Explicit sender (raw "Name <email>" or bare email). Skips the draft lookup. */
+  sender?: string;
+  /** Max prior messages to feed the LLM. 1-25, default 10. */
+  limit?: number;
+};
+
+export type ResearchThreadContextOutput =
+  | {
+      status: "ok";
+      sender: string;
+      brief: string;
+      sourceCount: number;
+      /** ISO 8601 of synthesis time, so the UI can show "Generated 2m ago". */
+      generatedAt: string;
+    }
+  | { status: "no_history"; sender: string }
+  | { status: "error"; message: string };
+
+/** Pull bare email from "Name <email@host>" or "email@host". Empty string on garbage. */
+function extractBareEmail(raw: string): string {
+  const m = raw.match(/<([^>]+)>/);
+  const addr = (m ? m[1] : raw).trim().toLowerCase();
+  // Guard: must look like an email — protects the ILIKE pattern from
+  // matching every row when the input is empty or malformed.
+  return /.+@.+\..+/.test(addr) ? addr : "";
+}
+
+export async function executeResearchThreadContext(
+  userId: string,
+  input: ResearchThreadContextInput,
+): Promise<ResearchThreadContextOutput> {
+  const limit = Math.min(25, Math.max(1, input.limit ?? 10));
+
+  // 1) Resolve sender + (optionally) the source-thread id to exclude from history.
+  let senderRaw = input.sender ?? "";
+  let excludeNodeId: string | null = null;
+  if (!senderRaw && input.draftId) {
+    const { data: draftRow, error: dErr } = await supabaseAdmin
+      .from("drafts")
+      .select("source_node_id")
+      .eq("user_id", userId)
+      .eq("id", input.draftId)
+      .maybeSingle();
+    if (dErr) return { status: "error", message: dErr.message };
+    if (!draftRow?.source_node_id) {
+      return { status: "error", message: "Draft has no source thread to research." };
+    }
+    excludeNodeId = draftRow.source_node_id;
+    const { data: node, error: nErr } = await supabaseAdmin
+      .from("memory_nodes")
+      .select("data")
+      .eq("user_id", userId)
+      .eq("id", excludeNodeId)
+      .maybeSingle();
+    if (nErr) return { status: "error", message: nErr.message };
+    const meta = (node?.data ?? {}) as { from?: string };
+    senderRaw = meta.from ?? "";
+  }
+
+  const senderEmail = extractBareEmail(senderRaw);
+  if (!senderEmail) {
+    return { status: "error", message: "Could not resolve a valid sender email." };
+  }
+
+  // 2) Pull prior threads from this sender. Match against the bare email so
+  //    "Maya <maya@x>" and "maya@x" both resolve. Newest first; bounded.
+  //    Escape ILIKE wildcards (`%` `_` `\`) so a crafted sender can't broaden
+  //    the match and pull in unrelated threads from the same account.
+  const escapedEmail = senderEmail.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+  let query = supabaseAdmin
+    .from("memory_nodes")
+    .select("id, label, created_at, data")
+    .eq("user_id", userId)
+    .eq("node_type", "thread")
+    .ilike("data->>from", `%${escapedEmail}%`)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (excludeNodeId) query = query.neq("id", excludeNodeId);
+
+  const { data: rows, error: qErr } = await query;
+  if (qErr) return { status: "error", message: qErr.message };
+  if (!rows || rows.length === 0) {
+    return { status: "no_history", sender: senderEmail };
+  }
+
+  // 3) Build a compact bulleted history for the LLM. Truncate snippets so a
+  //    handful of newsletter blasts can't blow the context window.
+  const lines = rows.map((r) => {
+    const meta = (r.data ?? {}) as { snippet?: string; date?: string; category?: string; domain?: string };
+    const date = (meta.date || r.created_at || "").slice(0, 10);
+    const subj = (typeof r.label === "string" ? r.label : "(no subject)").slice(0, 120);
+    const snippet = (meta.snippet ?? "").replace(/\s+/g, " ").trim().slice(0, 160);
+    const tag = [meta.category, meta.domain].filter(Boolean).join("/");
+    return `- [${date}] ${subj}${tag ? ` (${tag})` : ""}${snippet ? ` — ${snippet}` : ""}`;
+  });
+
+  const system =
+    "You are a concise relationship analyst. Given a list of past email threads from one sender, produce a 2-3 sentence context brief that helps the user reply intelligently. Cover: who this person seems to be in the user's life, recurring topics, and any pattern worth flagging (cadence, tone shift, open loops). No bullet lists. No greetings. No advice — just the brief. Max 90 words.";
+  const user = `Sender: ${senderEmail}\n\nPast threads (newest first):\n${lines.join("\n")}\n\nBrief:`;
+
+  try {
+    const result = await generate({
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      maxTokens: 200,
+      temperature: 0.3,
+    });
+    const brief = result.text.trim().slice(0, 800);
+    if (!brief) return { status: "error", message: "Empty brief from inference." };
+    return {
+      status: "ok",
+      sender: senderEmail,
+      brief,
+      sourceCount: rows.length,
+      generatedAt: new Date().toISOString(),
+    };
+  } catch (e) {
+    const msg = e instanceof InferenceError ? e.message : e instanceof Error ? e.message : String(e);
+    return { status: "error", message: msg.slice(0, 200) };
+  }
+}
+
+export const researchThreadContextTool: AgentTool<ResearchThreadContextInput, ResearchThreadContextOutput> = {
+  id: "research_thread_context",
+  name: "Research thread context",
+  description:
+    "Synthesize a 2-3 sentence strategic brief about the sender of a thread, drawing on prior interactions in local memory. Use before replying to a non-trivial email or when the user asks 'what do I know about X?'.",
+  inputShape: '{ "draftId"?: "string", "sender"?: "Name <email>", "limit"?: "1-25, default 10" }',
+  validateInput: (raw) => {
+    if (!raw || typeof raw !== "object") throw new Error("research_thread_context: input must be an object");
+    const r = raw as Record<string, unknown>;
+    const draftId = typeof r.draftId === "string" && r.draftId ? r.draftId : undefined;
+    const sender = typeof r.sender === "string" && r.sender ? r.sender : undefined;
+    if (!draftId && !sender) {
+      throw new Error("research_thread_context: provide draftId or sender");
+    }
+    // Mutually-exclusive contract — without this, sender silently wins and
+    // bypasses the draft-derived sender resolution, which is surprising for
+    // LLM callers that pass both "to be safe".
+    if (draftId && sender) {
+      throw new Error("research_thread_context: pass either draftId or sender, not both");
+    }
+    let limit: number | undefined;
+    if (r.limit !== undefined) {
+      const n = typeof r.limit === "number" ? Math.round(r.limit) : NaN;
+      if (!Number.isFinite(n) || n < 1 || n > 25) {
+        throw new Error("research_thread_context: limit must be an integer between 1 and 25");
+      }
+      limit = n;
+    }
+    return { draftId, sender, limit };
+  },
+  execute: executeResearchThreadContext,
+};
+
+// ---------------------------------------------------------------------------
 // Registry + helpers
 // ---------------------------------------------------------------------------
 
@@ -310,6 +489,7 @@ export const AGENT_TOOLS: Record<string, AgentTool<any, any>> = {
   [blockPrepTimeTool.id]: blockPrepTimeTool,
   [setFollowUpReminderTool.id]: setFollowUpReminderTool,
   [suggestAvailabilityTool.id]: suggestAvailabilityTool,
+  [researchThreadContextTool.id]: researchThreadContextTool,
 };
 
 export type AgentToolId = keyof typeof AGENT_TOOLS;

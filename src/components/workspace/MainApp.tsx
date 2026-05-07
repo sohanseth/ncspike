@@ -738,6 +738,15 @@ type PrepBlockState =
 // Same shape as PrepBlockState — both wrap createCalendarEvent results.
 type FollowUpState = PrepBlockState;
 
+// Cross-thread context brief, fetched on demand via the
+// `research_thread_context` agent tool.
+type ContextState =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "ok"; brief: string; sourceCount: number }
+  | { phase: "no_history" }
+  | { phase: "error"; message: string };
+
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
 function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
@@ -768,6 +777,10 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   // isn't enough — two rapid clicks can both observe phase: "idle" before the
   // first re-render commits, leading to two calendar events.
   const followUpInFlight = useRef(false);
+  const [contextBrief, setContextBrief] = useState<ContextState>({ phase: "idle" });
+  // Same double-click guard pattern as follow-up — synthesis is idempotent so
+  // a second call wouldn't cause damage, but it would burn tokens for nothing.
+  const contextInFlight = useRef(false);
   // Per-question UX state for the availability suggestion button.
   // "loading" → fetching from calendar; "empty" → no slots returned (so we hide
   // the button next time); "error" → soft failure note; "idle" → button visible.
@@ -828,6 +841,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setErr(null);
     setPrepBlock({ phase: "idle" });
     setFollowUp({ phase: "idle" });
+    setContextBrief({ phase: "idle" });
     try {
       const { draftReply } = await import("@/lib/voice-drafts.functions");
       const d = await draftReply({
@@ -992,9 +1006,63 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setPendingFollowUp(undefined);
     setPrepBlock({ phase: "idle" });
     setFollowUp({ phase: "idle" });
+    setContextBrief({ phase: "idle" });
+    // Drop the in-flight guard too — without this, dismissing while a context
+    // request is mid-air would leave the ref true and block the next click
+    // even after a fresh draft is opened.
+    contextInFlight.current = false;
     setAvailSuggest({ status: "idle" });
     setAvailSlots([]);
     setPhase("idle");
+  }
+
+  /**
+   * Fetch a 2-3 sentence strategic brief about the sender from local memory.
+   * Goes through the generic `runAgentTool` dispatcher (rather than calling a
+   * dedicated server fn) to demonstrate that any feature can use the same
+   * surface — chat agent, command palette, etc. would call it the same way.
+   */
+  async function researchContext() {
+    if (!draft?.id) return;
+    if (contextInFlight.current) return;
+    if (contextBrief.phase === "loading" || contextBrief.phase === "ok") return;
+    // Capture the draft id at call time. If the panel is dismissed or a new
+    // draft is generated before the LLM responds, draft.id will differ on
+    // resolution and we drop the stale result instead of writing it into the
+    // wrong draft's UI state.
+    const draftIdAtCall = draft.id;
+    contextInFlight.current = true;
+    setContextBrief({ phase: "loading" });
+    try {
+      const { runAgentTool } = await import("@/lib/voice-drafts.functions");
+      const r = await runAgentTool({
+        data: { toolId: "research_thread_context", input: { draftId: draftIdAtCall } },
+      });
+      if (draft?.id !== draftIdAtCall) return; // superseded
+      if (!r.ok) {
+        setContextBrief({ phase: "error", message: r.error });
+        return;
+      }
+      const result = r.result as
+        | { status: "ok"; brief: string; sourceCount: number }
+        | { status: "no_history" }
+        | { status: "error"; message: string };
+      if (result.status === "ok") {
+        setContextBrief({ phase: "ok", brief: result.brief, sourceCount: result.sourceCount });
+      } else if (result.status === "no_history") {
+        setContextBrief({ phase: "no_history" });
+      } else {
+        setContextBrief({ phase: "error", message: result.message });
+      }
+    } catch (e) {
+      if (draft?.id !== draftIdAtCall) return;
+      setContextBrief({
+        phase: "error",
+        message: e instanceof Error ? e.message : "Failed to research context",
+      });
+    } finally {
+      contextInFlight.current = false;
+    }
   }
 
   async function scheduleFollowUp() {
@@ -1246,6 +1314,43 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           <X size={11}/> Dismiss
         </button>
       </div>
+      {/* Cross-thread context brief — synthesizes prior interactions with this
+          sender into a 2-3 sentence read. Always offered (the sender is known
+          by definition once a draft exists), but loads lazily on click. */}
+      {draft && (
+        <div className="border-t border-white/[0.06] pt-2 mt-1 flex flex-col gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap">
+            {(contextBrief.phase === "idle" || contextBrief.phase === "error") && (
+              <button onClick={researchContext}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25"
+                title="Synthesize a brief about this sender from your prior threads">
+                <BookOpen size={11}/> Context on this sender
+              </button>
+            )}
+            {contextBrief.phase === "loading" && (
+              <span className="text-[10.5px] font-mono text-muted-foreground/70">Reading prior threads…</span>
+            )}
+            {contextBrief.phase === "no_history" && (
+              <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1.5">
+                <BookOpen size={11}/> No prior history with this sender.
+              </span>
+            )}
+            {contextBrief.phase === "ok" && (
+              <span className="text-[10.5px] text-muted-foreground/60 inline-flex items-center gap-1.5">
+                <BookOpen size={11}/> Context · {contextBrief.sourceCount} prior thread{contextBrief.sourceCount === 1 ? "" : "s"}
+              </span>
+            )}
+            {contextBrief.phase === "error" && (
+              <span className="text-[10.5px] text-rose-300/80">Couldn't load: {contextBrief.message}</span>
+            )}
+          </div>
+          {contextBrief.phase === "ok" && (
+            <p className="text-[11.5px] leading-relaxed text-foreground/80 italic px-1 border-l-2 border-primary/30 pl-2">
+              {contextBrief.brief}
+            </p>
+          )}
+        </div>
+      )}
       {/* Prep-block follow-up: only when we have both a meeting slot to anchor
           on AND the user told us how much prep time they want. */}
       {draft?.proposedSlots && draft.proposedSlots.length > 0 && answers.prep_time?.trim() && (
