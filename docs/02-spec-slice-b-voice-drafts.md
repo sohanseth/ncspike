@@ -38,7 +38,7 @@ This is the only number we optimize for in Slice B. Latency and template-coverag
 - Voice profile extraction → stored as a structured JSON artifact, not a fine-tuned model.
 - 5 fixed templates with slot-filling: Acknowledge, Decline politely, Schedule, Ask for more info, Confirm.
 - Template selection via a small classifier (intent of incoming email → template).
-- Generation via Lovable AI Gateway (`gemini-3-flash-preview`) with the voice profile + template + incoming email as the prompt context.
+- Generation via **Cloudflare Workers AI** (`@cf/meta/llama-3.1-8b-instruct`) with the voice profile + template + incoming email as the prompt context. Provider abstracted behind `src/server/inference/` so we can swap to OpenAI/Anthropic/OpenRouter via env var without code changes.
 - New **Drafts** sidebar surface listing pending/sent/dismissed drafts.
 - Edit + send opens Gmail web compose pre-filled (no Gmail-send API in V1 — keeps us out of the Gmail send-permission scope).
 
@@ -62,10 +62,10 @@ This is the only number we optimize for in Slice B. Latency and template-coverag
 | Voice profile JSON | `voice_profiles` table, encrypted at rest. | Stored in our DB. Per D5, we'll revisit local-only storage in Phase 3. |
 | Incoming email being replied to | Already in `memory_nodes` per Phase 1. | No new exposure. |
 | Generated draft | `drafts` table, encrypted at rest. | Stored server-side until sent or dismissed. |
-| Prompt sent to Lovable AI Gateway | Voice profile + template + incoming email subject/snippet. | **Yes — sent to Lovable AI Gateway.** This is the V1 trade-off. Disclosed in onboarding. |
+| Prompt sent to inference provider | Voice profile + template + incoming email subject/snippet. | **Yes — sent to Cloudflare Workers AI** (default provider). Same trust boundary as the rest of our infra. Disclosed in onboarding. |
 
 **Disclosure copy (must appear in the consent screen):**
-> To draft replies in your voice, NC sends the email you're replying to and a short summary of your writing style to our AI provider. Your full sent folder, contacts, and other emails are *not* sent. You can turn this off in Settings.
+> To draft replies in your voice, NC sends the email you're replying to and a short summary of your writing style to our AI provider (Cloudflare Workers AI). Your full sent folder, contacts, and other emails are *not* sent. You can turn this off in Settings.
 
 **Feature flag:** `ENABLE_VOICE_DRAFTS` — default off; enabled via the consent screen on first use.
 
@@ -115,17 +115,23 @@ All new endpoints are TanStack Start server functions in `src/server/voice-draft
 ```
 buildVoiceProfile()          // pulls last 200 sent messages, extracts profile, upserts row. Idempotent. Returns profile summary.
 getVoiceProfile()            // returns current profile or null.
-draftReply(memoryNodeId)     // returns { draftId, body, template }. Generates via gateway.
+draftReply(memoryNodeId)     // returns { draftId, body, template }. Generates via the inference abstraction.
 regenerateDraft(draftId)     // re-runs with the next-best template.
 markDraftSent(draftId, finalBody)   // diff vs. original → chars_edited; status → sent or edited_then_sent.
 dismissDraft(draftId)        // status → dismissed.
 listDrafts({status?, limit})  // for the Drafts sidebar surface.
 ```
 
-Server-only helpers (in `src/server/voice-profile.server.ts`):
-- `extractVoiceProfile(messages: SentMessage[]): VoiceProfile` — pure function, deterministic, no AI.
-- `selectTemplate(incomingEmail): TemplateId` — small classifier (rules first, gateway fallback).
-- `renderDraftPrompt(profile, template, incomingEmail): string`.
+Server-only helpers:
+- `extractVoiceProfile(messages: SentMessage[]): VoiceProfile` in `src/server/voice-profile.server.ts` — pure function, deterministic, no AI.
+- `selectTemplate(incomingEmail): TemplateId` in `src/server/voice-profile.server.ts` — small classifier (rules first, inference fallback).
+- `renderDraftPrompt(profile, template, incomingEmail): string` in `src/server/voice-profile.server.ts`.
+
+**Inference provider abstraction** (`src/server/inference/`):
+- `index.ts` — exports `generate({ prompt, maxTokens, temperature }): Promise<string>`. Reads `INFERENCE_PROVIDER` env var to pick implementation; defaults to `cloudflare`.
+- `cloudflare.ts` — calls Workers AI binding (`env.AI.run('@cf/meta/llama-3.1-8b-instruct', ...)`). Default.
+- `openai.ts`, `anthropic.ts`, `openrouter.ts` — thin adapters, only loaded when selected. Keep behind dynamic imports so unused providers add zero bundle weight.
+- All adapters share a common error type so the calling code is provider-agnostic.
 
 ---
 
@@ -153,9 +159,9 @@ Shown the first time the user clicks Draft reply. Single screen, three bullets (
 | Week | Deliverable | Done = |
 |---|---|---|
 | 1 | Sent-folder ingestion + `extractVoiceProfile` (deterministic, no AI). Tests against 5 sample mailboxes. | Profile JSON visible in Settings; rebuild works. |
-| 2 | `draftReply` endpoint + template prompts + gateway integration. Drafts table + RLS. | A draft renders in <3s for 10 test emails across the 5 templates. |
+| 2 | `draftReply` endpoint + template prompts + inference provider abstraction (Cloudflare Workers AI default). Drafts table + RLS. | A draft renders in <3s for 10 test emails across the 5 templates. |
 | 3 | Inbox-queue affordance + Drafts sidebar surface + consent screen + edit-distance tracking. | End-to-end: connect Gmail → first draft → send → metric logged. |
-| 4 | Beta gate, telemetry dashboard for EDTS, polish, error states (no profile yet, gateway down, Gmail token expired). | 50-user beta cohort enabled; EDTS visible in an internal dashboard. |
+| 4 | Beta gate, telemetry dashboard for EDTS, polish, error states (no profile yet, inference provider down, Gmail token expired). | 50-user beta cohort enabled; EDTS visible in an internal dashboard. |
 
 ---
 
@@ -165,7 +171,8 @@ Shown the first time the user clicks Draft reply. Single screen, three bullets (
 |---|---|---|
 | Voice profile sounds nothing like the user. | Med | Start with sign-off + sentence length + n-grams (deterministic, recognisable). Add formality score. Don't try to "be clever" in V1. |
 | Template selector picks the wrong template. | Med | Always offer "Regenerate" → cycles through other templates. Track regenerate-rate as a secondary metric. |
-| Gateway latency >3s under load. | Low | Pre-warm with a tiny "ping" prompt on Inbox load. Stream the response. |
+| Inference latency >3s under load. | Low | Pre-warm with a tiny "ping" prompt on Inbox load. Stream the response. Workers AI is co-located with our Worker so cold-start is minimal. |
+| Workers AI quality insufficient for EDTS target. | Med | Provider abstraction lets us swap to OpenAI/Anthropic via env var in <1 hour. Re-evaluate at end of week 4 against the EDTS metric. |
 | User feels surveilled by "we read your sent folder." | Med | The consent screen is the most important UI in this slice. Iterate copy with 5 real users before launch. |
 | Gmail send permission scope feels invasive. | High (if we asked for it) | Avoided — V1 opens Gmail compose pre-filled, no send scope needed. |
 
@@ -178,7 +185,7 @@ Shown the first time the user clicks Draft reply. Single screen, three bullets (
 3. **"Share with a friend" diff for QA:** out of scope for V1. Internal QA reviews the profile JSON directly in Settings.
 4. **Sidebar placement of Drafts (sanity-check from review):** Drafts replaces Mindmap as a top-level item per D6. Mindmap moves inside Memory as a tab in the same release. If beta users complain we can revert in one PR.
 5. **Gmail send scope (sanity-check from review):** confirmed *not* requested in V1. Send action opens Gmail web compose pre-filled. One extra click per send; no Google security review needed.
-6. **Generation provider (sanity-check from review):** Lovable AI Gateway for V1, with the disclosure copy in §4 surfaced on the first-run consent screen. On-device generation deferred to Power-mode follow-up.
+6. **Generation provider (sanity-check from review):** Cloudflare Workers AI (`@cf/meta/llama-3.1-8b-instruct`) for V1, behind a provider abstraction in `src/server/inference/`. Lovable AI Gateway dropped to remove that vendor dependency. Disclosure copy in §4 names Cloudflare Workers AI explicitly. On-device generation deferred to Power-mode follow-up.
 
 ---
 
