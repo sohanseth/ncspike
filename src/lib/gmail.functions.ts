@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "./crypto.server";
-import { rulesClassify, type EmailCategory, type EmailDomain } from "./email-rules.server";
+import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
