@@ -617,16 +617,29 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
   );
 }
 
+type InboxItem = {
+  id: string; subject: string; from: string; snippet: string; date: string;
+  category: "urgent" | "today" | "proactive" | "ignore"; reason: string;
+};
+
+const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; border: string; bg: string }> = {
+  urgent:    { label: "Urgent",    dot: "bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.7)]", border: "border-red-400/25",    bg: "rgba(248,113,113,0.05)" },
+  today:     { label: "Today",     dot: "bg-amber-400",                                       border: "border-amber-400/20",  bg: "rgba(251,191,36,0.04)" },
+  proactive: { label: "Proactive", dot: "bg-violet-400",                                      border: "border-violet-400/20", bg: "rgba(139,92,246,0.04)" },
+  ignore:    { label: "Low",       dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
+};
+
 function InboxQueue({ onCompose }: { onCompose:()=>void }) {
-  const [items, setItems] = useState<Array<{id:string;subject:string;from:string;snippet:string;date:string}>|null>(null);
+  const [items, setItems] = useState<InboxItem[]|null>(null);
   const [error, setError] = useState<string|null>(null);
   const [done, setDone] = useState<string[]>([]);
+  const [showLow, setShowLow] = useState(false);
 
   useEffect(() => {
     let active = true;
     import("@/server/gmail.functions").then(({ getInboxItems }) =>
       getInboxItems()
-        .then((res) => { if (active) setItems(res.items); })
+        .then((res) => { if (active) setItems(res.items as InboxItem[]); })
         .catch((e) => { if (active) setError(e instanceof Error ? e.message : "Failed to load inbox"); })
     );
     return () => { active = false; };
@@ -653,34 +666,55 @@ function InboxQueue({ onCompose }: { onCompose:()=>void }) {
     );
   }
 
-  const visible = items.filter(i => !done.includes(i.id));
+  const remaining = items.filter(i => !done.includes(i.id));
+  const priority  = remaining.filter(i => i.category !== "ignore");
+  const low       = remaining.filter(i => i.category === "ignore");
+  const visible   = showLow ? remaining : priority;
   const c = C.professional;
 
   return (
     <div className="flex-shrink-0 flex flex-col gap-1.5">
-      {visible.map(item => (
-        <div key={item.id} className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-3 transition-all hover:border-white/[0.12]">
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
-            <Mail size={12} style={{color:c.icon}}/>
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-1.5 mb-0.5">
-              <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-sky-400/60"/>
-              <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/45">Inbox</span>
-            </div>
-            <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
-            <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
-          </div>
-          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
-            <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
-            <IconBtn icon={Check}   label="Mark done"     onClick={()=>setDone(d=>[...d,item.id])} color="green"/>
-          </div>
+      {visible.length === 0 && (
+        <div className="rounded-2xl border border-white/[0.06] px-4 py-3 flex items-center gap-3">
+          <Check size={12} className="text-emerald-400"/>
+          <p className="text-[12px] text-muted-foreground/60" style={{fontFamily:"'DM Sans',sans-serif"}}>All clear — nothing urgent right now</p>
         </div>
-      ))}
+      )}
+      {visible.map(item => {
+        const s = CAT_STYLE[item.category];
+        return (
+          <div key={item.id} className={`group flex items-center gap-3 rounded-2xl border ${s.border} px-4 py-3 transition-all hover:brightness-110`}
+            style={{background:s.bg}}>
+            <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+              <Mail size={12} style={{color:c.icon}}/>
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`}/>
+                <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/55">{s.label}</span>
+                {item.reason && <span className="text-[9px] text-muted-foreground/40 truncate">· {item.reason}</span>}
+              </div>
+              <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
+              <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
+            </div>
+            <div className="flex items-center gap-0.5 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
+              <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
+              <IconBtn icon={Check}   label="Mark done"     onClick={()=>setDone(d=>[...d,item.id])} color="green"/>
+            </div>
+          </div>
+        );
+      })}
+      {!showLow && low.length > 0 && (
+        <button onClick={()=>setShowLow(true)}
+          className="text-[10.5px] text-muted-foreground/40 font-mono hover:text-muted-foreground/70 transition-colors text-left px-1">
+          · {low.length} low-priority {low.length === 1 ? "item" : "items"}
+        </button>
+      )}
     </div>
   );
 }
+
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
 
