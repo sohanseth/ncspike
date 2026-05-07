@@ -3,16 +3,21 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { encryptToken, decryptToken } from "@/server/crypto.server";
-import { getValidGmailAccessToken, getValidGoogleAccessToken } from "@/server/gmail-auth.server";
+import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
 import {
   proposeFreeSlots,
-  createCalendarEvent,
-  computePrepBlockSlot,
-  computeFollowUpSlot,
-  getUserCalendarTimezone,
-  CalendarScopeError,
   type ProposedSlot,
 } from "@/server/calendar.server";
+import {
+  AGENT_TOOLS,
+  blockPrepTimeTool,
+  setFollowUpReminderTool,
+  suggestAvailabilityTool,
+  dispatchAgentTool,
+  type BlockPrepTimeOutput,
+  type SetFollowUpReminderOutput,
+  type SuggestAvailabilityOutput,
+} from "@/server/agent-tools";
 import {
   analyzeEmailForDraft,
   parsePrepTimeToHours,
@@ -608,77 +613,26 @@ export const regenerateDraft = createServerFn({ method: "POST" })
  *   - "no_calendar": user never connected Google Calendar
  *   - "create_failed": Google API returned an error
  */
-export type PrepBlockResult =
-  | { ok: true; eventId: string; htmlLink: string; startIso: string; endIso: string; human: string }
-  | { ok: false; reason: "scope" | "no_calendar" | "create_failed"; message: string };
+// Re-exported result type — thin wrapper around the agent-tool's output shape
+// so existing callers (UI, tests) keep working unchanged.
+export type PrepBlockResult = BlockPrepTimeOutput;
 
+/**
+ * Thin server-fn wrapper around `blockPrepTimeTool`. The actual logic lives in
+ * `src/server/agent-tools.ts` so it can be invoked from any agentic surface
+ * (chat, deep-research, command palette) via `dispatchAgentTool` or
+ * `runAgentTool`.
+ */
 export const createPrepBlock = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: {
     draftId: string;
-    /** ISO 8601 of the earliest proposed meeting slot — the prep block is placed before this. */
     beforeIso: string;
-    /** Raw user answer to the prep_time question, e.g. "2 days". Parsed server-side. */
     prepTimeText: string;
   }) => d)
-  .handler(async ({ data, context }): Promise<PrepBlockResult> => {
-    // Verify the draft belongs to this user and resolve the email subject for the title.
-    const { data: draftRow, error: draftErr } = await supabaseAdmin
-      .from("drafts")
-      .select("id, source_node_id")
-      .eq("user_id", context.userId)
-      .eq("id", data.draftId)
-      .maybeSingle();
-    if (draftErr) throw draftErr;
-    if (!draftRow?.source_node_id) {
-      return { ok: false, reason: "create_failed", message: "Draft not found." };
-    }
-
-    let subject = "interview";
-    try {
-      const email = await loadIncomingEmail(context.userId, draftRow.source_node_id);
-      if (email.subject) subject = email.subject.replace(/^(re:|fwd:|fw:)\s*/gi, "").trim() || subject;
-    } catch {
-      /* keep default subject */
-    }
-
-    const timezone = await getUserCalendarTimezone(context.userId);
-    const prepHours = parsePrepTimeToHours(data.prepTimeText || "");
-    const slot = computePrepBlockSlot(data.beforeIso, timezone, prepHours);
-
-    try {
-      const created = await createCalendarEvent(context.userId, {
-        summary: `Prep: ${subject}`,
-        description:
-          "Auto-blocked by NeuralConnexions before your interview slot. " +
-          "Adjust or delete if your plans change.",
-        startIso: slot.startIso,
-        endIso: slot.endIso,
-        timezone,
-      });
-      return {
-        ok: true,
-        eventId: created.eventId,
-        htmlLink: created.htmlLink,
-        startIso: created.startIso,
-        endIso: created.endIso,
-        human: created.human,
-      };
-    } catch (e) {
-      if (e instanceof CalendarScopeError) {
-        return { ok: false, reason: "scope", message: e.message };
-      }
-      // getValidGoogleAccessToken throws "<provider> not connected" when no
-      // row exists, and "No refresh token; please reconnect <provider>" when
-      // the row exists but is unusable. Both mean the user needs to (re)connect.
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/not\s+connected|reconnect/i.test(msg)) {
-        return { ok: false, reason: "no_calendar", message: "Connect Google Calendar first." };
-      }
-      console.warn("createPrepBlock failed:", e);
-      return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
-    }
-  });
+  .handler(({ data, context }): Promise<PrepBlockResult> =>
+    blockPrepTimeTool.execute(context.userId, data),
+  );
 
 /**
  * Pre-compute calendar-based availability suggestions for the asking-panel
@@ -686,94 +640,69 @@ export const createPrepBlock = createServerFn({ method: "POST" })
  * with real free slots that respect their prep_time, instead of typing
  * placeholder text. Returns [] when no calendar / no free slots.
  */
-export type SuggestAvailabilityResult =
-  | { status: "ok"; slots: ProposedSlot[]; answer: string }
-  | { status: "empty" }
-  | { status: "no_calendar" }
-  | { status: "error"; message: string };
+export type SuggestAvailabilityResult = SuggestAvailabilityOutput;
 
+/** Thin wrapper around `suggestAvailabilityTool`. See agent-tools.ts. */
 export const suggestAvailability = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { prepTimeText?: string }) => d)
-  .handler(async ({ data, context }): Promise<SuggestAvailabilityResult> => {
-    // Probe for a usable calendar token first so we can distinguish
-    // "not connected" from "no free slots in the next week" — both are
-    // valid outcomes but require very different UX nudges.
-    try {
-      await getValidGoogleAccessToken(context.userId, "google_calendar");
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/not\s+connected|reconnect/i.test(msg)) {
-        return { status: "no_calendar" };
-      }
-      return { status: "error", message: msg.slice(0, 200) };
-    }
-
-    const bufferHours = data.prepTimeText
-      ? parsePrepTimeToHours(data.prepTimeText)
-      : 2;
-    let slots: ProposedSlot[] = [];
-    try {
-      // throwOnError so we can distinguish freeBusy failures from a truly
-      // empty week — both look like [] otherwise.
-      slots = await proposeFreeSlots(context.userId, { bufferHours, throwOnError: true });
-    } catch (e) {
-      console.warn("suggestAvailability: proposeFreeSlots failed:", e);
-      return { status: "error", message: e instanceof Error ? e.message.slice(0, 200) : "calendar lookup failed" };
-    }
-    if (slots.length === 0) return { status: "empty" };
-    return { status: "ok", slots, answer: slots.map((s) => s.human).join("; ") };
-  });
+  .handler(({ data, context }): Promise<SuggestAvailabilityResult> =>
+    suggestAvailabilityTool.execute(context.userId, data),
+  );
 
 /**
  * Create a 30-minute reminder event N days from now at 09:00 in the user's TZ.
  * Mirrors the createPrepBlock result shape so the UI can reuse the same
  * success/error-state rendering. `afterDays` is bounded server-side (1-60).
  */
-export type FollowUpReminderResult =
-  | { ok: true; eventId: string; htmlLink: string; startIso: string; endIso: string; human: string }
-  | { ok: false; reason: "scope" | "no_calendar" | "create_failed"; message: string };
+export type FollowUpReminderResult = SetFollowUpReminderOutput;
 
+/** Thin wrapper around `setFollowUpReminderTool`. See agent-tools.ts. */
 export const createFollowUpReminder = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { afterDays: number; summary: string }) => d)
-  .handler(async ({ data, context }): Promise<FollowUpReminderResult> => {
-    const summary = (data.summary ?? "").trim().slice(0, 120);
-    if (!summary) {
-      return { ok: false, reason: "create_failed", message: "Reminder summary is required." };
-    }
-    const timezone = await getUserCalendarTimezone(context.userId);
-    const slot = computeFollowUpSlot(data.afterDays, timezone);
+  .handler(({ data, context }): Promise<FollowUpReminderResult> =>
+    setFollowUpReminderTool.execute(context.userId, data),
+  );
+
+/**
+ * Generic agent-tool dispatcher. Any feature (chat, deep-research, future
+ * "/run X" palette) can call this with a tool id + raw input; the registry
+ * handles validation and execution. The 3 thin wrappers above remain for
+ * back-compat with existing UI imports, but new callers should prefer this.
+ *
+ * TODO(rate-limiting): mutating tools (block_prep_time, set_followup_reminder)
+ * have no per-user throttle yet. Before exposing this to LLM-driven callers
+ * (chat agent, deep-research) at scale, add a per-(userId, toolId) rate limit
+ * — likely a Supabase row + window check, since in-memory won't survive the
+ * multi-instance edge runtime. Tracked as a follow-up.
+ */
+export const runAgentTool = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { toolId: string; input: unknown }) => d)
+  // Result is typed `any` because each tool returns its own typed payload —
+  // callers should cast to the specific tool's `*Output` type. We also can't
+  // express `unknown` here (TanStack Start's serialization type-guard rejects
+  // it), so `any` is correct at the framework boundary.
+  .handler(async ({ data, context }): Promise<{ ok: true; result: any } | { ok: false; error: string }> => {
     try {
-      const created = await createCalendarEvent(context.userId, {
-        summary: `Follow up: ${summary}`,
-        description:
-          "Auto-set by NeuralConnexions as a nudge to revisit this thread. " +
-          "Adjust or delete if it's no longer needed.",
-        startIso: slot.startIso,
-        endIso: slot.endIso,
-        timezone,
-      });
-      return {
-        ok: true,
-        eventId: created.eventId,
-        htmlLink: created.htmlLink,
-        startIso: created.startIso,
-        endIso: created.endIso,
-        human: created.human,
-      };
+      const result = await dispatchAgentTool(context.userId, data.toolId, data.input);
+      return { ok: true, result };
     } catch (e) {
-      if (e instanceof CalendarScopeError) {
-        return { ok: false, reason: "scope", message: e.message };
-      }
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/not\s+connected|reconnect/i.test(msg)) {
-        return { ok: false, reason: "no_calendar", message: "Connect Google Calendar first." };
-      }
-      console.warn("createFollowUpReminder failed:", e);
-      return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
   });
+
+/** List the agent tools available to LLM-driven callers. Cheap; no auth needed. */
+export const listAgentTools = createServerFn({ method: "GET" })
+  .handler(async () =>
+    Object.values(AGENT_TOOLS).map((t) => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      inputShape: t.inputShape,
+    })),
+  );
 
 /** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */
 function editDistance(a: string, b: string): number {
