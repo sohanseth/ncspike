@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequestHost } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { signState } from "./crypto.server";
 
 const GMAIL_SCOPES = [
@@ -22,7 +23,7 @@ function scopesFor(provider: "gmail" | "google_calendar"): string[] {
 }
 
 export const startGoogleOAuth = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { provider: "gmail" | "google_calendar" }) => d)
   .handler(async ({ data, context }) => {
     const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
