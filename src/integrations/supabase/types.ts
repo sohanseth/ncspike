@@ -121,6 +121,56 @@ export type Database = {
         }
         Relationships: []
       }
+      drafts: {
+        Row: {
+          body_encrypted: string
+          chars_edited: number | null
+          chars_in_draft: number
+          created_at: string
+          id: string
+          resolved_at: string | null
+          source_node_id: string | null
+          status: string
+          template: string
+          templates_tried: string[]
+          user_id: string
+        }
+        Insert: {
+          body_encrypted: string
+          chars_edited?: number | null
+          chars_in_draft?: number
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          source_node_id?: string | null
+          status?: string
+          template: string
+          templates_tried?: string[]
+          user_id: string
+        }
+        Update: {
+          body_encrypted?: string
+          chars_edited?: number | null
+          chars_in_draft?: number
+          created_at?: string
+          id?: string
+          resolved_at?: string | null
+          source_node_id?: string | null
+          status?: string
+          template?: string
+          templates_tried?: string[]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drafts_source_node_id_fkey"
+            columns: ["source_node_id"]
+            isOneToOne: false
+            referencedRelation: "memory_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memory_edges: {
         Row: {
           created_at: string
