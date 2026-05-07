@@ -772,35 +772,29 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     }
   }
 
-  // Built once per render so the <a> below is a real link the browser can open
-  // in a new tab from the click gesture (window.open() gets blocked inside the
-  // Replit preview iframe and tries to load Gmail in-frame, which Google blocks
-  // with X-Frame-Options).
-  const gmailUrl = (() => {
-    if (!draft) return "#";
-    const to = extractEmail(item.from);
-    const subj = item.subject.startsWith("Re:") ? item.subject : `Re: ${item.subject}`;
-    return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(to)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
-  })();
+  const toAddr = extractEmail(item.from);
+  const subj = item.subject.startsWith("Re:") ? item.subject : `Re: ${item.subject}`;
+  // Deep-link compose URL. Works in production; the Replit preview iframe
+  // propagates Cross-Origin-Embedder-Policy to popups so the new tab gets
+  // ERR_BLOCKED_BY_RESPONSE there — that's why Copy is the primary action.
+  const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toAddr)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const mailtoUrl = `mailto:${toAddr}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
+  const [copied, setCopied] = useState(false);
 
-  async function logSent(): Promise<boolean> {
-    if (!draft) return false;
+  async function copyAndMarkSent() {
+    if (!draft) return;
     setPhase("sending");
+    setErr(null);
     try {
+      await navigator.clipboard.writeText(body);
       const { markDraftSent } = await import("@/lib/voice-drafts.functions");
       await markDraftSent({ data: { draftId: draft.id, finalBody: body } });
-      return true;
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Send failed");
+      setCopied(true);
       setPhase("open");
-      return false;
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Copy/send failed");
+      setPhase("open");
     }
-  }
-
-  // Called AFTER the browser has opened the new tab from the <a> click.
-  function afterSend() {
-    // Tiny delay so the new tab opens first, then we collapse the panel.
-    setTimeout(() => { setDraft(null); setPhase("idle"); }, 50);
   }
 
   async function dismiss() {
@@ -842,25 +836,19 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         rows={Math.min(12, Math.max(4, body.split("\n").length + 1))}
         className="w-full bg-transparent border border-white/[0.06] rounded-lg p-2 text-[12.5px] text-foreground/90 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/40 resize-y"
       />
-      <div className="flex items-center gap-1.5">
-        <a
-          href={gmailUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => {
-            if (phase === "sending" || !body.trim() || !draft) { e.preventDefault(); return; }
-            // Fire-and-forget: log the EDTS metric. Do NOT await — that would
-            // require preventDefault and a manual window.open, which the iframe
-            // blocks. The <a target="_blank"> click is the user gesture that
-            // makes the new tab open reliably.
-            void logSent().then((ok) => { if (ok) afterSend(); });
-          }}
-          className={[
-            "inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25",
-            (phase === "sending" || !body.trim()) ? "opacity-50 pointer-events-none" : "",
-          ].join(" ")}
-        >
-          <Send size={11}/> {phase === "sending" ? "Logging…" : "Send via Gmail"}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button onClick={copyAndMarkSent}
+          disabled={phase === "sending" || !body.trim() || copied}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
+          <Check size={11}/> {copied ? "Copied & marked sent" : phase === "sending" ? "Saving…" : "Copy reply & mark sent"}
+        </button>
+        <a href={gmailUrl} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
+          <Send size={11}/> Open Gmail
+        </a>
+        <a href={mailtoUrl}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
+          mailto…
         </a>
         <button onClick={regenerate} disabled={phase === "sending"}
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
