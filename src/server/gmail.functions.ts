@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "./crypto.server";
 
@@ -56,7 +57,7 @@ function decodeHeader(headers: Array<{ name: string; value: string }>, name: str
 }
 
 export const pullRecentEmails = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { token, label } = await getValidAccessToken(context.userId);
 
@@ -108,7 +109,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
   });
 
 export const getConnections = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await supabaseAdmin
       .from("connections")
@@ -119,7 +120,7 @@ export const getConnections = createServerFn({ method: "GET" })
   });
 
 export const disconnectProvider = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { provider: "gmail" | "google_calendar" }) => d)
   .handler(async ({ data, context }) => {
     const { error } = await supabaseAdmin
