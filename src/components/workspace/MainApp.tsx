@@ -619,7 +619,9 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
 
 type InboxItem = {
   id: string; subject: string; from: string; snippet: string; date: string;
-  category: "urgent" | "today" | "proactive" | "ignore"; reason: string;
+  category: "urgent" | "today" | "proactive" | "ignore";
+  domain: DomainId;
+  reason: string;
 };
 
 const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; border: string; bg: string }> = {
