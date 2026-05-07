@@ -3,7 +3,7 @@
  * var (default: "cloudflare"). Adapters for openai/anthropic/openrouter
  * are loaded lazily so they add zero bundle weight when unused.
  */
-import { cloudflareProvider } from "./cloudflare";
+import { lovableProvider } from "./lovable";
 import {
   InferenceError,
   type InferenceProvider,
@@ -15,19 +15,15 @@ export type { InferenceMessage, InferenceRequest, InferenceResult } from "./type
 export { InferenceError } from "./types";
 
 const PROVIDER_LOADERS: Record<string, () => Promise<InferenceProvider>> = {
-  cloudflare: async () => cloudflareProvider,
-  // Stubs — implement when needed; dynamic import keeps them out of the
-  // default bundle.
-  // openai: async () => (await import("./openai")).openaiProvider,
-  // anthropic: async () => (await import("./anthropic")).anthropicProvider,
-  // openrouter: async () => (await import("./openrouter")).openrouterProvider,
+  lovable: async () => lovableProvider,
+  cloudflare: async () => (await import("./cloudflare")).cloudflareProvider,
 };
 
 let _selected: Promise<InferenceProvider> | undefined;
 
 function getProvider(): Promise<InferenceProvider> {
   if (_selected) return _selected;
-  const id = (process.env.INFERENCE_PROVIDER || "cloudflare").toLowerCase();
+  const id = (process.env.INFERENCE_PROVIDER || "lovable").toLowerCase();
   const loader = PROVIDER_LOADERS[id];
   if (!loader) {
     throw new InferenceError(
