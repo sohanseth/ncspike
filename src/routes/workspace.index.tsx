@@ -3,7 +3,7 @@ import { useEffect } from "react";
 import MainApp from "@/components/workspace/MainApp";
 import { useAuth } from "@/lib/auth-context";
 
-export const Route = createFileRoute("/workspace")({
+export const Route = createFileRoute("/workspace/")({
   component: WorkspaceLayout,
 });
 
