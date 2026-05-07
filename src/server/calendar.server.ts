@@ -44,6 +44,14 @@ type Options = {
   bufferHours?: number;
   /** How many slots to propose */
   maxSlots?: number;
+  /**
+   * When true, transport / API failures are re-thrown instead of being
+   * collapsed to []. Lets callers (e.g. the asking-panel "Use my calendar"
+   * chip) distinguish "calendar unreachable" from "no free slots". Defaults
+   * to false for backward compatibility with draft generation, which prefers
+   * to silently degrade.
+   */
+  throwOnError?: boolean;
 };
 
 const DEFAULTS: Required<Omit<Options, "timezone">> = {
@@ -53,6 +61,7 @@ const DEFAULTS: Required<Omit<Options, "timezone">> = {
   daysAhead: 7,
   bufferHours: 2,
   maxSlots: 3,
+  throwOnError: false,
 };
 
 /**
@@ -156,8 +165,9 @@ export async function proposeFreeSlots(
   let token: string;
   try {
     ({ token } = await getValidGoogleAccessToken(userId, "google_calendar"));
-  } catch {
-    return []; // not connected → graceful no-op
+  } catch (e) {
+    if (o.throwOnError) throw e;
+    return []; // not connected → graceful no-op for draft generation
   }
 
   const rawTz = opts.timezone ?? (await fetchCalendarTimezone(token));
@@ -188,11 +198,17 @@ export async function proposeFreeSlots(
         items: [{ id: "primary" }],
       }),
     });
-    if (!r.ok) return [];
+    if (!r.ok) {
+      if (o.throwOnError) {
+        throw new Error(`freeBusy ${r.status}: ${(await r.text()).slice(0, 200)}`);
+      }
+      return [];
+    }
     const j = (await r.json()) as FreeBusyResponse;
     const blocks = j.calendars?.primary?.busy ?? [];
     busy = blocks.map((b) => ({ start: new Date(b.start), end: new Date(b.end) }));
-  } catch {
+  } catch (e) {
+    if (o.throwOnError) throw e;
     return [];
   }
 

@@ -706,7 +706,9 @@ export const suggestAvailability = createServerFn({ method: "POST" })
       : 2;
     let slots: ProposedSlot[] = [];
     try {
-      slots = await proposeFreeSlots(context.userId, { bufferHours });
+      // throwOnError so we can distinguish freeBusy failures from a truly
+      // empty week — both look like [] otherwise.
+      slots = await proposeFreeSlots(context.userId, { bufferHours, throwOnError: true });
     } catch (e) {
       console.warn("suggestAvailability: proposeFreeSlots failed:", e);
       return { status: "error", message: e instanceof Error ? e.message.slice(0, 200) : "calendar lookup failed" };

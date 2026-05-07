@@ -959,7 +959,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setAnswers({});
     setPendingNote("");
     setPrepBlock({ phase: "idle" });
-    setAvailSuggest("idle");
+    setAvailSuggest({ status: "idle" });
     setPhase("idle");
   }
 
@@ -1001,7 +1001,8 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           // offer it using the default 2-hour buffer.
           const hasPrepTimeQuestion = questions.some((x) => x.id === "prep_time");
           const prepFilled = !!answers.prep_time?.trim();
-          const canSuggest = isAvailability && (!hasPrepTimeQuestion || prepFilled);
+          const prepNeeded = isAvailability && hasPrepTimeQuestion && !prepFilled;
+          const canSuggest = isAvailability && !prepNeeded;
           return (
             <label key={q.id} className="flex flex-col gap-1">
               <span className="text-[11px] text-muted-foreground/80">{q.question}</span>
@@ -1012,9 +1013,14 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                 onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
                 className="bg-transparent border border-white/[0.08] rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground/35 focus:outline-none focus:ring-1 focus:ring-primary/40"
               />
+              {prepNeeded && (
+                <span className="text-[10px] text-muted-foreground/45 mt-0.5">
+                  Answer prep time first to use your calendar.
+                </span>
+              )}
               {canSuggest && (
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  {availSuggest === "idle" && (
+                  {availSuggest.status === "idle" && (
                     <button
                       type="button"
                       onClick={() => suggestAvailabilityFromCalendar(q.id)}
@@ -1023,26 +1029,29 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                       <CalendarDays size={10}/> Use my calendar
                     </button>
                   )}
-                  {availSuggest === "loading" && (
+                  {availSuggest.status === "loading" && (
                     <span className="text-[10.5px] font-mono text-muted-foreground/60">
                       Checking your calendar…
                     </span>
                   )}
-                  {availSuggest === "empty" && (
+                  {availSuggest.status === "empty" && (
                     <span className="text-[10.5px] text-muted-foreground/60">
                       No free slots in the next week — type your own.
                     </span>
                   )}
-                  {availSuggest === "error" && (
+                  {availSuggest.status === "no_calendar" && (
+                    <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1">
+                      Calendar not connected.{" "}
+                      <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                        Connect →
+                      </Link>
+                    </span>
+                  )}
+                  {availSuggest.status === "error" && (
                     <span className="text-[10.5px] text-rose-300/70">
                       Couldn't reach calendar — type your own.
                     </span>
                   )}
-                  {!hasPrepTimeQuestion ? null : !prepFilled ? (
-                    <span className="text-[10px] text-muted-foreground/45">
-                      (answer prep time first to use calendar)
-                    </span>
-                  ) : null}
                 </div>
               )}
             </label>
