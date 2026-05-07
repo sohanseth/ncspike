@@ -467,7 +467,7 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden">
-        {domain.items.slice(0,maxItems).map(item=>(
+        {items.slice(0,maxItems).map(item=>(
           <div key={item.id} className="flex items-start gap-2.5 min-w-0">
             <span className={`mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.urgent?"bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.7)]":c.dot}`}/>
             <div className="flex-1 min-w-0">
