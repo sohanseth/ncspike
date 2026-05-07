@@ -764,7 +764,7 @@ export const cancelResearchTaskFn = createServerFn({ method: "POST" })
     return cancelResearchTask(context.userId, data.taskId);
   });
 
-export const getResearchQueueCountsFn = createServerFn({ method: "GET" })
+export const getResearchQueueCountsFn = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { getResearchQueueCounts } = await import("@/server/research-queue");
