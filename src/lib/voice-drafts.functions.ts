@@ -6,9 +6,15 @@ import { encryptToken, decryptToken } from "@/server/crypto.server";
 import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
 import {
   extractVoiceProfile,
+  renderDraftPrompt,
+  selectTemplate,
+  TEMPLATE_IDS,
+  type IncomingEmail,
   type SentMessage,
+  type TemplateId,
   type VoiceProfile,
 } from "@/server/voice-profile.server";
+import { generate, InferenceError } from "@/server/inference";
 
 const SENT_SAMPLE_SIZE = 200;
 
@@ -209,4 +215,276 @@ export const buildVoiceProfile = createServerFn({ method: "POST" })
     if (error) throw error;
 
     return loadProfile(context.userId);
+  });
+
+// ---------------------------------------------------------------------------
+// Drafts (Week 2)
+// ---------------------------------------------------------------------------
+
+export type DraftPayload = {
+  id: string;
+  template: TemplateId;
+  body: string;
+  status: string;
+  charsInDraft: number;
+  charsEdited: number | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  sourceNodeId: string | null;
+};
+
+const DEFAULT_PROFILE: VoiceProfile = {
+  sign_off: "Thanks",
+  opener_phrases: [],
+  avg_sentence_length: 0,
+  formality_score: 0.5,
+  characteristic_phrases: [],
+  sample_count: 0,
+};
+
+async function loadVoiceProfileForUser(userId: string): Promise<VoiceProfile> {
+  const { data } = await supabaseAdmin
+    .from("voice_profiles")
+    .select("profile_encrypted")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data?.profile_encrypted) return DEFAULT_PROFILE;
+  try {
+    return JSON.parse(decryptToken(data.profile_encrypted)) as VoiceProfile;
+  } catch (e) {
+    console.error("voice profile decrypt failed:", e);
+    return DEFAULT_PROFILE;
+  }
+}
+
+async function loadIncomingEmail(
+  userId: string,
+  memoryNodeId: string,
+): Promise<IncomingEmail> {
+  const { data, error } = await supabaseAdmin
+    .from("memory_nodes")
+    .select("label, data")
+    .eq("user_id", userId)
+    .eq("id", memoryNodeId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Email not found");
+  const meta = (data.data ?? {}) as { from?: string; snippet?: string };
+  return {
+    subject: data.label || "(no subject)",
+    from: meta.from || "",
+    snippet: meta.snippet || "",
+  };
+}
+
+async function generateDraftBody(
+  profile: VoiceProfile,
+  template: TemplateId,
+  email: IncomingEmail,
+): Promise<string> {
+  const { system, user } = renderDraftPrompt(profile, template, email);
+  const result = await generate({
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    maxTokens: 350,
+    temperature: 0.4,
+  });
+  return result.text.trim();
+}
+
+function rowToPayload(
+  row: {
+    id: string;
+    template: string;
+    body_encrypted: string;
+    status: string;
+    chars_in_draft: number;
+    chars_edited: number | null;
+    created_at: string;
+    resolved_at: string | null;
+    source_node_id: string | null;
+  },
+): DraftPayload {
+  return {
+    id: row.id,
+    template: row.template as TemplateId,
+    body: decryptToken(row.body_encrypted),
+    status: row.status,
+    charsInDraft: row.chars_in_draft,
+    charsEdited: row.chars_edited,
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+    sourceNodeId: row.source_node_id,
+  };
+}
+
+export const draftReply = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { memoryNodeId: string }) => d)
+  .handler(async ({ data, context }): Promise<DraftPayload> => {
+    const [profile, email] = await Promise.all([
+      loadVoiceProfileForUser(context.userId),
+      loadIncomingEmail(context.userId, data.memoryNodeId),
+    ]);
+
+    const template = selectTemplate(email);
+    let body: string;
+    try {
+      body = await generateDraftBody(profile, template, email);
+    } catch (e) {
+      if (e instanceof InferenceError) throw new Error(`Draft generation failed: ${e.message}`);
+      throw e;
+    }
+
+    const enc = encryptToken(body);
+    const { data: inserted, error } = await supabaseAdmin
+      .from("drafts")
+      .insert({
+        user_id: context.userId,
+        source_node_id: data.memoryNodeId,
+        template,
+        body_encrypted: enc,
+        chars_in_draft: body.length,
+        status: "pending",
+        templates_tried: [template],
+      })
+      .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
+      .single();
+    if (error) throw error;
+    return rowToPayload(inserted);
+  });
+
+export const regenerateDraft = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { draftId: string }) => d)
+  .handler(async ({ data, context }): Promise<DraftPayload> => {
+    const { data: existing, error: fetchErr } = await supabaseAdmin
+      .from("drafts")
+      .select("id, source_node_id, templates_tried, status")
+      .eq("user_id", context.userId)
+      .eq("id", data.draftId)
+      .maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!existing) throw new Error("Draft not found");
+    if (existing.status !== "pending") throw new Error("Only pending drafts can be regenerated");
+    if (!existing.source_node_id) throw new Error("Original email no longer available");
+
+    const [profile, email] = await Promise.all([
+      loadVoiceProfileForUser(context.userId),
+      loadIncomingEmail(context.userId, existing.source_node_id),
+    ]);
+
+    const tried = (existing.templates_tried ?? []) as TemplateId[];
+    // Rotate to a template not yet used. If all 5 used, rotate from the start again.
+    const exclude = tried.length >= TEMPLATE_IDS.length ? [tried[tried.length - 1]] : tried;
+    const template = selectTemplate(email, exclude);
+
+    const body = await generateDraftBody(profile, template, email);
+    const enc = encryptToken(body);
+
+    const { data: updated, error: updErr } = await supabaseAdmin
+      .from("drafts")
+      .update({
+        template,
+        body_encrypted: enc,
+        chars_in_draft: body.length,
+        templates_tried: [...tried, template],
+      })
+      .eq("id", data.draftId)
+      .eq("user_id", context.userId)
+      .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
+      .single();
+    if (updErr) throw updErr;
+    return rowToPayload(updated);
+  });
+
+/** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  // Cap to keep this O(n*m) bounded — drafts are short (<2KB) so this is fine.
+  const m = a.length;
+  const n = b.length;
+  const prev = new Array(n + 1);
+  const curr = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= n; j++) prev[j] = curr[j];
+  }
+  return prev[n];
+}
+
+export const markDraftSent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { draftId: string; finalBody: string }) => d)
+  .handler(async ({ data, context }): Promise<DraftPayload> => {
+    const { data: existing, error } = await supabaseAdmin
+      .from("drafts")
+      .select("id, body_encrypted, status, chars_in_draft")
+      .eq("user_id", context.userId)
+      .eq("id", data.draftId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!existing) throw new Error("Draft not found");
+    if (existing.status !== "pending") throw new Error("Draft already resolved");
+
+    const original = decryptToken(existing.body_encrypted);
+    const editChars = editDistance(original, data.finalBody);
+    const newStatus = editChars === 0 ? "sent" : "edited_then_sent";
+
+    // NOTE: chars_in_draft is the *original* generated length and must NOT
+    // be overwritten — it's the denominator for the EDTS metric.
+    const { data: updated, error: updErr } = await supabaseAdmin
+      .from("drafts")
+      .update({
+        status: newStatus,
+        chars_edited: editChars,
+        body_encrypted: encryptToken(data.finalBody),
+        resolved_at: new Date().toISOString(),
+      })
+      .eq("id", data.draftId)
+      .eq("user_id", context.userId)
+      .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
+      .single();
+    if (updErr) throw updErr;
+    return rowToPayload(updated);
+  });
+
+export const dismissDraft = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { draftId: string }) => d)
+  .handler(async ({ data, context }): Promise<{ ok: true }> => {
+    const { error } = await supabaseAdmin
+      .from("drafts")
+      .update({ status: "dismissed", resolved_at: new Date().toISOString() })
+      .eq("id", data.draftId)
+      .eq("user_id", context.userId)
+      .eq("status", "pending");
+    if (error) throw error;
+    return { ok: true };
+  });
+
+export const listDrafts = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { status?: string; limit?: number } | undefined) => d ?? {})
+  .handler(async ({ data, context }): Promise<DraftPayload[]> => {
+    const limit = Math.min(Math.max(data.limit ?? 50, 1), 200);
+    let q = supabaseAdmin
+      .from("drafts")
+      .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(limit);
+    if (data.status) q = q.eq("status", data.status);
+    const { data: rows, error } = await q;
+    if (error) throw error;
+    return (rows ?? []).map(rowToPayload);
   });

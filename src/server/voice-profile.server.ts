@@ -355,3 +355,152 @@ export function extractVoiceProfile(messages: SentMessage[]): VoiceProfile {
     sample_count: cleaned.length,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Templates + prompt rendering (Week 2)
+// ---------------------------------------------------------------------------
+
+export const TEMPLATE_IDS = [
+  "acknowledge",
+  "decline",
+  "schedule",
+  "ask_info",
+  "confirm",
+] as const;
+export type TemplateId = (typeof TEMPLATE_IDS)[number];
+
+const TEMPLATE_INSTRUCTIONS: Record<TemplateId, string> = {
+  acknowledge:
+    "Write a short reply that acknowledges receipt and confirms you've read it. Do not commit to anything specific. 2–3 sentences.",
+  decline:
+    "Write a polite decline. Be warm but clear. Do not over-explain. Offer a brief reason only if obvious from context. 3–4 sentences.",
+  schedule:
+    "Write a short reply proposing to schedule a call or meeting. Suggest checking calendars without committing to a specific time (we don't have calendar access in V1). 2–3 sentences.",
+  ask_info:
+    "Write a short reply asking one or two clarifying questions needed before you can respond properly. 2–3 sentences.",
+  confirm:
+    "Write a short reply confirming the plan, detail, or arrangement raised in the email. 2–3 sentences.",
+};
+
+export type IncomingEmail = {
+  subject: string;
+  from: string;
+  snippet: string;
+};
+
+/**
+ * Pick the most appropriate template for an incoming email using cheap
+ * deterministic rules. The caller can pass `exclude` to rotate through
+ * other templates on regenerate.
+ */
+export function selectTemplate(
+  email: IncomingEmail,
+  exclude: TemplateId[] = [],
+): TemplateId {
+  const text = `${email.subject}\n${email.snippet}`.toLowerCase();
+  const has = (re: RegExp) => re.test(text);
+
+  // Order matters — first match wins among non-excluded.
+  const ordered: Array<[TemplateId, boolean]> = [
+    [
+      "schedule",
+      has(/\b(meet|meeting|call|chat|catch[\s-]?up|sync|zoom|google meet|teams|coffee|lunch|available|availability|free)\b/),
+    ],
+    [
+      "confirm",
+      has(/\b(confirm|confirming|please confirm|to confirm|just to confirm|on track|still on)\b/),
+    ],
+    [
+      "ask_info",
+      has(/\b(could you|can you|would you|please send|share|details|more info|spec|deadline|when is|what is|how many|any chance)\b/) ||
+        text.trimEnd().endsWith("?"),
+    ],
+    [
+      "decline",
+      has(/\b(invitation|invite|opportunity|offer|partnership|collaborat|sponsor|guest post|feature|interview)\b/),
+    ],
+    ["acknowledge", true], // fallback always matches
+  ];
+
+  for (const [id, matched] of ordered) {
+    if (matched && !exclude.includes(id)) return id;
+  }
+  // All excluded? rotate from the start anyway.
+  return ordered.find(([id]) => !exclude.includes(id))?.[0] ?? "acknowledge";
+}
+
+function senderFirstName(from: string): string {
+  // "Alex Smith <alex@x.com>" → "Alex"
+  const namePart = from.split("<")[0].trim().replace(/^"|"$/g, "");
+  if (!namePart) return "";
+  const first = namePart.split(/\s+/)[0];
+  // Skip obvious non-names ("noreply", "support", etc.)
+  if (/^(no[-_]?reply|support|hello|hi|info|admin|notifications)$/i.test(first)) return "";
+  return first;
+}
+
+function describeFormality(score: number): string {
+  if (score < 0.25) return "very casual (uses contractions, short sentences, light tone)";
+  if (score < 0.45) return "casual";
+  if (score < 0.6) return "neutral";
+  if (score < 0.8) return "professional";
+  return "formal (full sentences, no contractions, no slang)";
+}
+
+/**
+ * Build the prompt sent to the inference provider. Returns system + user
+ * messages ready for the chat-completions API.
+ */
+export function renderDraftPrompt(
+  profile: VoiceProfile,
+  template: TemplateId,
+  email: IncomingEmail,
+): { system: string; user: string } {
+  const voiceLines: string[] = [];
+  voiceLines.push(`- Tone: ${describeFormality(profile.formality_score)}.`);
+  if (profile.avg_sentence_length > 0) {
+    voiceLines.push(
+      `- Average sentence length: ~${Math.round(profile.avg_sentence_length)} words.`,
+    );
+  }
+  if (profile.opener_phrases.length) {
+    voiceLines.push(
+      `- Common openers they use: ${profile.opener_phrases.slice(0, 3).map((o) => `"${o}"`).join(", ")}.`,
+    );
+  }
+  if (profile.characteristic_phrases.length) {
+    voiceLines.push(
+      `- Phrases they use often: ${profile.characteristic_phrases.slice(0, 8).map((p) => `"${p}"`).join(", ")}.`,
+    );
+  }
+  const signOff = profile.sign_off || "Thanks";
+
+  const system = [
+    "You write email replies in the voice of a specific person. Match their tone, sentence rhythm, and habitual phrases. Do not invent commitments, dates, names, or facts not present in the incoming email.",
+    "",
+    "Voice profile:",
+    voiceLines.join("\n"),
+    "",
+    `End with this exact sign-off:\n${signOff}`,
+    "",
+    "Output rules:",
+    "- Reply body only. No subject line. No quoted original. No 'Sure!' meta-commentary.",
+    "- Do not include placeholders like [Name] or [date]. If you don't know something, ask for it instead of inventing.",
+    "- Keep it tight. No filler.",
+  ].join("\n");
+
+  const recipient = senderFirstName(email.from);
+  const greeting = recipient ? `Address them as "${recipient}".` : "Use a neutral greeting (no name).";
+
+  const user = [
+    `Incoming email:`,
+    `From: ${email.from}`,
+    `Subject: ${email.subject}`,
+    `Body: ${email.snippet}`,
+    "",
+    `Task: ${TEMPLATE_INSTRUCTIONS[template]}`,
+    greeting,
+  ].join("\n");
+
+  return { system, user };
+}

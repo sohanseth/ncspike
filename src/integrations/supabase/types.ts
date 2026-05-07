@@ -277,6 +277,56 @@ export type Database = {
         }
         Relationships: []
       }
+      drafts: {
+        Row: {
+          id: string
+          user_id: string
+          source_node_id: string | null
+          template: string
+          body_encrypted: string
+          chars_in_draft: number
+          chars_edited: number | null
+          status: string
+          templates_tried: string[]
+          created_at: string
+          resolved_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          source_node_id?: string | null
+          template: string
+          body_encrypted: string
+          chars_in_draft?: number
+          chars_edited?: number | null
+          status?: string
+          templates_tried?: string[]
+          created_at?: string
+          resolved_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          source_node_id?: string | null
+          template?: string
+          body_encrypted?: string
+          chars_in_draft?: number
+          chars_edited?: number | null
+          status?: string
+          templates_tried?: string[]
+          created_at?: string
+          resolved_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drafts_source_node_id_fkey"
+            columns: ["source_node_id"]
+            isOneToOne: false
+            referencedRelation: "memory_nodes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_profiles: {
         Row: {
           built_at: string
