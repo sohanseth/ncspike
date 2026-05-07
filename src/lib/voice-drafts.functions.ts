@@ -203,7 +203,7 @@ async function loadProfile(userId: string): Promise<VoiceProfileSummary> {
   };
 }
 
-export const getVoiceProfile = createServerFn({ method: "GET" })
+export const getVoiceProfile = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => loadProfile(context.userId));
 
@@ -267,7 +267,7 @@ async function assertCanDraft(userId: string): Promise<void> {
   }
 }
 
-export const getVoiceDraftsStatus = createServerFn({ method: "GET" })
+export const getVoiceDraftsStatus = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<{
     featureEnabled: boolean;
@@ -694,7 +694,7 @@ export const runAgentTool = createServerFn({ method: "POST" })
   });
 
 /** List the agent tools available to LLM-driven callers. Cheap; no auth needed. */
-export const listAgentTools = createServerFn({ method: "GET" })
+export const listAgentTools = createServerFn({ method: "POST" })
   .handler(async () =>
     Object.values(AGENT_TOOLS).map((t) => ({
       id: t.id,
@@ -843,7 +843,7 @@ export const dismissDraft = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const listDrafts = createServerFn({ method: "GET" })
+export const listDrafts = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { status?: string; limit?: number } | undefined) => d ?? {})
   .handler(async ({ data, context }): Promise<DraftPayload[]> => {

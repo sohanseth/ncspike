@@ -234,7 +234,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     return { count: summaries.length, account: label, summaries };
   });
 
-export const getConnections = createServerFn({ method: "GET" })
+export const getConnections = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await supabaseAdmin
@@ -245,7 +245,7 @@ export const getConnections = createServerFn({ method: "GET" })
     return { connections: data ?? [] };
   });
 
-export const getInboxItems = createServerFn({ method: "GET" })
+export const getInboxItems = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await supabaseAdmin
