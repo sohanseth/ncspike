@@ -83,9 +83,9 @@ Six decisions that resolve the open questions from the Vision review and unblock
 
 ---
 
-## Questions deliberately left open
+## Questions resolved
 
-- Which exact tiny classifier (DistilBERT-class vs. a smaller MiniLM-class) — pick during Slice A spike, not now.
-- Whether Slice B's V1 generation runs on Lovable AI Gateway, on-device WebLLM (for Power-mode users), or a self-hosted small model — defer to the Slice B spec (next doc).
-- Storage mode for the per-user voice profile (Postgres vs IndexedDB vs both) — defer to the Slice B spec.
-- Pricing / monetization — out of scope for Phase 2.
+- **Tiny classifier model:** decision deferred to a 1-day spike at the start of Slice A (week 5). Spike picks between a DistilBERT-class model (~80MB, more accurate) and a MiniLM-class model (~25MB, faster on low-end phones). Default bias: smaller wins ties.
+- **Slice B generation provider:** Lovable AI Gateway (`gemini-3-flash-preview`) for V1. On-device generation (WebLLM) is a Power-mode follow-up, not V1. Locked in spec §3.
+- **Voice profile storage:** Postgres `voice_profiles` table, encrypted at rest with the same `crypto.server.ts` envelope as OAuth tokens (same key, same primitives, simpler ops). IndexedDB-only storage is a Phase 3 option once we ship a real local-only mode for the whole product.
+- **Pricing / monetization:** out of scope for Phase 2. Revisit after the 50-user beta cohort returns EDTS data.

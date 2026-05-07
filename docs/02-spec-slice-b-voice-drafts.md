@@ -171,11 +171,14 @@ Shown the first time the user clicks Draft reply. Single screen, three bullets (
 
 ---
 
-## 10. Open questions to close before code
+## 10. Open questions — resolved
 
-1. Do we ship Slice A (tiny ONNX classifier) inside this 4-week window, or sequence it as a Week 5–6 follow-up? *Recommendation: defer to weeks 5–6 — Slice B doesn't depend on it.*
-2. Per-user voice profile encryption: same `crypto.server.ts` envelope as OAuth tokens, or a separate key? *Recommendation: same envelope, simpler.*
-3. Do we expose the voice profile via a "share with a friend" diff for QA? *Out of scope V1.*
+1. **Slice A sequencing:** deferred to weeks 5–6 as a follow-up. Slice B does not depend on it; bundling them risks slipping the hero feature.
+2. **Voice profile encryption:** same `crypto.server.ts` envelope as OAuth tokens. Same key, same primitives, no new key management surface.
+3. **"Share with a friend" diff for QA:** out of scope for V1. Internal QA reviews the profile JSON directly in Settings.
+4. **Sidebar placement of Drafts (sanity-check from review):** Drafts replaces Mindmap as a top-level item per D6. Mindmap moves inside Memory as a tab in the same release. If beta users complain we can revert in one PR.
+5. **Gmail send scope (sanity-check from review):** confirmed *not* requested in V1. Send action opens Gmail web compose pre-filled. One extra click per send; no Google security review needed.
+6. **Generation provider (sanity-check from review):** Lovable AI Gateway for V1, with the disclosure copy in §4 surfaced on the first-run consent screen. On-device generation deferred to Power-mode follow-up.
 
 ---
 
