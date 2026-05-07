@@ -93,7 +93,11 @@ function ConnectionsPage() {
     setBusy(provider);
     try {
       const { url } = await startGoogleOAuth({ data: { provider } });
-      window.location.href = url;
+      try {
+        (window.top ?? window).location.href = url;
+      } catch {
+        window.open(url, "_blank", "noopener,noreferrer");
+      }
     } catch (e) {
       console.error(e);
       setBusy(null);
