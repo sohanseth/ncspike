@@ -155,7 +155,7 @@ export async function listResearchTasks(
   if (opts.unreadOnly) q = q.is("read_at", null);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  return (data ?? []).map((r) => ({
+  return (data ?? []).map((r: any) => ({
     id: r.id,
     toolId: r.tool_id,
     status: r.status as TaskRow["status"],
