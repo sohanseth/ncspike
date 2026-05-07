@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import type { LucideIcon } from "lucide-react";
@@ -437,9 +437,15 @@ function TopBar({
 
 // ─── Bento domain card ────────────────────────────────────────────────────────
 
-function DomainCard({ domain, size, onClick }: { domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void }) {
+function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
+  domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
+  liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
+  liveCount?: number;
+}) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
+  const items = liveItems && liveItems.length ? liveItems : domain.items;
+  const activity = liveCount !== undefined ? Math.min(1, liveCount / 5) : domain.activity;
   return (
     <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
@@ -454,14 +460,14 @@ function DomainCard({ domain, size, onClick }: { domain:DomainData; size:"xl"|"l
         {size!=="sm" && (
           <div className="flex items-center gap-1.5">
             <div className="w-10 h-[2.5px] rounded-full bg-white/[0.07] overflow-hidden">
-              <div className={`h-full rounded-full ${c.bar}`} style={{width:`${domain.activity*100}%`,opacity:0.8}}/>
+              <div className={`h-full rounded-full ${c.bar}`} style={{width:`${activity*100}%`,opacity:0.8}}/>
             </div>
           </div>
         )}
       </div>
 
       <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden">
-        {domain.items.slice(0,maxItems).map(item=>(
+        {items.slice(0,maxItems).map(item=>(
           <div key={item.id} className="flex items-start gap-2.5 min-w-0">
             <span className={`mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.urgent?"bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.7)]":c.dot}`}/>
             <div className="flex-1 min-w-0">
@@ -619,7 +625,9 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
 
 type InboxItem = {
   id: string; subject: string; from: string; snippet: string; date: string;
-  category: "urgent" | "today" | "proactive" | "ignore"; reason: string;
+  category: "urgent" | "today" | "proactive" | "ignore";
+  domain: DomainId;
+  reason: string;
 };
 
 const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; border: string; bg: string }> = {
@@ -629,12 +637,9 @@ const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; bor
   ignore:    { label: "Low",       dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
 };
 
-function InboxQueue({ onCompose }: { onCompose:()=>void }) {
+function useInbox() {
   const [items, setItems] = useState<InboxItem[]|null>(null);
   const [error, setError] = useState<string|null>(null);
-  const [done, setDone] = useState<string[]>([]);
-  const [showLow, setShowLow] = useState(false);
-
   useEffect(() => {
     let active = true;
     import("@/server/gmail.functions").then(({ getInboxItems }) =>
@@ -644,6 +649,12 @@ function InboxQueue({ onCompose }: { onCompose:()=>void }) {
     );
     return () => { active = false; };
   }, []);
+  return { items, error };
+}
+
+function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: InboxItem[]|null; error: string|null }) {
+  const [done, setDone] = useState<string[]>([]);
+  const [showLow, setShowLow] = useState(false);
 
   if (error) {
     return (
@@ -723,13 +734,41 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   onRunOvernight:(text:string)=>void;
   onCompose:()=>void;
 }) {
-  const sorted=(Object.values(DOMAINS) as DomainData[]).sort((a,b)=>b.activity-a.activity);
-  const ids=sorted.map(d=>d.id);
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
   const hour = new Date().getHours();
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+
+  const { items: inbox, error: inboxErr } = useInbox();
+
+  // Group live emails by domain → DomainCard items shape
+  const liveByDomain = useMemo(() => {
+    const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
+    (inbox ?? []).filter(i => i.category !== "ignore").forEach(i => {
+      const arr = groups[i.domain] ?? (groups[i.domain] = []);
+      arr.push({
+        id: i.id,
+        text: i.subject,
+        meta: i.from || i.reason || "",
+        urgent: i.category === "urgent",
+        progress: 0,
+      });
+    });
+    return groups;
+  }, [inbox]);
+
+  // Sort domains by live activity (count), fall back to static
+  const sorted = useMemo(() => {
+    const arr = Object.values(DOMAINS) as DomainData[];
+    return arr.slice().sort((a: DomainData, b: DomainData) => {
+      const ca = liveByDomain[a.id]?.length ?? -1;
+      const cb = liveByDomain[b.id]?.length ?? -1;
+      if (ca !== cb) return cb - ca;
+      return b.activity - a.activity;
+    });
+  }, [liveByDomain]);
+  const ids = sorted.map(d => d.id);
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
@@ -744,18 +783,25 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
       </div>
 
       {/* Inbox queue (live) */}
-      <InboxQueue onCompose={onCompose}/>
+      <InboxQueue onCompose={onCompose} items={inbox} error={inboxErr}/>
 
 
       {/* Domain bento */}
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
-          <div style={{gridArea:"d0"}}><DomainCard domain={DOMAINS[ids[0]]} size="xl" onClick={()=>onDomain(ids[0])}/></div>
-          <div style={{gridArea:"d1"}}><DomainCard domain={DOMAINS[ids[1]]} size="lg" onClick={()=>onDomain(ids[1])}/></div>
-          <div style={{gridArea:"d2"}}><DomainCard domain={DOMAINS[ids[2]]} size="md" onClick={()=>onDomain(ids[2])}/></div>
-          <div style={{gridArea:"d3"}}><DomainCard domain={DOMAINS[ids[3]]} size="sm" onClick={()=>onDomain(ids[3])}/></div>
-          <div style={{gridArea:"d4"}}><DomainCard domain={DOMAINS[ids[4]]} size="sm" onClick={()=>onDomain(ids[4])}/></div>
+          {([0,1,2,3,4] as const).map(i => {
+            const id = ids[i] as DomainId | undefined;
+            if (!id) return null;
+            const live = liveByDomain[id];
+            const sizes = ["xl","lg","md","sm","sm"] as const;
+            return (
+              <div key={id} style={{gridArea:`d${i}`}}>
+                <DomainCard domain={DOMAINS[id]} size={sizes[i]} onClick={()=>onDomain(id)}
+                  liveItems={live} liveCount={live?.length}/>
+              </div>
+            );
+          })}
           <div style={{gridArea:"signal"}}>
             <div className="h-full rounded-2xl border border-cyan-400/15 flex items-center gap-3 px-4 cursor-default hover:border-cyan-400/30 transition-colors"
               style={{background:"radial-gradient(ellipse at 0% 50%,rgba(6,182,212,0.08) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
