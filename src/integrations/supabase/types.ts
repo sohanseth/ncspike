@@ -277,6 +277,33 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_profiles: {
+        Row: {
+          id: string
+          user_id: string
+          sample_count: number
+          built_at: string
+          expires_at: string
+          profile_encrypted: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          sample_count?: number
+          built_at?: string
+          expires_at?: string
+          profile_encrypted?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          sample_count?: number
+          built_at?: string
+          expires_at?: string
+          profile_encrypted?: string | null
+        }
+        Relationships: []
+      }
       watchers: {
         Row: {
           created_at: string
