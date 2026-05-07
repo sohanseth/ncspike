@@ -14,6 +14,7 @@ import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
 
@@ -42,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
+  id: '/connections',
+  path: '/connections',
+  getParentRoute: () => WorkspaceRoute,
+} as any)
 const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
   id: '/api/public/whatsapp',
   path: '/api/public/whatsapp',
@@ -58,7 +64,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace': typeof WorkspaceRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
+  '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -67,7 +74,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace': typeof WorkspaceRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
+  '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -77,7 +85,8 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace': typeof WorkspaceRoute
+  '/workspace': typeof WorkspaceRouteWithChildren
+  '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -89,6 +98,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace'
+    | '/workspace/connections'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -98,6 +108,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace'
+    | '/workspace/connections'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   id:
@@ -107,6 +118,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace'
+    | '/workspace/connections'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   fileRoutesById: FileRoutesById
@@ -116,7 +128,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
-  WorkspaceRoute: typeof WorkspaceRoute
+  WorkspaceRoute: typeof WorkspaceRouteWithChildren
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
 }
@@ -158,6 +170,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/connections': {
+      id: '/workspace/connections'
+      path: '/connections'
+      fullPath: '/workspace/connections'
+      preLoaderRoute: typeof WorkspaceConnectionsRouteImport
+      parentRoute: typeof WorkspaceRoute
+    }
     '/api/public/whatsapp': {
       id: '/api/public/whatsapp'
       path: '/api/public/whatsapp'
@@ -175,15 +194,36 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface WorkspaceRouteChildren {
+  WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
+}
+
+const WorkspaceRouteChildren: WorkspaceRouteChildren = {
+  WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
+}
+
+const WorkspaceRouteWithChildren = WorkspaceRoute._addFileChildren(
+  WorkspaceRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
-  WorkspaceRoute: WorkspaceRoute,
+  WorkspaceRoute: WorkspaceRouteWithChildren,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}
