@@ -437,9 +437,15 @@ function TopBar({
 
 // ─── Bento domain card ────────────────────────────────────────────────────────
 
-function DomainCard({ domain, size, onClick }: { domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void }) {
+function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
+  domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
+  liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
+  liveCount?: number;
+}) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
+  const items = liveItems && liveItems.length ? liveItems : domain.items;
+  const activity = liveCount !== undefined ? Math.min(1, liveCount / 5) : domain.activity;
   return (
     <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
