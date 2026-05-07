@@ -94,7 +94,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     if (summaries.length) {
       const rows = summaries.map((s) => ({
         user_id: context.userId,
-        node_type: "email" as const,
+        node_type: "thread" as const,
         label: s.subject || "(no subject)",
         source: `gmail:${label ?? "me"}`,
         importance: 1,
