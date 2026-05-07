@@ -774,12 +774,14 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
 
   const toAddr = extractEmail(item.from);
   const subj = item.subject.startsWith("Re:") ? item.subject : `Re: ${item.subject}`;
-  // Deep-link compose URL. Works in production; the Replit preview iframe
-  // propagates Cross-Origin-Embedder-Policy to popups so the new tab gets
-  // ERR_BLOCKED_BY_RESPONSE there — that's why Copy is the primary action.
+  // Deep-link compose URL. Works fine in production but the Replit dev preview
+  // iframe propagates Cross-Origin-Embedder-Policy to popups → Gmail returns
+  // ERR_BLOCKED_BY_RESPONSE in the new tab. We hide the link when inside any
+  // iframe; Copy is always the safe primary action.
   const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(toAddr)}&su=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
   const mailtoUrl = `mailto:${toAddr}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent(body)}`;
   const [copied, setCopied] = useState(false);
+  const inIframe = typeof window !== "undefined" && window.self !== window.top;
 
   async function copyAndMarkSent() {
     if (!draft) return;
@@ -842,14 +844,21 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
           <Check size={11}/> {copied ? "Copied & marked sent" : phase === "sending" ? "Saving…" : "Copy reply & mark sent"}
         </button>
-        <a href={gmailUrl} target="_blank" rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
-          <Send size={11}/> Open Gmail
-        </a>
+        {!inIframe && (
+          <a href={gmailUrl} target="_blank" rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
+            <Send size={11}/> Open Gmail
+          </a>
+        )}
         <a href={mailtoUrl}
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
           mailto…
         </a>
+        {inIframe && copied && (
+          <span className="text-[10.5px] text-muted-foreground/60 px-1">
+            Paste into Gmail in another tab. (Direct link works in your deployed app, blocked in this preview.)
+          </span>
+        )}
         <button onClick={regenerate} disabled={phase === "sending"}
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
           <RefreshCw size={11}/> Regenerate
