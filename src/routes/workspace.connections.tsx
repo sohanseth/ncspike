@@ -13,6 +13,7 @@ import {
   buildVoiceProfile,
   type VoiceProfileSummary,
 } from "@/lib/voice-drafts.functions";
+import { testProposeSlots } from "@/lib/calendar.functions";
 
 type ConnectStatus = "ok" | "error" | undefined;
 
@@ -55,6 +56,8 @@ function ConnectionsPage() {
   const [pullError, setPullError] = useState<string | null>(null);
   const [voice, setVoice] = useState<VoiceProfileSummary | null>(null);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [calSlots, setCalSlots] = useState<Array<{ human: string; startIso: string }> | null>(null);
+  const [calError, setCalError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
@@ -110,6 +113,20 @@ function ConnectionsPage() {
       setVoice(v);
     } catch (e) {
       setVoiceError(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const onTestCalendar = async () => {
+    setBusy("calendar-test");
+    setCalError(null);
+    setCalSlots(null);
+    try {
+      const { slots } = await testProposeSlots();
+      setCalSlots(slots);
+    } catch (e) {
+      setCalError(e instanceof Error ? e.message : "Failed");
     } finally {
       setBusy(null);
     }
@@ -263,6 +280,63 @@ function ConnectionsPage() {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+          </section>
+        )}
+
+        {byProvider("google_calendar") && (
+          <section className="glass-elevated rounded-2xl p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className="size-10 rounded-xl bg-primary/15 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+                  <Calendar className="size-4 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-display font-semibold">Test calendar</h3>
+                  <p className="text-sm text-muted-foreground mt-1 max-w-md">
+                    Calls Google Free/Busy and proposes the next 3 open slots in your working hours.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={onTestCalendar}
+                disabled={busy === "calendar-test"}
+                className="px-3 py-2 rounded-md text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 inline-flex items-center gap-1.5 shrink-0"
+              >
+                {busy === "calendar-test" ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                Find free slots
+              </button>
+            </div>
+
+            {calError && (
+              <p className="mt-3 text-xs text-rose-400 bg-rose-500/10 ring-1 ring-rose-500/20 rounded px-3 py-2">
+                {calError}
+              </p>
+            )}
+
+            {calSlots && (
+              <div className="mt-4 space-y-2">
+                {calSlots.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No free slots returned. Calendar may be fully booked or the lookahead window had nothing.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    {calSlots.map((s) => (
+                      <li
+                        key={s.startIso}
+                        className="rounded-lg ring-1 ring-border p-3 bg-surface/40 text-sm"
+                      >
+                        {s.human}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
           </section>
