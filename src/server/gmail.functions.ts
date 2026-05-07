@@ -221,7 +221,7 @@ export const getInboxItems = createServerFn({ method: "GET" })
       .select("id, label, data, source, created_at, importance")
       .eq("user_id", context.userId)
       .like("source", "gmail:%")
-      .order("importance", { ascending: false })
+      .order("importance", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(20);
     if (error) throw error;
