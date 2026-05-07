@@ -3,7 +3,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { encryptToken, decryptToken } from "@/server/crypto.server";
-import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
+import { getValidGmailAccessToken, getValidGoogleAccessToken } from "@/server/gmail-auth.server";
 import {
   proposeFreeSlots,
   createCalendarEvent,
@@ -670,6 +670,49 @@ export const createPrepBlock = createServerFn({ method: "POST" })
       console.warn("createPrepBlock failed:", e);
       return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
     }
+  });
+
+/**
+ * Pre-compute calendar-based availability suggestions for the asking-panel
+ * "What times work for you?" question. Lets the user one-click fill the answer
+ * with real free slots that respect their prep_time, instead of typing
+ * placeholder text. Returns [] when no calendar / no free slots.
+ */
+export type SuggestAvailabilityResult =
+  | { status: "ok"; slots: ProposedSlot[]; answer: string }
+  | { status: "empty" }
+  | { status: "no_calendar" }
+  | { status: "error"; message: string };
+
+export const suggestAvailability = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { prepTimeText?: string }) => d)
+  .handler(async ({ data, context }): Promise<SuggestAvailabilityResult> => {
+    // Probe for a usable calendar token first so we can distinguish
+    // "not connected" from "no free slots in the next week" — both are
+    // valid outcomes but require very different UX nudges.
+    try {
+      await getValidGoogleAccessToken(context.userId, "google_calendar");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not\s+connected|reconnect/i.test(msg)) {
+        return { status: "no_calendar" };
+      }
+      return { status: "error", message: msg.slice(0, 200) };
+    }
+
+    const bufferHours = data.prepTimeText
+      ? parsePrepTimeToHours(data.prepTimeText)
+      : 2;
+    let slots: ProposedSlot[] = [];
+    try {
+      slots = await proposeFreeSlots(context.userId, { bufferHours });
+    } catch (e) {
+      console.warn("suggestAvailability: proposeFreeSlots failed:", e);
+      return { status: "error", message: e instanceof Error ? e.message.slice(0, 200) : "calendar lookup failed" };
+    }
+    if (slots.length === 0) return { status: "empty" };
+    return { status: "ok", slots, answer: slots.map((s) => s.human).join("; ") };
   });
 
 /** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */

@@ -755,6 +755,48 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   }
 
   const [prepBlock, setPrepBlock] = useState<PrepBlockState>({ phase: "idle" });
+  // Per-question UX state for the availability suggestion button.
+  // "loading" → fetching from calendar; "empty" → no slots returned (so we hide
+  // the button next time); "error" → soft failure note; "idle" → button visible.
+  const [availSuggest, setAvailSuggest] = useState<
+    | { status: "idle" }
+    | { status: "loading" }
+    | { status: "empty" }
+    | { status: "no_calendar" }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+  // Hard guard against double-submit before React commits the loading state.
+  const availInFlight = useRef(false);
+
+  async function suggestAvailabilityFromCalendar(questionId: string) {
+    if (availInFlight.current) return;
+    availInFlight.current = true;
+    setAvailSuggest({ status: "loading" });
+    try {
+      const { suggestAvailability } = await import("@/lib/voice-drafts.functions");
+      const r = await suggestAvailability({
+        data: { prepTimeText: answers.prep_time?.trim() || undefined },
+      });
+      if (r.status === "ok") {
+        setAnswers((a) => ({ ...a, [questionId]: r.answer }));
+        setAvailSuggest({ status: "idle" });
+      } else if (r.status === "empty") {
+        setAvailSuggest({ status: "empty" });
+      } else if (r.status === "no_calendar") {
+        setAvailSuggest({ status: "no_calendar" });
+      } else {
+        setAvailSuggest({ status: "error", message: r.message });
+      }
+    } catch (e) {
+      console.warn("suggestAvailability failed:", e);
+      setAvailSuggest({
+        status: "error",
+        message: e instanceof Error ? e.message : "calendar lookup failed",
+      });
+    } finally {
+      availInFlight.current = false;
+    }
+  }
 
   async function runDraft(clarifications?: Record<string, string>, assistantNote?: string) {
     const myReq = ++reqRef.current;
@@ -917,6 +959,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setAnswers({});
     setPendingNote("");
     setPrepBlock({ phase: "idle" });
+    setAvailSuggest("idle");
     setPhase("idle");
   }
 
@@ -950,18 +993,61 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         </p>
       )}
       <div className="flex flex-col gap-2">
-        {questions.map((q) => (
-          <label key={q.id} className="flex flex-col gap-1">
-            <span className="text-[11px] text-muted-foreground/80">{q.question}</span>
-            <input
-              type="text"
-              value={answers[q.id] ?? ""}
-              placeholder={q.placeholder}
-              onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
-              className="bg-transparent border border-white/[0.08] rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground/35 focus:outline-none focus:ring-1 focus:ring-primary/40"
-            />
-          </label>
-        ))}
+        {questions.map((q) => {
+          const isAvailability = q.id === "availability";
+          // Only offer the calendar suggestion once we know how much prep time
+          // the user wants (otherwise the buffer is meaningless for interviews).
+          // For non-interview emails (no prep_time question at all) we still
+          // offer it using the default 2-hour buffer.
+          const hasPrepTimeQuestion = questions.some((x) => x.id === "prep_time");
+          const prepFilled = !!answers.prep_time?.trim();
+          const canSuggest = isAvailability && (!hasPrepTimeQuestion || prepFilled);
+          return (
+            <label key={q.id} className="flex flex-col gap-1">
+              <span className="text-[11px] text-muted-foreground/80">{q.question}</span>
+              <input
+                type="text"
+                value={answers[q.id] ?? ""}
+                placeholder={q.placeholder}
+                onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+                className="bg-transparent border border-white/[0.08] rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground/35 focus:outline-none focus:ring-1 focus:ring-primary/40"
+              />
+              {canSuggest && (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  {availSuggest === "idle" && (
+                    <button
+                      type="button"
+                      onClick={() => suggestAvailabilityFromCalendar(q.id)}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-primary/75 hover:bg-primary/10 hover:text-primary"
+                    >
+                      <CalendarDays size={10}/> Use my calendar
+                    </button>
+                  )}
+                  {availSuggest === "loading" && (
+                    <span className="text-[10.5px] font-mono text-muted-foreground/60">
+                      Checking your calendar…
+                    </span>
+                  )}
+                  {availSuggest === "empty" && (
+                    <span className="text-[10.5px] text-muted-foreground/60">
+                      No free slots in the next week — type your own.
+                    </span>
+                  )}
+                  {availSuggest === "error" && (
+                    <span className="text-[10.5px] text-rose-300/70">
+                      Couldn't reach calendar — type your own.
+                    </span>
+                  )}
+                  {!hasPrepTimeQuestion ? null : !prepFilled ? (
+                    <span className="text-[10px] text-muted-foreground/45">
+                      (answer prep time first to use calendar)
+                    </span>
+                  ) : null}
+                </div>
+              )}
+            </label>
+          );
+        })}
       </div>
       <div className="flex items-center gap-1.5">
         <button onClick={submitAnswers} disabled={phase !== "asking"}
@@ -1037,7 +1123,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           {prepBlock.phase === "idle" && (
             <button onClick={blockPrepTime}
               className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25">
-              <Calendar size={11}/> Block prep time on my calendar
+              <CalendarDays size={11}/> Block prep time on my calendar
             </button>
           )}
           {prepBlock.phase === "blocking" && (

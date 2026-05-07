@@ -66,6 +66,7 @@ Output STRICT JSON only. No prose before or after. Schema:
 
 Rules:
 - If intent is "interview", ALWAYS include a question with id "prep_time" like "How much prep time would you like for this one?" with a placeholder such as "2 days" or "1 week". Different roles need different prep — never assume a fixed buffer.
+- If the email is asking the user to propose meeting times (intent "interview" or "meeting" where the sender wants the user's availability), include a question with id "availability" (EXACTLY that id) like "What times work for you?" with a placeholder such as "Thursday after 2pm, Friday all day". The UI will offer a one-click suggestion from the user's actual calendar for this question, so the id must match.
 - If you'd need user context to draft well (e.g. "do you already know this person?"), include 1 more question with a descriptive id (e.g. "company_familiarity", "decision_lean").
 - For straightforward emails (casual chat, simple acknowledgment), use needsClarification: false and questions: [].
 - Maximum 2 questions. Each question must be answerable in a short free-text reply.
@@ -110,6 +111,29 @@ function extractFirstJsonObject(text: string): string | null {
   return null;
 }
 
+/**
+ * Map model-emitted variants of the "what times work for you" question to the
+ * canonical id "availability" so the UI can rely on a stable contract for the
+ * "Use my calendar" suggestion chip.
+ */
+function normalizeQuestionId(rawId: string, questionText: string): string {
+  const id = rawId.trim().toLowerCase();
+  if (id === "availability" || id === "prep_time") return id;
+  // Common model variants we've seen: avail*, time_slots, times, slots,
+  // when, when_free, schedule, available_times, meeting_times.
+  if (/^(avail|time[_\s-]?slot|times?|slots?|when|schedule|available[_\s-]?times?|meeting[_\s-]?times?)$/i.test(id)) {
+    return "availability";
+  }
+  // Fallback: if the question text strongly implies asking for free times,
+  // snap to "availability". Conservative — must mention both time/slot AND
+  // a verb of asking ("work", "available", "free").
+  if (/\b(time|slot|when)\b/i.test(questionText) &&
+      /\b(work|available|free|good|prefer)\b/i.test(questionText)) {
+    return "availability";
+  }
+  return id;
+}
+
 function coerceAnalysis(raw: unknown): EmailAnalysis {
   if (!raw || typeof raw !== "object") return EMPTY_ANALYSIS;
   const r = raw as Record<string, unknown>;
@@ -126,10 +150,13 @@ function coerceAnalysis(raw: unknown): EmailAnalysis {
     .map((q): AssistantQuestion | null => {
       if (!q || typeof q !== "object") return null;
       const qq = q as Record<string, unknown>;
-      const id = typeof qq.id === "string" ? qq.id : "";
+      const rawId = typeof qq.id === "string" ? qq.id : "";
       const question = typeof qq.question === "string" ? qq.question : "";
       const placeholder = typeof qq.placeholder === "string" ? qq.placeholder : "";
-      if (!id || !question) return null;
+      if (!rawId || !question) return null;
+      // Canonicalize the availability id so the UI's "Use my calendar" chip
+      // detection isn't broken by model drift (avail / time_slots / when / etc).
+      const id = normalizeQuestionId(rawId, question);
       return { id, question, placeholder };
     })
     .filter((q): q is AssistantQuestion => q !== null);
