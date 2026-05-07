@@ -44,9 +44,9 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
-  id: '/connections',
-  path: '/connections',
-  getParentRoute: () => WorkspaceRoute,
+  id: '/workspace/connections',
+  path: '/workspace/connections',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
   id: '/api/public/whatsapp',
@@ -128,6 +128,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
@@ -172,10 +173,10 @@ declare module '@tanstack/react-router' {
     }
     '/workspace/connections': {
       id: '/workspace/connections'
-      path: '/connections'
+      path: '/workspace/connections'
       fullPath: '/workspace/connections'
       preLoaderRoute: typeof WorkspaceConnectionsRouteImport
-      parentRoute: typeof WorkspaceRoute
+      parentRoute: typeof rootRouteImport
     }
     '/api/public/whatsapp': {
       id: '/api/public/whatsapp'
@@ -199,6 +200,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
@@ -206,12 +208,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
