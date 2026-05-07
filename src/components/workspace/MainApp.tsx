@@ -329,6 +329,9 @@ function TopBar({
   onDomain:(id:DomainId)=>void; onVoice:()=>void; onExplore:()=>void; onTest:()=>void;
 }) {
   const pendingTasks = ACTION_QUEUE.filter(a=>a.type==="proactive").length;
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
+  const handleSignOut = async () => { await signOut(); navigate({ to: "/auth" }); };
 
   return (
     <header className="h-14 flex items-center px-4 gap-3 border-b border-border flex-shrink-0 relative z-30">
