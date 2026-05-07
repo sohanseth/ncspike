@@ -259,16 +259,17 @@ export const getInboxItems = createServerFn({ method: "GET" })
     if (error) throw error;
     return {
       items: (data ?? []).map((r) => {
-        const d = (r.data ?? {}) as { from?: string; snippet?: string; date?: string; category?: string; domain?: string; reason?: string };
+        const d = (r.data ?? {}) as { from?: string; snippet?: string; date?: string; category?: string; domain?: string; reason?: string; classified_by?: string };
         return {
           id: r.id as string,
           subject: (r.label as string) || "(no subject)",
           from: d.from ?? "",
           snippet: d.snippet ?? "",
           date: d.date ?? "",
-          category: (d.category as "urgent" | "today" | "proactive" | "ignore" | undefined) ?? "ignore",
-          domain: (d.domain as "professional" | "learning" | "social" | "family" | "personal" | undefined) ?? "personal",
+          category: (d.category as EmailCategory | undefined) ?? "needs_review",
+          domain: (d.domain as EmailDomain | undefined) ?? "personal",
           reason: d.reason ?? "",
+          classifiedBy: (d.classified_by as "rules" | "llm" | undefined) ?? "rules",
         };
       }),
     };
