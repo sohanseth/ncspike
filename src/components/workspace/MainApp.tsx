@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { Link } from "@tanstack/react-router";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Heart, MessageCircle, Briefcase, ShoppingBag,
@@ -7,7 +8,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package,
+  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Package, Plug,
 } from "lucide-react";
 
 
@@ -393,6 +394,15 @@ function TopBar({
           <User size={13}/>
           <span className="hidden sm:block">You</span>
         </button>
+
+        {/* Connections */}
+        <Link to="/workspace/connections"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+          style={{fontFamily:"'DM Sans',sans-serif"}}
+          title="Connect Gmail & Calendar">
+          <Plug size={13}/>
+          <span className="hidden sm:block">Connect</span>
+        </Link>
 
         {/* Test */}
         <button onClick={onTest}
