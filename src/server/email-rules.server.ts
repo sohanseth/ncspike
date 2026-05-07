@@ -137,6 +137,31 @@ const SUBJECT_RULES: Array<{ patterns: RegExp[]; category?: EmailCategory; domai
     domain: "personal",
     reason: "Receipt / shipping",
   },
+  {
+    // Family / school / kids' activities
+    patterns: [
+      /\b(school|teacher|classroom|homework|pta|parents?\s+evening|parent[-\s]teacher)\b/i,
+      /\b(ballet|swimming\s+lesson|piano\s+lesson|football\s+practice|judo|karate|gymnastics)\b/i,
+      /\b(children'?s?|kids?)\s+(festival|theatre|theater|trip|workshop|camp|club|party)\b/i,
+      /\b(pickup|drop[-\s]?off|permission\s+slip|field\s+trip)\b/i,
+      /\bP[1-7]\b/, // UK primary school year groups (P1..P7)
+      /\bYear\s*[1-9]\b/i,
+      /\b(la\s+jolie\s+ronde|stagecoach|rainbows|brownies|cubs|scouts|beavers)\b/i, // common UK kids' clubs
+    ],
+    category: "today",
+    domain: "family",
+    reason: "School / kids' activity",
+  },
+  {
+    // Forwarded brand-only subjects: "Fwd: Nearform", "Fwd: Stripe", etc.
+    // Matches well-known tech/recruiting employers — extend as needed.
+    patterns: [
+      /\b(nearform|crowdstrike|datadog|cloudflare|vercel|netlify|hashicorp|stripe|shopify|airbnb|uber|meta|amazon|google|microsoft|apple|netflix|spotify|atlassian|gitlab|github|figma|notion|linear|anthropic|openai|deepmind|nvidia|databricks|snowflake|mongodb|elastic|confluent|twilio|segment|braze|intercom|zendesk|salesforce|workday|servicenow|palantir|deloitte|accenture|capgemini|infosys|tcs|wipro|ibm|oracle|sap)\b/i,
+    ],
+    category: "proactive",
+    domain: "professional",
+    reason: "Known employer mention",
+  },
 ];
 
 export function rulesClassify(from: string, subject: string): RuleResult {
