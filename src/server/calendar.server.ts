@@ -425,6 +425,26 @@ export async function createCalendarEvent(
   };
 }
 
+/**
+ * Compute a 30-minute reminder slot at 09:00 in the user's TZ, `afterDays`
+ * days from now. Used by "remind me to follow up" actions; deliberately not
+ * weekend-aware (the user picked a specific number of days).
+ */
+export function computeFollowUpSlot(
+  afterDays: number,
+  timezone: string,
+): { startIso: string; endIso: string } {
+  const safeDays = Math.max(1, Math.min(60, Math.round(afterDays)));
+  const target = new Date(Date.now() + safeDays * 86400000);
+  const { y, m, d } = ymdInTz(target, timezone);
+  const start = fromZonedWallClock(y, m, d, 9, 0, timezone);
+  const end = new Date(start.getTime() + 30 * 60 * 1000);
+  return {
+    startIso: toZonedIso(start, timezone),
+    endIso: toZonedIso(end, timezone),
+  };
+}
+
 /** Resolve the user's primary calendar timezone, with safe fallback. */
 export async function getUserCalendarTimezone(userId: string): Promise<string> {
   try {

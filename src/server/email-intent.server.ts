@@ -35,6 +35,18 @@ export type AssistantQuestion = {
   placeholder: string;
 };
 
+/**
+ * Optional one-click follow-up reminder the assistant can propose alongside the
+ * draft. Surfaced in the draft panel as a single button that creates a calendar
+ * event N days from now. `afterDays` is bounded server-side (1-60). Omit when
+ * the email needs no follow-up (most casual chat, FYIs, completed threads).
+ */
+export type SuggestedFollowUp = {
+  afterDays: number;
+  /** Short summary used as the calendar event title, e.g. "Chase Maya re: vendor decision". */
+  summary: string;
+};
+
 export type EmailAnalysis = {
   intent: EmailIntent;
   /** True if drafting benefits from user input first. */
@@ -43,6 +55,8 @@ export type EmailAnalysis = {
   questions: AssistantQuestion[];
   /** 1-3 sentence read of the email + what the assistant would suggest. */
   assistantNote: string;
+  /** Optional follow-up reminder proposal (one per draft). */
+  followUp?: SuggestedFollowUp;
 };
 
 const EMPTY_ANALYSIS: EmailAnalysis = {
@@ -61,7 +75,8 @@ Output STRICT JSON only. No prose before or after. Schema:
   "questions": [
     { "id": "string", "question": "string", "placeholder": "string" }
   ],
-  "assistantNote": "string"
+  "assistantNote": "string",
+  "followUp": { "afterDays": number, "summary": "string" } | null
 }
 
 Rules:
@@ -71,6 +86,7 @@ Rules:
 - For straightforward emails (casual chat, simple acknowledgment), use needsClarification: false and questions: [].
 - Maximum 2 questions. Each question must be answerable in a short free-text reply.
 - assistantNote is 1-3 sentences in plain text — your honest read: what the email is, what's at stake, what you'd suggest. Address the user directly ("This looks like…", "I'd suggest…"). Do not write the draft itself here.
+- followUp: include ONLY when the user would plausibly want a calendar reminder to come back to this thread (e.g. waiting on a decision, expecting a reply by a date, sales follow-through). Set afterDays between 1 and 14, and summary to a short imperative like "Chase Maya re: vendor pricing" or "Decide on the offer". Omit (or set null) for casual chat, FYIs, interview invites already covered by prep blocks, or anything that doesn't need a future nudge.
 - Never invent facts not present in the email.`;
 
 function buildUserPrompt(email: IncomingEmail): string {
@@ -177,12 +193,26 @@ function coerceAnalysis(raw: unknown): EmailAnalysis {
   const ORDER: Record<string, number> = { prep_time: 0, availability: 1 };
   questions.sort((a, b) => (ORDER[a.id] ?? 99) - (ORDER[b.id] ?? 99));
 
+  // Coerce optional follow-up. We're strict about bounds (1-14 days, non-empty
+  // summary) so a hallucinated `{afterDays: 9999}` doesn't slip through and
+  // create a calendar event in the year 2050.
+  let followUp: SuggestedFollowUp | undefined;
+  if (r.followUp && typeof r.followUp === "object") {
+    const f = r.followUp as Record<string, unknown>;
+    const days = typeof f.afterDays === "number" ? Math.round(f.afterDays) : NaN;
+    const summary = typeof f.summary === "string" ? f.summary.trim() : "";
+    if (Number.isFinite(days) && days >= 1 && days <= 14 && summary) {
+      followUp = { afterDays: days, summary: summary.slice(0, 120) };
+    }
+  }
+
   return {
     intent: safeIntent,
     needsClarification: questions.length > 0,
     questions,
     assistantNote:
       typeof r.assistantNote === "string" ? r.assistantNote.trim() : "",
+    ...(followUp ? { followUp } : {}),
   };
 }
 

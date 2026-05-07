@@ -8,6 +8,7 @@ import {
   proposeFreeSlots,
   createCalendarEvent,
   computePrepBlockSlot,
+  computeFollowUpSlot,
   getUserCalendarTimezone,
   CalendarScopeError,
   type ProposedSlot,
@@ -315,6 +316,11 @@ export type DraftPayload = {
    * like "block prep time before the earliest slot".
    */
   proposedSlots?: ProposedSlot[];
+  /**
+   * Optional follow-up reminder proposal carried through from analyzeDraft.
+   * UI renders a one-click "Remind me in N days" chip in the draft panel.
+   */
+  followUp?: { afterDays: number; summary: string };
 };
 
 const DEFAULT_PROFILE: VoiceProfile = {
@@ -474,6 +480,7 @@ export const draftReply = createServerFn({ method: "POST" })
     memoryNodeId: string;
     clarifications?: Record<string, string>;
     assistantNote?: string;
+    followUp?: { afterDays: number; summary: string };
   }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
     await assertCanDraft(context.userId);
@@ -527,6 +534,7 @@ export const draftReply = createServerFn({ method: "POST" })
     const payload = rowToPayload(inserted);
     if (data.assistantNote) payload.assistantNote = data.assistantNote;
     if (proposedSlots.length > 0) payload.proposedSlots = proposedSlots;
+    if (data.followUp) payload.followUp = data.followUp;
     return payload;
   });
 
@@ -715,6 +723,56 @@ export const suggestAvailability = createServerFn({ method: "POST" })
     }
     if (slots.length === 0) return { status: "empty" };
     return { status: "ok", slots, answer: slots.map((s) => s.human).join("; ") };
+  });
+
+/**
+ * Create a 30-minute reminder event N days from now at 09:00 in the user's TZ.
+ * Mirrors the createPrepBlock result shape so the UI can reuse the same
+ * success/error-state rendering. `afterDays` is bounded server-side (1-60).
+ */
+export type FollowUpReminderResult =
+  | { ok: true; eventId: string; htmlLink: string; startIso: string; endIso: string; human: string }
+  | { ok: false; reason: "scope" | "no_calendar" | "create_failed"; message: string };
+
+export const createFollowUpReminder = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { afterDays: number; summary: string }) => d)
+  .handler(async ({ data, context }): Promise<FollowUpReminderResult> => {
+    const summary = (data.summary ?? "").trim().slice(0, 120);
+    if (!summary) {
+      return { ok: false, reason: "create_failed", message: "Reminder summary is required." };
+    }
+    const timezone = await getUserCalendarTimezone(context.userId);
+    const slot = computeFollowUpSlot(data.afterDays, timezone);
+    try {
+      const created = await createCalendarEvent(context.userId, {
+        summary: `Follow up: ${summary}`,
+        description:
+          "Auto-set by NeuralConnexions as a nudge to revisit this thread. " +
+          "Adjust or delete if it's no longer needed.",
+        startIso: slot.startIso,
+        endIso: slot.endIso,
+        timezone,
+      });
+      return {
+        ok: true,
+        eventId: created.eventId,
+        htmlLink: created.htmlLink,
+        startIso: created.startIso,
+        endIso: created.endIso,
+        human: created.human,
+      };
+    } catch (e) {
+      if (e instanceof CalendarScopeError) {
+        return { ok: false, reason: "scope", message: e.message };
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not\s+connected|reconnect/i.test(msg)) {
+        return { ok: false, reason: "no_calendar", message: "Connect Google Calendar first." };
+      }
+      console.warn("createFollowUpReminder failed:", e);
+      return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
+    }
   });
 
 /** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */

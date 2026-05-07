@@ -9,7 +9,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox,
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox,
 } from "lucide-react";
 
 
@@ -726,6 +726,7 @@ type DraftDisplay = {
   template: string;
   assistantNote?: string;
   proposedSlots?: { startIso: string; endIso: string; human: string }[];
+  followUp?: { afterDays: number; summary: string };
 };
 
 type PrepBlockState =
@@ -733,6 +734,9 @@ type PrepBlockState =
   | { phase: "blocking" }
   | { phase: "done"; human: string; htmlLink: string }
   | { phase: "error"; reason: "scope" | "no_calendar" | "create_failed"; message: string };
+
+// Same shape as PrepBlockState — both wrap createCalendarEvent results.
+type FollowUpState = PrepBlockState;
 
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
@@ -744,6 +748,10 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   const [questions, setQuestions] = useState<AssistantQuestion[]>([]);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [pendingNote, setPendingNote] = useState<string>("");
+  // Carries the optional follow-up suggestion from analyzeDraft → draftReply,
+  // so the draft panel can render the "Remind me in N days" chip without an
+  // extra round trip.
+  const [pendingFollowUp, setPendingFollowUp] = useState<{ afterDays: number; summary: string } | undefined>(undefined);
   // Monotonic request id — every async action increments it. Resolutions
   // whose id no longer matches the current `reqRef` are ignored, so a
   // double-click or rapid skip→submit can't write stale state.
@@ -755,6 +763,11 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   }
 
   const [prepBlock, setPrepBlock] = useState<PrepBlockState>({ phase: "idle" });
+  const [followUp, setFollowUp] = useState<FollowUpState>({ phase: "idle" });
+  // Synchronous double-click guard for follow-up creation. React state alone
+  // isn't enough — two rapid clicks can both observe phase: "idle" before the
+  // first re-render commits, leading to two calendar events.
+  const followUpInFlight = useRef(false);
   // Per-question UX state for the availability suggestion button.
   // "loading" → fetching from calendar; "empty" → no slots returned (so we hide
   // the button next time); "error" → soft failure note; "idle" → button visible.
@@ -765,6 +778,11 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     | { status: "no_calendar" }
     | { status: "error"; message: string }
   >({ status: "idle" });
+  // Slots fetched from calendar, kept around so we can render them as
+  // toggleable chips. Source of truth for "is this slot in the answer?" is the
+  // answer string itself (plain substring check), so the chip stays in sync if
+  // the user edits the text manually.
+  const [availSlots, setAvailSlots] = useState<{ startIso: string; human: string }[]>([]);
   // Hard guard against double-submit before React commits the loading state.
   const availInFlight = useRef(false);
 
@@ -778,17 +796,23 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         data: { prepTimeText: answers.prep_time?.trim() || undefined },
       });
       if (r.status === "ok") {
+        setAvailSlots(r.slots.map((s) => ({ startIso: s.startIso, human: s.human })));
         setAnswers((a) => ({ ...a, [questionId]: r.answer }));
         setAvailSuggest({ status: "idle" });
       } else if (r.status === "empty") {
+        // Clear any stale chips from a previous successful fetch — otherwise
+        // a refresh that returns no slots would still display the old ones.
+        setAvailSlots([]);
         setAvailSuggest({ status: "empty" });
       } else if (r.status === "no_calendar") {
+        setAvailSlots([]);
         setAvailSuggest({ status: "no_calendar" });
       } else {
         setAvailSuggest({ status: "error", message: r.message });
       }
     } catch (e) {
       console.warn("suggestAvailability failed:", e);
+      setAvailSlots([]);
       setAvailSuggest({
         status: "error",
         message: e instanceof Error ? e.message : "calendar lookup failed",
@@ -803,10 +827,11 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setPhase("generating");
     setErr(null);
     setPrepBlock({ phase: "idle" });
+    setFollowUp({ phase: "idle" });
     try {
       const { draftReply } = await import("@/lib/voice-drafts.functions");
       const d = await draftReply({
-        data: { memoryNodeId: item.id, clarifications, assistantNote },
+        data: { memoryNodeId: item.id, clarifications, assistantNote, followUp: pendingFollowUp },
       });
       if (myReq !== reqRef.current) return; // superseded
       setDraft({
@@ -816,6 +841,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         template: d.template,
         assistantNote: d.assistantNote ?? assistantNote,
         proposedSlots: d.proposedSlots,
+        followUp: d.followUp,
       });
       setBody(d.body);
       setPhase("open");
@@ -840,6 +866,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       const a = await analyzeDraft({ data: { memoryNodeId: item.id } });
       if (myReq !== reqRef.current) return;
       setPendingNote(a.assistantNote);
+      setPendingFollowUp(a.followUp);
       if (a.questions.length > 0) {
         setQuestions(a.questions);
         setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, ""])));
@@ -869,6 +896,9 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setErr(null);
     // Regenerated draft may have a new earliest slot → wipe stale prep-block state.
     setPrepBlock({ phase: "idle" });
+    // NOTE: deliberately do NOT reset followUp here. The follow-up suggestion
+    // is about the *email*, not the draft body, so a regenerate shouldn't let
+    // the user create a second reminder. State is reset on dismiss + redraft.
     setPhase("generating");
     try {
       const { regenerateDraft } = await import("@/lib/voice-drafts.functions");
@@ -882,6 +912,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         template: d.template,
         assistantNote: draft.assistantNote,
         proposedSlots: d.proposedSlots ?? draft.proposedSlots,
+        followUp: draft.followUp,
       });
       setBody(d.body);
       setPhase("open");
@@ -958,9 +989,66 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setQuestions([]);
     setAnswers({});
     setPendingNote("");
+    setPendingFollowUp(undefined);
     setPrepBlock({ phase: "idle" });
+    setFollowUp({ phase: "idle" });
     setAvailSuggest({ status: "idle" });
+    setAvailSlots([]);
     setPhase("idle");
+  }
+
+  async function scheduleFollowUp() {
+    if (!draft?.followUp) return;
+    if (followUpInFlight.current) return;
+    if (followUp.phase === "blocking" || followUp.phase === "done") return;
+    followUpInFlight.current = true;
+    setFollowUp({ phase: "blocking" });
+    try {
+      const { createFollowUpReminder } = await import("@/lib/voice-drafts.functions");
+      const r = await createFollowUpReminder({
+        data: { afterDays: draft.followUp.afterDays, summary: draft.followUp.summary },
+      });
+      if (r.ok) {
+        setFollowUp({ phase: "done", human: r.human, htmlLink: r.htmlLink });
+      } else {
+        setFollowUp({ phase: "error", reason: r.reason, message: r.message });
+      }
+    } catch (e) {
+      setFollowUp({
+        phase: "error",
+        reason: "create_failed",
+        message: e instanceof Error ? e.message : "Failed to set reminder",
+      });
+    } finally {
+      followUpInFlight.current = false;
+    }
+  }
+
+  /**
+   * Toggle a single calendar-suggested slot in/out of the answer string.
+   * Avoids the "delete the wrong character and corrupt the list" footgun
+   * users hit when editing the prefilled string by hand.
+   */
+  function toggleAvailSlot(questionId: string, human: string) {
+    setAnswers((a) => {
+      const cur = a[questionId] ?? "";
+      const present = cur.includes(human);
+      let next: string;
+      if (present) {
+        // Remove the slot string, plus a leading or trailing "; " separator
+        // if present, then collapse any double separators we left behind.
+        next = cur
+          .replace(`${human}; `, "")
+          .replace(`; ${human}`, "")
+          .replace(human, "")
+          .replace(/;\s*;/g, ";")
+          .replace(/^;\s*|\s*;\s*$/g, "")
+          .trim();
+      } else {
+        next = cur.trim() ? `${cur.trim()}; ${human}` : human;
+      }
+      return { ...a, [questionId]: next };
+    });
   }
 
   const button =
@@ -1018,15 +1106,48 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                   Answer prep time first to use your calendar.
                 </span>
               )}
+              {canSuggest && isAvailability && availSlots.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-0.5">
+                  {availSlots.map((s) => {
+                    const inAnswer = (answers[q.id] ?? "").includes(s.human);
+                    return (
+                      <button
+                        key={s.startIso}
+                        type="button"
+                        onClick={() => toggleAvailSlot(q.id, s.human)}
+                        className={
+                          inAnswer
+                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] bg-primary/15 text-primary/90 ring-1 ring-primary/30 hover:bg-primary/20"
+                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-muted-foreground/55 ring-1 ring-white/[0.08] hover:ring-primary/30 hover:text-foreground/75"
+                        }
+                        title={inAnswer ? "Remove from reply" : "Add to reply"}
+                      >
+                        {s.human}
+                        {inAnswer ? <X size={9}/> : <Plus size={9}/>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               {canSuggest && (
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  {availSuggest.status === "idle" && (
+                  {availSuggest.status === "idle" && availSlots.length === 0 && (
                     <button
                       type="button"
                       onClick={() => suggestAvailabilityFromCalendar(q.id)}
                       className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-primary/75 hover:bg-primary/10 hover:text-primary"
                     >
                       <CalendarDays size={10}/> Use my calendar
+                    </button>
+                  )}
+                  {availSuggest.status === "idle" && availSlots.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => suggestAvailabilityFromCalendar(q.id)}
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground/55 hover:text-foreground/75"
+                      title="Re-fetch free slots from your calendar"
+                    >
+                      <RefreshCw size={9}/> Refresh
                     </button>
                   )}
                   {availSuggest.status === "loading" && (
@@ -1165,6 +1286,53 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                 </>
               ) : (
                 <>Couldn't block prep time: {prepBlock.message}</>
+              )}
+            </span>
+          )}
+        </div>
+      )}
+      {/* Follow-up reminder: optional one-click chip surfaced when the assistant
+          thinks this thread is worth coming back to (decisions, sales chases). */}
+      {draft?.followUp && (
+        <div className="border-t border-white/[0.06] pt-2 mt-1 flex items-center gap-2 flex-wrap">
+          {followUp.phase === "idle" && (
+            <button onClick={scheduleFollowUp}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25"
+              title={`"${draft.followUp.summary}" — adds a 30-min hold at 9 AM, ${draft.followUp.afterDays} day${draft.followUp.afterDays === 1 ? "" : "s"} from now`}
+            >
+              <BellRing size={11}/> Remind me in {draft.followUp.afterDays} day{draft.followUp.afterDays === 1 ? "" : "s"}
+            </button>
+          )}
+          {followUp.phase === "blocking" && (
+            <span className="text-[10.5px] font-mono text-muted-foreground/70">Setting reminder…</span>
+          )}
+          {followUp.phase === "done" && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-300/85">
+              <Check size={11}/> Reminder set: {followUp.human}
+              {followUp.htmlLink && (
+                <a href={followUp.htmlLink} target="_blank" rel="noopener noreferrer"
+                  className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  Open in Calendar →
+                </a>
+              )}
+            </span>
+          )}
+          {followUp.phase === "error" && (
+            <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
+              {followUp.reason === "scope" ? (
+                <>Calendar is read-only.{" "}
+                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                    Reconnect Google Calendar →
+                  </Link>
+                </>
+              ) : followUp.reason === "no_calendar" ? (
+                <>No calendar connected.{" "}
+                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                    Connect Google Calendar →
+                  </Link>
+                </>
+              ) : (
+                <>Couldn't set reminder: {followUp.message}</>
               )}
             </span>
           )}
