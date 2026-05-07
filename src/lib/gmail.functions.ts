@@ -205,6 +205,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     // that would resurface emails the user already marked done. We fetch the
     // existing gmail_ids for this user and filter the new batch in-memory.
     let inserted = 0;
+    const newGmailIds = new Set<string>();
     if (summaries.length) {
       const { data: existing, error: exErr } = await supabaseAdmin
         .from("memory_nodes")
@@ -223,9 +224,11 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
           .filter((g): g is string => typeof g === "string"),
       );
 
-      const rows = summaries
+      const candidates = summaries
         .map((s, i) => ({ s, i }))
-        .filter(({ s }) => !seen.has(s.id))
+        .filter(({ s }) => !seen.has(s.id));
+      for (const { s } of candidates) newGmailIds.add(s.id);
+      const rows = candidates
         .map(({ s, i }) => {
           const cat = ruleResults[i];
           const importance =
@@ -269,8 +272,49 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
       }
     }
 
+    // Auto-enqueue heuristic: for each NEWLY-INSERTED urgent/today email,
+    // queue an overnight `research_thread_context` so the morning briefing has
+    // sender history without the user needing to click "Scout tonight". We
+    // gate on newGmailIds so re-pulls of the same email don't keep queueing
+    // (also: enqueueResearchTask itself dedupes by sender at the queue layer).
+    // Read-only + bounded LLM cost, so safe for auto-fire.
+    if (inserted > 0 && newGmailIds.size > 0) {
+      try {
+        const { enqueueResearchTask } = await import("@/server/research-queue");
+        const overnight = nextOvernightUtc();
+        const seenSenders = new Set<string>();
+        for (let i = 0; i < summaries.length; i++) {
+          if (!newGmailIds.has(summaries[i].id)) continue;
+          const cat = ruleResults[i];
+          if (cat.category !== "urgent" && cat.category !== "today") continue;
+          const sender = summaries[i].from;
+          if (!sender || seenSenders.has(sender)) continue;
+          seenSenders.add(sender);
+          // Fire and forget; failures here must never break the pull.
+          await enqueueResearchTask(context.userId, {
+            toolId: "research_thread_context",
+            input: { sender },
+            source: "auto",
+            sourceContext: `Auto-queued from ${cat.category} email: "${summaries[i].subject || "(no subject)"}"`,
+            priority: 200,
+            scheduledFor: overnight,
+          }).catch((e) => console.warn("auto-enqueue failed:", e));
+        }
+      } catch (e) {
+        console.warn("auto-enqueue dispatch failed:", e);
+      }
+    }
+
     return { count: summaries.length, inserted, account: label, summaries };
   });
+
+/** Next 03:00 UTC. If we're already past 03:00 today, returns 03:00 tomorrow. */
+function nextOvernightUtc(): string {
+  const now = new Date();
+  const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 0, 0, 0));
+  if (target.getTime() <= now.getTime()) target.setUTCDate(target.getUTCDate() + 1);
+  return target.toISOString();
+}
 
 export const getConnections = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])

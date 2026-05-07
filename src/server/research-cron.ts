@@ -60,6 +60,24 @@ export async function runResearchBatchAllUsers(
     }
   }
 
+  // Retention sweep: delete research_tasks completed >30d ago and old
+  // tool_invocations rows. Runs after the batch so a slow cleanup can't
+  // delay actual work. Failure is logged, never thrown.
+  try {
+    const { data: cleaned, error } = await (supabaseAdmin as any)
+      .rpc("cleanup_phase2_retention");
+    if (error) {
+      console.warn("[research-cron] retention sweep failed:", error);
+    } else {
+      const row = Array.isArray(cleaned) ? cleaned[0] : cleaned;
+      console.log(
+        `[research-cron] retention swept: research_tasks=${row?.research_tasks_deleted ?? 0} tool_invocations=${row?.tool_invocations_deleted ?? 0}`,
+      );
+    }
+  } catch (e) {
+    console.warn("[research-cron] retention sweep threw:", e);
+  }
+
   console.log(
     `[research-cron] done: users=${summary.users} attempted=${summary.attempted} ok=${summary.succeeded} fail=${summary.failed} errs=${summary.errors.length}`,
   );

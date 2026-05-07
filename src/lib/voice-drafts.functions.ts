@@ -671,11 +671,8 @@ export const createFollowUpReminder = createServerFn({ method: "POST" })
  * handles validation and execution. The 3 thin wrappers above remain for
  * back-compat with existing UI imports, but new callers should prefer this.
  *
- * TODO(rate-limiting): mutating tools (block_prep_time, set_followup_reminder)
- * have no per-user throttle yet. Before exposing this to LLM-driven callers
- * (chat agent, deep-research) at scale, add a per-(userId, toolId) rate limit
- * — likely a Supabase row + window check, since in-memory won't survive the
- * multi-instance edge runtime. Tracked as a follow-up.
+ * Rate-limited per (userId, toolId) via tool_invocations table — see
+ * src/server/rate-limit.server.ts. Limits are conservative and tunable.
  */
 export const runAgentTool = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
@@ -686,6 +683,14 @@ export const runAgentTool = createServerFn({ method: "POST" })
   // it), so `any` is correct at the framework boundary.
   .handler(async ({ data, context }): Promise<{ ok: true; result: any } | { ok: false; error: string }> => {
     try {
+      const { enforceToolRateLimit } = await import("@/server/rate-limit.server");
+      const decision = await enforceToolRateLimit(context.userId, data.toolId);
+      if (!decision.ok) {
+        return {
+          ok: false,
+          error: `Rate limit hit for ${data.toolId} (${decision.limit}/hour). Try again in ~${Math.ceil(decision.retryAfterSeconds / 60)} min.`,
+        };
+      }
       const result = await dispatchAgentTool(context.userId, data.toolId, data.input);
       return { ok: true, result };
     } catch (e) {
