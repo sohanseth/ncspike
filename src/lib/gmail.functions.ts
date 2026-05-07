@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { decryptToken, encryptToken } from "./crypto.server";
+import { decryptToken, encryptToken } from "@/server/crypto.server";
 import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
 
 async function categorizeEmails(
