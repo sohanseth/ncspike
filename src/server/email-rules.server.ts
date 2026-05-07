@@ -106,6 +106,21 @@ const SUBJECT_RULES: Array<{ patterns: RegExp[]; category?: EmailCategory; domai
     reason: "Job application confirmation",
   },
   {
+    // Generic job-application chatter: "CrowdStrike Application | Sr. Manager...",
+    // "Re: Nearform — Senior Engineer", forwarded recruiter threads, etc.
+    patterns: [
+      /\bapplication\b.*\b(manager|engineer|developer|designer|analyst|scientist|lead|director|architect|consultant|recruiter)\b/i,
+      /\b(manager|engineer|developer|designer|analyst|scientist|lead|director|architect)\b.*\b(remote|hybrid|onsite)\b/i,
+      /\b(recruiter|recruiting|talent\s+team|hiring\s+team|sourcer)\b/i,
+      /\bR\d{4,}\b/, // requisition IDs like R27239
+      /\[external\]/i,
+      /\bnext\s+steps\b.*\b(role|position|opportunity|interview)\b/i,
+    ],
+    category: "proactive",
+    domain: "professional",
+    reason: "Job / recruiter thread",
+  },
+  {
     patterns: [/\bsecurity\s+alert\b/i, /\bnew\s+sign-?in\b/i, /\bunusual\s+activity\b/i, /\bpassword\s+(reset|changed)\b/i, /\bverification\s+code\b/i, /\b2fa\b/i],
     category: "urgent",
     domain: "personal",
