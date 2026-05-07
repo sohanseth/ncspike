@@ -724,36 +724,91 @@ type DraftDisplay = {
   body: string;
   charsInDraft: number;
   template: string;
+  assistantNote?: string;
 };
 
+type AssistantQuestion = { id: string; question: string; placeholder: string };
+
 function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
-  const [phase, setPhase] = useState<"idle" | "generating" | "open" | "sending">("idle");
+  const [phase, setPhase] = useState<"idle" | "analyzing" | "asking" | "generating" | "open" | "sending">("idle");
   const [draft, setDraft] = useState<DraftDisplay | null>(null);
   const [body, setBody] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [questions, setQuestions] = useState<AssistantQuestion[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [pendingNote, setPendingNote] = useState<string>("");
+  // Monotonic request id — every async action increments it. Resolutions
+  // whose id no longer matches the current `reqRef` are ignored, so a
+  // double-click or rapid skip→submit can't write stale state.
+  const reqRef = useRef(0);
 
   function extractEmail(s: string): string {
     const m = s.match(/<([^>]+)>/);
     return (m ? m[1] : s).trim();
   }
 
-  async function generate() {
-    setErr(null);
-    if (!consented) {
-      const ok = await onRequestConsent();
-      if (!ok) return;
-    }
+  async function runDraft(clarifications?: Record<string, string>, assistantNote?: string) {
+    const myReq = ++reqRef.current;
     setPhase("generating");
+    setErr(null);
     try {
       const { draftReply } = await import("@/lib/voice-drafts.functions");
-      const d = await draftReply({ data: { memoryNodeId: item.id } });
-      setDraft({ id: d.id, body: d.body, charsInDraft: d.charsInDraft, template: d.template });
+      const d = await draftReply({
+        data: { memoryNodeId: item.id, clarifications, assistantNote },
+      });
+      if (myReq !== reqRef.current) return; // superseded
+      setDraft({
+        id: d.id,
+        body: d.body,
+        charsInDraft: d.charsInDraft,
+        template: d.template,
+        assistantNote: d.assistantNote ?? assistantNote,
+      });
       setBody(d.body);
       setPhase("open");
     } catch (e) {
+      if (myReq !== reqRef.current) return;
       setErr(e instanceof Error ? e.message : "Draft failed");
-      setPhase("idle");
+      setPhase(clarifications ? "asking" : "idle");
     }
+  }
+
+  async function startDraft() {
+    if (phase !== "idle") return; // guard against double-click
+    const myReq = ++reqRef.current;
+    setErr(null);
+    if (!consented) {
+      const ok = await onRequestConsent();
+      if (!ok || myReq !== reqRef.current) return;
+    }
+    setPhase("analyzing");
+    try {
+      const { analyzeDraft } = await import("@/lib/voice-drafts.functions");
+      const a = await analyzeDraft({ data: { memoryNodeId: item.id } });
+      if (myReq !== reqRef.current) return;
+      setPendingNote(a.assistantNote);
+      if (a.questions.length > 0) {
+        setQuestions(a.questions);
+        setAnswers(Object.fromEntries(a.questions.map((q) => [q.id, ""])));
+        setPhase("asking");
+      } else {
+        await runDraft(undefined, a.assistantNote);
+      }
+    } catch (e) {
+      if (myReq !== reqRef.current) return;
+      // Analyze failed → degrade to old direct-draft path so the user
+      // is never blocked by a flaky pre-step.
+      console.warn("analyzeDraft failed, falling back to direct draft:", e);
+      await runDraft();
+    }
+  }
+
+  async function submitAnswers() {
+    await runDraft(answers, pendingNote);
+  }
+
+  async function skipQuestions() {
+    await runDraft(undefined, pendingNote);
   }
 
   async function regenerate() {
@@ -762,8 +817,16 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setPhase("generating");
     try {
       const { regenerateDraft } = await import("@/lib/voice-drafts.functions");
-      const d = await regenerateDraft({ data: { draftId: draft.id } });
-      setDraft({ id: d.id, body: d.body, charsInDraft: d.charsInDraft, template: d.template });
+      const d = await regenerateDraft({
+        data: { draftId: draft.id, clarifications: Object.keys(answers).length ? answers : undefined },
+      });
+      setDraft({
+        id: d.id,
+        body: d.body,
+        charsInDraft: d.charsInDraft,
+        template: d.template,
+        assistantNote: draft.assistantNote,
+      });
       setBody(d.body);
       setPhase("open");
     } catch (e) {
@@ -807,23 +870,71 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       } catch { /* keep UI moving */ }
     }
     setDraft(null);
+    setQuestions([]);
+    setAnswers({});
+    setPendingNote("");
     setPhase("idle");
   }
 
   const button =
-    phase === "generating" ? (
+    phase === "analyzing" ? (
+      <span className="text-[10.5px] font-mono text-muted-foreground/60 px-2">Reading…</span>
+    ) : phase === "generating" ? (
       <span className="text-[10.5px] font-mono text-muted-foreground/60 px-2">Drafting…</span>
     ) : phase === "idle" ? (
-      <button onClick={generate}
+      <button onClick={startDraft}
         className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25 transition-colors"
         title="Draft a reply in your voice">
         <Sparkles size={11}/> Draft reply
       </button>
     ) : (
       <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/70 ring-1 ring-primary/25">
-        <Sparkles size={11}/> Drafted
+        <Sparkles size={11}/> {phase === "asking" ? "Quick check" : "Drafted"}
       </span>
     );
+
+  const askingPanel = phase === "asking" ? (
+    <div className="w-full mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 flex flex-col gap-2.5">
+      <div className="flex items-center gap-2">
+        <Sparkles size={11} className="text-primary"/>
+        <span className="text-[9px] font-mono uppercase tracking-wider text-primary/70">Assistant check-in</span>
+        {err && <span className="text-[10px] text-rose-300/80 ml-auto">{err}</span>}
+      </div>
+      {pendingNote && (
+        <p className="text-[12px] text-foreground/75 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+          {pendingNote}
+        </p>
+      )}
+      <div className="flex flex-col gap-2">
+        {questions.map((q) => (
+          <label key={q.id} className="flex flex-col gap-1">
+            <span className="text-[11px] text-muted-foreground/80">{q.question}</span>
+            <input
+              type="text"
+              value={answers[q.id] ?? ""}
+              placeholder={q.placeholder}
+              onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
+              className="bg-transparent border border-white/[0.08] rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground/35 focus:outline-none focus:ring-1 focus:ring-primary/40"
+            />
+          </label>
+        ))}
+      </div>
+      <div className="flex items-center gap-1.5">
+        <button onClick={submitAnswers} disabled={phase !== "asking"}
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
+          <Sparkles size={11}/> Draft with this
+        </button>
+        <button onClick={skipQuestions} disabled={phase !== "asking"}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/70 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+          Skip & draft anyway
+        </button>
+        <button onClick={dismiss}
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:bg-white/5 hover:text-foreground ml-auto">
+          <X size={11}/> Cancel
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   const panel = (phase === "open" || phase === "sending") ? (
     <div className="w-full mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 flex flex-col gap-2">
@@ -832,6 +943,13 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         <span className="text-[9px] font-mono uppercase tracking-wider text-primary/70">{draft?.template} draft</span>
         {err && <span className="text-[10px] text-rose-300/80 ml-auto">{err}</span>}
       </div>
+      {draft?.assistantNote && (
+        <div className="rounded-lg border border-primary/15 bg-primary/[0.05] px-2.5 py-2">
+          <p className="text-[11.5px] text-foreground/75 leading-relaxed italic" style={{fontFamily:"'DM Sans',sans-serif"}}>
+            {draft.assistantNote}
+          </p>
+        </div>
+      )}
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -871,7 +989,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     </div>
   ) : null;
 
-  return { button, panel };
+  return { button, panel: askingPanel ?? panel };
 }
 
 function InboxRow({

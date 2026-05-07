@@ -6,6 +6,11 @@ import { encryptToken, decryptToken } from "@/server/crypto.server";
 import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
 import { proposeFreeSlots } from "@/server/calendar.server";
 import {
+  analyzeEmailForDraft,
+  parsePrepTimeToHours,
+  type EmailAnalysis,
+} from "@/server/email-intent.server";
+import {
   extractVoiceProfile,
   parseForwardedSender,
   renderDraftPrompt,
@@ -292,6 +297,11 @@ export type DraftPayload = {
   createdAt: string;
   resolvedAt: string | null;
   sourceNodeId: string | null;
+  /**
+   * Transient assistant note generated alongside the draft (not persisted).
+   * Surfaces "what I noticed and why I drafted it this way" to the user.
+   */
+  assistantNote?: string;
 };
 
 const DEFAULT_PROFILE: VoiceProfile = {
@@ -412,9 +422,46 @@ function rowToPayload(
   };
 }
 
-export const draftReply = createServerFn({ method: "POST" })
+/**
+ * Pre-draft analyze step. Returns the assistant's read of the email and
+ * any clarifying questions to ask the user before drafting.
+ *
+ * Stateless — does not persist anything. The UI calls this first; if
+ * `questions` is empty, it can call `draftReply` immediately. Otherwise
+ * it shows the questions, collects answers, and passes them as
+ * `clarifications` into `draftReply`.
+ */
+export type AnalyzeResult = EmailAnalysis & { source: { from: string; subject: string } };
+
+export const analyzeDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { memoryNodeId: string }) => d)
+  .handler(async ({ data, context }): Promise<AnalyzeResult> => {
+    await assertCanDraft(context.userId);
+    const email = await loadIncomingEmail(context.userId, data.memoryNodeId);
+    const analysis = await analyzeEmailForDraft(email);
+    return {
+      ...analysis,
+      source: {
+        from: email.originalSender || email.from,
+        subject: email.subject,
+      },
+    };
+  });
+
+/** Convert clarifications.prep_time → bufferHours for proposeFreeSlots. */
+function bufferHoursFromClarifications(c?: Record<string, string>): number {
+  const prep = c?.prep_time?.trim();
+  return prep ? parsePrepTimeToHours(prep) : 2;
+}
+
+export const draftReply = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: {
+    memoryNodeId: string;
+    clarifications?: Record<string, string>;
+    assistantNote?: string;
+  }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
     await assertCanDraft(context.userId);
     const [profile, email] = await Promise.all([
@@ -422,14 +469,18 @@ export const draftReply = createServerFn({ method: "POST" })
       loadIncomingEmail(context.userId, data.memoryNodeId),
     ]);
 
+    if (data.clarifications) email.clarifications = data.clarifications;
+
     const template = selectTemplate(email);
 
     // For schedule asks, try to surface concrete free slots from the user's
     // calendar so the draft proposes real times instead of "let me know what works".
-    // Best-effort: missing connection or API failure → empty array, draft falls back.
+    // The buffer comes from the user's prep_time answer when present (e.g.
+    // "2 days" → 48h), so interview replies don't propose tomorrow.
     if (template === "schedule") {
       try {
-        const slots = await proposeFreeSlots(context.userId);
+        const bufferHours = bufferHoursFromClarifications(data.clarifications);
+        const slots = await proposeFreeSlots(context.userId, { bufferHours });
         if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
       } catch (e) {
         console.warn("proposeFreeSlots failed, drafting without slots:", e);
@@ -459,12 +510,14 @@ export const draftReply = createServerFn({ method: "POST" })
       .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
       .single();
     if (error) throw error;
-    return rowToPayload(inserted);
+    const payload = rowToPayload(inserted);
+    if (data.assistantNote) payload.assistantNote = data.assistantNote;
+    return payload;
   });
 
 export const regenerateDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: { draftId: string }) => d)
+  .inputValidator((d: { draftId: string; clarifications?: Record<string, string> }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
     await assertCanDraft(context.userId);
     const { data: existing, error: fetchErr } = await supabaseAdmin
@@ -483,6 +536,8 @@ export const regenerateDraft = createServerFn({ method: "POST" })
       loadIncomingEmail(context.userId, existing.source_node_id),
     ]);
 
+    if (data.clarifications) email.clarifications = data.clarifications;
+
     const tried = (existing.templates_tried ?? []) as TemplateId[];
     // Rotate to a template not yet used. If all 5 used, rotate from the start again.
     const exclude = tried.length >= TEMPLATE_IDS.length ? [tried[tried.length - 1]] : tried;
@@ -490,7 +545,8 @@ export const regenerateDraft = createServerFn({ method: "POST" })
 
     if (template === "schedule") {
       try {
-        const slots = await proposeFreeSlots(context.userId);
+        const bufferHours = bufferHoursFromClarifications(data.clarifications);
+        const slots = await proposeFreeSlots(context.userId, { bufferHours });
         if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
       } catch (e) {
         console.warn("proposeFreeSlots failed (regenerate), drafting without slots:", e);

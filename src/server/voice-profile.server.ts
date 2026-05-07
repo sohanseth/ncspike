@@ -400,6 +400,12 @@ export type IncomingEmail = {
    * The prompt instructs the model to offer these as concrete options.
    */
   proposedSlots?: string[];
+  /**
+   * Free-text answers the user gave to the assistant's clarifying questions,
+   * keyed by question id (e.g. { prep_time: "2 days", company_familiarity: "I've used their products" }).
+   * Injected into the draft prompt as additional context.
+   */
+  clarifications?: Record<string, string>;
 };
 
 /** Heuristic: parse "From: …" line from a forwarded email body. */
@@ -551,6 +557,16 @@ export function renderDraftPrompt(
     lines.push(
       `Free slots on the user's calendar (offer these as concrete options):`,
       ...email.proposedSlots.map((s) => `  - ${s}`),
+      "",
+    );
+  }
+  const clarEntries = email.clarifications
+    ? Object.entries(email.clarifications).filter(([, v]) => v && v.trim())
+    : [];
+  if (clarEntries.length > 0) {
+    lines.push(
+      `User context (their answers to your clarifying questions — weave naturally into the reply, do not quote verbatim):`,
+      ...clarEntries.map(([k, v]) => `  - ${k}: ${v}`),
       "",
     );
   }
