@@ -15,7 +15,10 @@ const CALENDAR_SCOPES = [
   "openid",
   "email",
   "profile",
+  // readonly covers freeBusy + reading existing events (used by proposeFreeSlots)
   "https://www.googleapis.com/auth/calendar.readonly",
+  // events lets us create the "Prep: <subject>" hold after sending an interview reply
+  "https://www.googleapis.com/auth/calendar.events",
 ];
 
 function scopesFor(provider: "gmail" | "google_calendar"): string[] {

@@ -4,7 +4,14 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { encryptToken, decryptToken } from "@/server/crypto.server";
 import { getValidGmailAccessToken } from "@/server/gmail-auth.server";
-import { proposeFreeSlots } from "@/server/calendar.server";
+import {
+  proposeFreeSlots,
+  createCalendarEvent,
+  computePrepBlockSlot,
+  getUserCalendarTimezone,
+  CalendarScopeError,
+  type ProposedSlot,
+} from "@/server/calendar.server";
 import {
   analyzeEmailForDraft,
   parsePrepTimeToHours,
@@ -302,6 +309,12 @@ export type DraftPayload = {
    * Surfaces "what I noticed and why I drafted it this way" to the user.
    */
   assistantNote?: string;
+  /**
+   * Concrete free-slot proposals computed for "schedule"-template drafts.
+   * Transient: not persisted, surfaced so the UI can offer follow-on actions
+   * like "block prep time before the earliest slot".
+   */
+  proposedSlots?: ProposedSlot[];
 };
 
 const DEFAULT_PROFILE: VoiceProfile = {
@@ -477,11 +490,12 @@ export const draftReply = createServerFn({ method: "POST" })
     // calendar so the draft proposes real times instead of "let me know what works".
     // The buffer comes from the user's prep_time answer when present (e.g.
     // "2 days" → 48h), so interview replies don't propose tomorrow.
+    let proposedSlots: ProposedSlot[] = [];
     if (template === "schedule") {
       try {
         const bufferHours = bufferHoursFromClarifications(data.clarifications);
-        const slots = await proposeFreeSlots(context.userId, { bufferHours });
-        if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
+        proposedSlots = await proposeFreeSlots(context.userId, { bufferHours });
+        if (proposedSlots.length > 0) email.proposedSlots = proposedSlots.map((s) => s.human);
       } catch (e) {
         console.warn("proposeFreeSlots failed, drafting without slots:", e);
       }
@@ -512,6 +526,7 @@ export const draftReply = createServerFn({ method: "POST" })
     if (error) throw error;
     const payload = rowToPayload(inserted);
     if (data.assistantNote) payload.assistantNote = data.assistantNote;
+    if (proposedSlots.length > 0) payload.proposedSlots = proposedSlots;
     return payload;
   });
 
@@ -543,11 +558,12 @@ export const regenerateDraft = createServerFn({ method: "POST" })
     const exclude = tried.length >= TEMPLATE_IDS.length ? [tried[tried.length - 1]] : tried;
     const template = selectTemplate(email, exclude);
 
+    let proposedSlots: ProposedSlot[] = [];
     if (template === "schedule") {
       try {
         const bufferHours = bufferHoursFromClarifications(data.clarifications);
-        const slots = await proposeFreeSlots(context.userId, { bufferHours });
-        if (slots.length > 0) email.proposedSlots = slots.map((s) => s.human);
+        proposedSlots = await proposeFreeSlots(context.userId, { bufferHours });
+        if (proposedSlots.length > 0) email.proposedSlots = proposedSlots.map((s) => s.human);
       } catch (e) {
         console.warn("proposeFreeSlots failed (regenerate), drafting without slots:", e);
       }
@@ -569,7 +585,91 @@ export const regenerateDraft = createServerFn({ method: "POST" })
       .select("id, template, body_encrypted, status, chars_in_draft, chars_edited, created_at, resolved_at, source_node_id")
       .single();
     if (updErr) throw updErr;
-    return rowToPayload(updated);
+    const payload = rowToPayload(updated);
+    if (proposedSlots.length > 0) payload.proposedSlots = proposedSlots;
+    return payload;
+  });
+
+/**
+ * Place a "Prep: <subject>" hold on the user's primary calendar before the
+ * earliest proposed meeting slot. Used right after the user copies & sends
+ * an interview reply, so prep time is actually defended on the calendar.
+ *
+ * Failure modes surfaced to the UI:
+ *   - "scope": old token doesn't have calendar.events → user must reconnect
+ *   - "no_calendar": user never connected Google Calendar
+ *   - "create_failed": Google API returned an error
+ */
+export type PrepBlockResult =
+  | { ok: true; eventId: string; htmlLink: string; startIso: string; endIso: string; human: string }
+  | { ok: false; reason: "scope" | "no_calendar" | "create_failed"; message: string };
+
+export const createPrepBlock = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: {
+    draftId: string;
+    /** ISO 8601 of the earliest proposed meeting slot — the prep block is placed before this. */
+    beforeIso: string;
+    /** Raw user answer to the prep_time question, e.g. "2 days". Parsed server-side. */
+    prepTimeText: string;
+  }) => d)
+  .handler(async ({ data, context }): Promise<PrepBlockResult> => {
+    // Verify the draft belongs to this user and resolve the email subject for the title.
+    const { data: draftRow, error: draftErr } = await supabaseAdmin
+      .from("drafts")
+      .select("id, source_node_id")
+      .eq("user_id", context.userId)
+      .eq("id", data.draftId)
+      .maybeSingle();
+    if (draftErr) throw draftErr;
+    if (!draftRow?.source_node_id) {
+      return { ok: false, reason: "create_failed", message: "Draft not found." };
+    }
+
+    let subject = "interview";
+    try {
+      const email = await loadIncomingEmail(context.userId, draftRow.source_node_id);
+      if (email.subject) subject = email.subject.replace(/^(re:|fwd:|fw:)\s*/gi, "").trim() || subject;
+    } catch {
+      /* keep default subject */
+    }
+
+    const timezone = await getUserCalendarTimezone(context.userId);
+    const prepHours = parsePrepTimeToHours(data.prepTimeText || "");
+    const slot = computePrepBlockSlot(data.beforeIso, timezone, prepHours);
+
+    try {
+      const created = await createCalendarEvent(context.userId, {
+        summary: `Prep: ${subject}`,
+        description:
+          "Auto-blocked by NeuralConnexions before your interview slot. " +
+          "Adjust or delete if your plans change.",
+        startIso: slot.startIso,
+        endIso: slot.endIso,
+        timezone,
+      });
+      return {
+        ok: true,
+        eventId: created.eventId,
+        htmlLink: created.htmlLink,
+        startIso: created.startIso,
+        endIso: created.endIso,
+        human: created.human,
+      };
+    } catch (e) {
+      if (e instanceof CalendarScopeError) {
+        return { ok: false, reason: "scope", message: e.message };
+      }
+      // getValidGoogleAccessToken throws "<provider> not connected" when no
+      // row exists, and "No refresh token; please reconnect <provider>" when
+      // the row exists but is unusable. Both mean the user needs to (re)connect.
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/not\s+connected|reconnect/i.test(msg)) {
+        return { ok: false, reason: "no_calendar", message: "Connect Google Calendar first." };
+      }
+      console.warn("createPrepBlock failed:", e);
+      return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
+    }
   });
 
 /** Cheap edit-distance proxy: char-level Levenshtein, capped for perf. */

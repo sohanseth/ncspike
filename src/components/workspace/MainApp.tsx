@@ -725,7 +725,14 @@ type DraftDisplay = {
   charsInDraft: number;
   template: string;
   assistantNote?: string;
+  proposedSlots?: { startIso: string; endIso: string; human: string }[];
 };
+
+type PrepBlockState =
+  | { phase: "idle" }
+  | { phase: "blocking" }
+  | { phase: "done"; human: string; htmlLink: string }
+  | { phase: "error"; reason: "scope" | "no_calendar" | "create_failed"; message: string };
 
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
@@ -747,10 +754,13 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     return (m ? m[1] : s).trim();
   }
 
+  const [prepBlock, setPrepBlock] = useState<PrepBlockState>({ phase: "idle" });
+
   async function runDraft(clarifications?: Record<string, string>, assistantNote?: string) {
     const myReq = ++reqRef.current;
     setPhase("generating");
     setErr(null);
+    setPrepBlock({ phase: "idle" });
     try {
       const { draftReply } = await import("@/lib/voice-drafts.functions");
       const d = await draftReply({
@@ -763,6 +773,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         charsInDraft: d.charsInDraft,
         template: d.template,
         assistantNote: d.assistantNote ?? assistantNote,
+        proposedSlots: d.proposedSlots,
       });
       setBody(d.body);
       setPhase("open");
@@ -814,6 +825,8 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   async function regenerate() {
     if (!draft) return;
     setErr(null);
+    // Regenerated draft may have a new earliest slot → wipe stale prep-block state.
+    setPrepBlock({ phase: "idle" });
     setPhase("generating");
     try {
       const { regenerateDraft } = await import("@/lib/voice-drafts.functions");
@@ -826,12 +839,42 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         charsInDraft: d.charsInDraft,
         template: d.template,
         assistantNote: draft.assistantNote,
+        proposedSlots: d.proposedSlots ?? draft.proposedSlots,
       });
       setBody(d.body);
       setPhase("open");
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Regenerate failed");
       setPhase("open");
+    }
+  }
+
+  async function blockPrepTime() {
+    if (!draft) return;
+    // Idempotency guard: if a previous block call is in flight or already
+    // succeeded for this draft, don't issue another. (User can dismiss + redraft
+    // to start over.)
+    if (prepBlock.phase === "blocking" || prepBlock.phase === "done") return;
+    const earliest = draft.proposedSlots?.[0];
+    const prep = answers.prep_time?.trim();
+    if (!earliest || !prep) return;
+    setPrepBlock({ phase: "blocking" });
+    try {
+      const { createPrepBlock } = await import("@/lib/voice-drafts.functions");
+      const r = await createPrepBlock({
+        data: { draftId: draft.id, beforeIso: earliest.startIso, prepTimeText: prep },
+      });
+      if (r.ok) {
+        setPrepBlock({ phase: "done", human: r.human, htmlLink: r.htmlLink });
+      } else {
+        setPrepBlock({ phase: "error", reason: r.reason, message: r.message });
+      }
+    } catch (e) {
+      setPrepBlock({
+        phase: "error",
+        reason: "create_failed",
+        message: e instanceof Error ? e.message : "Failed to block prep time",
+      });
     }
   }
 
@@ -873,6 +916,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
     setQuestions([]);
     setAnswers({});
     setPendingNote("");
+    setPrepBlock({ phase: "idle" });
     setPhase("idle");
   }
 
@@ -986,6 +1030,51 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           <X size={11}/> Dismiss
         </button>
       </div>
+      {/* Prep-block follow-up: only when we have both a meeting slot to anchor
+          on AND the user told us how much prep time they want. */}
+      {draft?.proposedSlots && draft.proposedSlots.length > 0 && answers.prep_time?.trim() && (
+        <div className="border-t border-white/[0.06] pt-2 mt-1 flex items-center gap-2 flex-wrap">
+          {prepBlock.phase === "idle" && (
+            <button onClick={blockPrepTime}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25">
+              <Calendar size={11}/> Block prep time on my calendar
+            </button>
+          )}
+          {prepBlock.phase === "blocking" && (
+            <span className="text-[10.5px] font-mono text-muted-foreground/70">Blocking prep time…</span>
+          )}
+          {prepBlock.phase === "done" && (
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-300/85">
+              <Check size={11}/> Prep blocked: {prepBlock.human}
+              {prepBlock.htmlLink && (
+                <a href={prepBlock.htmlLink} target="_blank" rel="noopener noreferrer"
+                  className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  Open in Calendar →
+                </a>
+              )}
+            </span>
+          )}
+          {prepBlock.phase === "error" && (
+            <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
+              {prepBlock.reason === "scope" ? (
+                <>Calendar is read-only.{" "}
+                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                    Reconnect Google Calendar →
+                  </Link>
+                </>
+              ) : prepBlock.reason === "no_calendar" ? (
+                <>No calendar connected.{" "}
+                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                    Connect Google Calendar →
+                  </Link>
+                </>
+              ) : (
+                <>Couldn't block prep time: {prepBlock.message}</>
+              )}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   ) : null;
 

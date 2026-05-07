@@ -241,3 +241,186 @@ export async function hasCalendarConnection(userId: string): Promise<boolean> {
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Event creation (used by "Block prep time" after sending an interview reply)
+// ---------------------------------------------------------------------------
+
+/**
+ * Convert a wall-clock time in a given IANA timezone to an absolute Date.
+ * Inverse of `toZonedIso`. Iterates to converge on the correct UTC instant:
+ * the TZ offset itself depends on the instant (DST), so we re-derive
+ * `utc' = target_as_if_utc - offset(utc)` until it stabilizes. Verified
+ * against BST↔GMT and EDT↔EST transitions.
+ */
+function fromZonedWallClock(
+  year: number, month: number, day: number, hour: number, minute: number,
+  timezone: string,
+): Date {
+  // Target wall clock interpreted as if UTC.
+  const targetAsIfUtc = Date.UTC(year, month - 1, day, hour, minute);
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hourCycle: "h23",
+  });
+  // Initial guess: assume the TZ offset is whatever it is at targetAsIfUtc.
+  // Iterate to handle DST boundaries (the offset itself depends on the instant).
+  let utcMs = targetAsIfUtc;
+  for (let i = 0; i < 3; i++) {
+    const parts = Object.fromEntries(
+      dtf.formatToParts(new Date(utcMs)).map((p) => [p.type, p.value]),
+    );
+    const seenAsUtc = Date.UTC(
+      Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+      Number(parts.hour), Number(parts.minute),
+    );
+    // offset = how this TZ shifts UTC instants → wall clock (positive east of UTC).
+    const offset = seenAsUtc - utcMs;
+    const next = targetAsIfUtc - offset;
+    if (next === utcMs) break;
+    utcMs = next;
+  }
+  return new Date(utcMs);
+}
+
+/** YYYY-MM-DD wall-clock date in TZ. */
+function ymdInTz(instant: Date, timezone: string): { y: number; m: number; d: number } {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: timezone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(instant).map((p) => [p.type, p.value]));
+  return { y: Number(parts.year), m: Number(parts.month), d: Number(parts.day) };
+}
+
+export type PrepBlockSlot = ProposedSlot;
+
+/**
+ * Compute a 2-hour prep block (09:00–11:00 in the user's TZ) on the working
+ * day immediately before the meeting. If the meeting itself is already on a
+ * Monday, we walk back to Friday. If the meeting is later today (rare since
+ * proposeFreeSlots respects bufferHours), we still try the morning before;
+ * the caller decides whether the result is useful.
+ *
+ * `prepHours` is currently advisory — we always place a single 2-hour block
+ * because longer holds tend to cannibalize the user's actual workday. A
+ * future iteration can spread multiple blocks across days when prep is large.
+ */
+export function computePrepBlockSlot(
+  meetingStartIso: string,
+  timezone: string,
+  _prepHours: number,
+): PrepBlockSlot {
+  const meeting = new Date(meetingStartIso);
+  // Walk back day-by-day in the user's TZ until we hit a weekday strictly
+  // before the meeting day.
+  let candidate = new Date(meeting.getTime() - 24 * 3600_000);
+  for (let i = 0; i < 7; i++) {
+    const wd = weekdayInTz(candidate, timezone);
+    const sameDay = (() => {
+      const a = ymdInTz(candidate, timezone);
+      const b = ymdInTz(meeting, timezone);
+      return a.y === b.y && a.m === b.m && a.d === b.d;
+    })();
+    if (wd >= 1 && wd <= 5 && !sameDay) break;
+    candidate = new Date(candidate.getTime() - 24 * 3600_000);
+  }
+  const { y, m, d } = ymdInTz(candidate, timezone);
+  const start = fromZonedWallClock(y, m, d, 9, 0, timezone);
+  const end = fromZonedWallClock(y, m, d, 11, 0, timezone);
+  return {
+    startIso: toZonedIso(start, timezone),
+    endIso: toZonedIso(end, timezone),
+    human: humanizeSlot(start, end, timezone),
+  };
+}
+
+export class CalendarScopeError extends Error {
+  constructor() {
+    super("Google Calendar connection is read-only. Reconnect to enable event creation.");
+    this.name = "CalendarScopeError";
+  }
+}
+
+export type CreatedCalendarEvent = {
+  eventId: string;
+  htmlLink: string;
+  startIso: string;
+  endIso: string;
+  human: string;
+};
+
+/**
+ * Create an event on the user's primary calendar.
+ *
+ * Throws `CalendarScopeError` when the stored OAuth grant lacks the
+ * `calendar.events` scope (i.e. a user who connected before this slice
+ * shipped). UI should surface a "Reconnect Google Calendar" CTA in that case.
+ */
+export async function createCalendarEvent(
+  userId: string,
+  args: {
+    summary: string;
+    description?: string;
+    startIso: string;
+    endIso: string;
+    timezone: string;
+  },
+): Promise<CreatedCalendarEvent> {
+  const { token } = await getValidGoogleAccessToken(userId, "google_calendar");
+  const r = await fetch(
+    "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        summary: args.summary,
+        description: args.description,
+        start: { dateTime: args.startIso, timeZone: args.timezone },
+        end: { dateTime: args.endIso, timeZone: args.timezone },
+        // Don't notify anyone — this is a private hold on the user's calendar.
+        // (Google's default already doesn't email since there are no attendees.)
+      }),
+    },
+  );
+  if (r.status === 401 || r.status === 403) {
+    // Most commonly: insufficient scope on the stored token.
+    throw new CalendarScopeError();
+  }
+  if (!r.ok) {
+    const text = await r.text().catch(() => "");
+    throw new Error(`Google Calendar event create failed (${r.status}): ${text.slice(0, 200)}`);
+  }
+  const j = (await r.json()) as { id?: string; htmlLink?: string };
+  if (!j.id) throw new Error("Google Calendar returned no event id");
+  const start = new Date(args.startIso);
+  const end = new Date(args.endIso);
+  return {
+    eventId: j.id,
+    htmlLink: j.htmlLink ?? "",
+    startIso: args.startIso,
+    endIso: args.endIso,
+    human: humanizeSlot(start, end, args.timezone),
+  };
+}
+
+/** Resolve the user's primary calendar timezone, with safe fallback. */
+export async function getUserCalendarTimezone(userId: string): Promise<string> {
+  try {
+    const { token } = await getValidGoogleAccessToken(userId, "google_calendar");
+    const tz = await fetchCalendarTimezone(token);
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: tz });
+      return tz;
+    } catch {
+      return "UTC";
+    }
+  } catch {
+    return "UTC";
+  }
+}
