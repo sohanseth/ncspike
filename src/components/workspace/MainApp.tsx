@@ -1659,7 +1659,15 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
             consented={status?.consented ?? false}
             onRequestConsent={requestConsent}
             onCompose={onCompose}
-            onMarkDone={() => setDone(d => [...d, item.id])}
+            onMarkDone={() => {
+              setDone(d => [...d, item.id]);
+              import("@/lib/gmail.functions").then(({ markInboxItemDone }) =>
+                markInboxItemDone({ data: { id: item.id, action: "done" } })
+              ).catch((e) => {
+                console.error("markInboxItemDone failed:", e);
+                setDone(d => d.filter(x => x !== item.id));
+              });
+            }}
             draftable={draftable}
           />
         );

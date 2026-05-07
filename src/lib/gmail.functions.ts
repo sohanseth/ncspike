@@ -201,37 +201,59 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     }
 
     // Persist a memory node per email so NC can "learn" from your inbox.
+    // Dedup against any prior pull so we don't reinsert the same gmail_id —
+    // that would resurface emails the user already marked done. We fetch the
+    // existing gmail_ids for this user and filter the new batch in-memory.
+    let inserted = 0;
     if (summaries.length) {
-      const rows = summaries.map((s, i) => {
-        const cat = ruleResults[i];
-        const importance =
-          cat.category === "urgent" ? 3 :
-          cat.category === "today" ? 2 :
-          cat.category === "proactive" ? 1 :
-          cat.category === "needs_review" ? 1 : 0;
-        return {
-          user_id: context.userId,
-          node_type: "thread" as const,
-          label: s.subject || "(no subject)",
-          source: `gmail:${label ?? "me"}`,
-          importance,
-          data: {
-            from: s.from,
-            date: s.date,
-            snippet: s.snippet,
-            gmail_id: s.id,
-            category: cat.category,
-            domain: cat.domain,
-            reason: cat.reason,
-            classified_by: llmHandled.has(i) ? "llm" : "rules",
-          },
-        };
-      });
-      const { error: insErr } = await supabaseAdmin.from("memory_nodes").insert(rows);
-      if (insErr) console.error("memory_nodes insert error:", insErr);
+      const { data: existing, error: exErr } = await supabaseAdmin
+        .from("memory_nodes")
+        .select("data")
+        .eq("user_id", context.userId)
+        .like("source", "gmail:%");
+      if (exErr) console.error("dedup lookup failed (will insert all):", exErr);
+      const seen = new Set<string>(
+        ((existing ?? []) as Array<{ data: { gmail_id?: string } | null }>)
+          .map((r) => r.data?.gmail_id)
+          .filter((g): g is string => typeof g === "string"),
+      );
+
+      const rows = summaries
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => !seen.has(s.id))
+        .map(({ s, i }) => {
+          const cat = ruleResults[i];
+          const importance =
+            cat.category === "urgent" ? 3 :
+            cat.category === "today" ? 2 :
+            cat.category === "proactive" ? 1 :
+            cat.category === "needs_review" ? 1 : 0;
+          return {
+            user_id: context.userId,
+            node_type: "thread" as const,
+            label: s.subject || "(no subject)",
+            source: `gmail:${label ?? "me"}`,
+            importance,
+            data: {
+              from: s.from,
+              date: s.date,
+              snippet: s.snippet,
+              gmail_id: s.id,
+              category: cat.category,
+              domain: cat.domain,
+              reason: cat.reason,
+              classified_by: llmHandled.has(i) ? "llm" : "rules",
+            },
+          };
+        });
+      if (rows.length) {
+        const { error: insErr } = await supabaseAdmin.from("memory_nodes").insert(rows);
+        if (insErr) console.error("memory_nodes insert error:", insErr);
+        else inserted = rows.length;
+      }
     }
 
-    return { count: summaries.length, account: label, summaries };
+    return { count: summaries.length, inserted, account: label, summaries };
   });
 
 export const getConnections = createServerFn({ method: "POST" })
@@ -253,6 +275,7 @@ export const getInboxItems = createServerFn({ method: "POST" })
       .select("id, label, data, source, created_at, importance")
       .eq("user_id", context.userId)
       .like("source", "gmail:%")
+      .is("data->>resolved_at", null)
       .order("importance", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .limit(20);
@@ -273,6 +296,33 @@ export const getInboxItems = createServerFn({ method: "POST" })
         };
       }),
     };
+  });
+
+export const markInboxItemDone = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { id: string; action?: "done" | "dismissed" }) => d)
+  .handler(async ({ data, context }) => {
+    // Read-modify-write the JSONB so we don't clobber existing fields.
+    const { data: row, error: selErr } = await supabaseAdmin
+      .from("memory_nodes")
+      .select("data")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .single();
+    if (selErr) throw selErr;
+    const current = (row?.data ?? {}) as Record<string, unknown>;
+    const next = {
+      ...current,
+      resolved_at: new Date().toISOString(),
+      resolved_action: data.action ?? "done",
+    };
+    const { error: updErr } = await supabaseAdmin
+      .from("memory_nodes")
+      .update({ data: next })
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
+    if (updErr) throw updErr;
+    return { ok: true };
   });
 
 export const disconnectProvider = createServerFn({ method: "POST" })
