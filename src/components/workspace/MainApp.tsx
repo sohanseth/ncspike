@@ -1924,10 +1924,13 @@ function OtherCard({ size, count, items, onClick }: {
 
 // ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose, onCompose }: {
+function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve }: {
   domainId: DomainId | "other";
   onClose: () => void;
   onCompose: () => void;
+  doneIds: Set<string>;
+  onResolve: (id: string) => void;
+  onUnresolve: (id: string) => void;
 }) {
   const isOther = domainId === "other";
   const domain = isOther ? null : DOMAINS[domainId];
@@ -1936,7 +1939,6 @@ function DomainDetail({ domainId, onClose, onCompose }: {
 
   const { items: inbox, error: inboxErr } = useInbox();
   const { status, refresh } = useVoiceDraftsStatus();
-  const [done, setDone] = useState<string[]>([]);
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
   const requestConsent = async (): Promise<boolean> => {
@@ -1955,7 +1957,7 @@ function DomainDetail({ domainId, onClose, onCompose }: {
     return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
   }, [inbox, isOther, domainId]);
 
-  const visible = items.filter(i => !done.includes(i.id));
+  const visible = items.filter(i => !doneIds.has(i.id));
   const fallbackC = C.professional;
   const cardC = c ?? fallbackC;
 
