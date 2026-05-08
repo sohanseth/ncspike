@@ -1,0 +1,55 @@
+name: gdpr-real-db
+
+# Runs the GDPR delete_user_data() round-trip against an ephemeral Postgres
+# with every supabase/migrations/*.sql applied. The companion mock-based
+# test in tests/leak-suite/gdpr-roundtrip.test.ts runs in the regular
+# `bun run test` job; this one is its end-to-end counterpart and catches
+# SQL-level regressions (typo'd table name, broken function body, missing
+# FK cascade, RLS that blocks the delete) that the mock cannot.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "src/lib/gdpr.functions.ts"
+      - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/fixtures/auth-shim.sql"
+      - "scripts/test-gdpr-real-db.sh"
+      - ".github/workflows/gdpr-real-db.yml"
+  pull_request:
+    paths:
+      - "supabase/migrations/**"
+      - "src/lib/gdpr.functions.ts"
+      - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/fixtures/auth-shim.sql"
+      - "scripts/test-gdpr-real-db.sh"
+      - ".github/workflows/gdpr-real-db.yml"
+  workflow_dispatch:
+
+jobs:
+  gdpr-real-db:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # We use system postgres directly (initdb + pg_ctl in a temp dir) rather
+      # than the `services: postgres` block, because the script needs to apply
+      # the auth-schema shim BEFORE migrations and a service container is
+      # already initialized by the time the job starts.
+      - name: Install PostgreSQL 16
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run delete_user_data round-trip against real Postgres
+        run: bash scripts/test-gdpr-real-db.sh
