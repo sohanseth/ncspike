@@ -14,7 +14,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const STT_DIR = dirname(fileURLToPath(import.meta.url)).replace(/[\\/]__tests__[\\/]?$/, "");
+const STT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "src", "server", "inference", "stt");
 
 const FORBIDDEN: RegExp[] = [
   /\blocalStorage\b/,
