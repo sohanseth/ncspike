@@ -12,6 +12,7 @@ import {
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
+import { motion, AnimatePresence } from "framer-motion";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
