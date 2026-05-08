@@ -2552,6 +2552,9 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             <MessageCircle size={11} style={{color:"#ddd6fe"}}/>
           </div>
           <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Chat</span>
+          {mode === "voice" && (
+            <StatusPill triple={triple} className="hidden sm:inline-flex" />
+          )}
           <div className="flex items-center gap-1">
             {["Memory","Inbox","Calendar"].map(ctx=>(
               <span key={ctx} className="px-1.5 py-px rounded-md text-[8.5px] font-mono bg-primary/10 text-primary/70 border border-primary/15">{ctx}</span>
