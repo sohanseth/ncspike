@@ -18,8 +18,6 @@ export function writePreferLocalAudioLocal(value: boolean): void {
 }
 
 export async function syncPreferLocalAudio(userId: string): Promise<boolean> {
-  // @ts-expect-error — `prefer_local_audio` is added by the 2.8 migration but
-  // not yet in the regenerated supabase types (per integration guardrail).
   const { data } = await supabase
     .from("user_settings")
     .select("prefer_local_audio")
@@ -32,7 +30,6 @@ export async function syncPreferLocalAudio(userId: string): Promise<boolean> {
 
 export async function setPreferLocalAudio(userId: string, value: boolean): Promise<void> {
   writePreferLocalAudioLocal(value);
-  // @ts-expect-error — see above.
   await supabase
     .from("user_settings")
     .update({ prefer_local_audio: value })

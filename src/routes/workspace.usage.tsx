@@ -37,8 +37,6 @@ function UsagePage() {
 
     void (async () => {
       setFetching(true);
-      // @ts-expect-error — `audio_micro_usd` is added by the 2.8 migration but
-      // not yet in the regenerated supabase types (per integration guardrail).
       const { data } = await supabase
         .from("inference_usage")
         .select("cost_micro_usd, audio_micro_usd, badge, started_at")
