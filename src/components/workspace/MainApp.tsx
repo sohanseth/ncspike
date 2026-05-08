@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import type { LucideIcon } from "lucide-react";
@@ -9,7 +9,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft,
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 import { motion, AnimatePresence } from "framer-motion";
@@ -466,11 +466,13 @@ function UrgencyBadges({ counts, compact }: { counts: UrgencyCounts; compact?: b
   );
 }
 
-function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
+function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinned, onTogglePin }: {
   domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
   liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
   liveCount?: number;
   urgency?: UrgencyCounts;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
@@ -480,6 +482,14 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
   return (
     <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group relative`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
+      {onTogglePin && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          title={pinned ? "Unpin" : "Pin to top"}
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
+        </button>
+      )}
       <div className="flex items-center justify-between flex-shrink-0 gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -1774,6 +1784,23 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
   type Tile =
     | { kind: "domain"; id: DomainId; weight: number; count: number }
     | { kind: "other";  weight: number; count: number };
+
+  // Pinned tile (hybrid: pin always takes xl slot, rest auto-rank)
+  const [pinnedKey, setPinnedKey] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("nc.pinnedTile");
+  });
+  const togglePin = useCallback((key: string) => {
+    setPinnedKey(prev => {
+      const next = prev === key ? null : key;
+      try {
+        if (next) window.localStorage.setItem("nc.pinnedTile", next);
+        else window.localStorage.removeItem("nc.pinnedTile");
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const tiles = useMemo<Tile[]>(() => {
     const domainTiles: Tile[] = (Object.values(DOMAINS) as DomainData[]).map(d => {
       const u = urgencyByDomain[d.id] ?? { urgent: 0, today: 0, proactive: 0 };
@@ -1781,13 +1808,16 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       const weight = u.urgent * 4 + u.today * 2 + u.proactive + count * 0.25 + d.activity * 0.05;
       return { kind: "domain", id: d.id, weight, count };
     });
-    const otherWeight = otherCount * 0.6; // each "other" item is lower-signal than a categorized one
+    const otherWeight = otherCount * 0.6;
     const otherTile: Tile = { kind: "other", weight: otherWeight, count: otherCount };
-    return [...domainTiles, otherTile].sort((a, b) => b.weight - a.weight);
-  }, [liveByDomain, urgencyByDomain, otherCount]);
+    const all = [...domainTiles, otherTile].sort((a, b) => b.weight - a.weight);
+    if (!pinnedKey) return all;
+    const idx = all.findIndex(t => (t.kind === "domain" ? t.id : "other") === pinnedKey);
+    if (idx <= 0) return all;
+    const [pinned] = all.splice(idx, 1);
+    return [pinned, ...all];
+  }, [liveByDomain, urgencyByDomain, otherCount, pinnedKey]);
 
-  // Slot shapes: d0 = xl (2×2), d1/d2 = md, d3/d4/d5 = sm.
-  // Tiles get assigned to slots in ranked order.
   const slots = ["xl", "md", "md", "sm", "sm", "sm"] as const;
 
   return (
@@ -1839,9 +1869,18 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
                       liveItems={liveByDomain[tile.id]}
                       liveCount={liveByDomain[tile.id]?.length}
                       urgency={urgencyByDomain[tile.id]}
+                      pinned={pinnedKey === tile.id}
+                      onTogglePin={() => togglePin(tile.id)}
                     />
                   ) : (
-                    <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
+                    <OtherCard
+                      size={size}
+                      count={tile.count}
+                      items={otherList}
+                      onClick={onOther}
+                      pinned={pinnedKey === "other"}
+                      onTogglePin={() => togglePin("other")}
+                    />
                   )}
                 </motion.div>
               );
@@ -1855,8 +1894,9 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
 // ─── Other tile (size-aware) ──────────────────────────────────────────────────
 
-function OtherCard({ size, count, items, onClick }: {
+function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
   size: "xl"|"md"|"sm"; count: number; items: InboxItem[]; onClick: () => void;
+  pinned?: boolean; onTogglePin?: () => void;
 }) {
   const isXL = size === "xl";
   const isSM = size === "sm";
@@ -1864,8 +1904,17 @@ function OtherCard({ size, count, items, onClick }: {
   const preview = items.slice(0, maxItems);
   return (
     <button onClick={onClick}
-      className={`group w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
+      className={`group relative w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
       style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
+      {onTogglePin && (
+        <span
+          role="button"
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          title={pinned ? "Unpin" : "Pin to top"}
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
+        </span>
+      )}
       <div className={`flex items-center justify-between flex-shrink-0 ${isSM ? "" : "w-full"}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]`}>
