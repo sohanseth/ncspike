@@ -16,28 +16,40 @@ export type Database = {
     Tables: {
       chat_messages: {
         Row: {
+          badge: string | null
           content: string
           created_at: string
+          fallback_depth: number | null
           id: string
           metadata: Json
+          model: string | null
+          provider: string | null
           role: Database["public"]["Enums"]["message_role"]
           thread_id: string
           user_id: string
         }
         Insert: {
+          badge?: string | null
           content: string
           created_at?: string
+          fallback_depth?: number | null
           id?: string
           metadata?: Json
+          model?: string | null
+          provider?: string | null
           role: Database["public"]["Enums"]["message_role"]
           thread_id: string
           user_id: string
         }
         Update: {
+          badge?: string | null
           content?: string
           created_at?: string
+          fallback_depth?: number | null
           id?: string
           metadata?: Json
+          model?: string | null
+          provider?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           thread_id?: string
           user_id?: string
@@ -170,6 +182,60 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      inference_usage: {
+        Row: {
+          badge: string
+          cost_micro_usd: number | null
+          error_class: string | null
+          fallback_depth: number
+          id: string
+          input_tokens: number | null
+          latency_ms: number | null
+          model_used: string | null
+          output_tokens: number | null
+          provider_chain: string[]
+          provider_used: string
+          started_at: string
+          status: string
+          thread_id: string | null
+          user_id: string
+        }
+        Insert: {
+          badge: string
+          cost_micro_usd?: number | null
+          error_class?: string | null
+          fallback_depth?: number
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model_used?: string | null
+          output_tokens?: number | null
+          provider_chain: string[]
+          provider_used: string
+          started_at?: string
+          status: string
+          thread_id?: string | null
+          user_id: string
+        }
+        Update: {
+          badge?: string
+          cost_micro_usd?: number | null
+          error_class?: string | null
+          fallback_depth?: number
+          id?: string
+          input_tokens?: number | null
+          latency_ms?: number | null
+          model_used?: string | null
+          output_tokens?: number | null
+          provider_chain?: string[]
+          provider_used?: string
+          started_at?: string
+          status?: string
+          thread_id?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       memory_edges: {
         Row: {
