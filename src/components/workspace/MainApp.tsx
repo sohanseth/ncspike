@@ -2409,6 +2409,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     let gotAnyDelta = false;
     let errorMsg: string | null = null;
     let finalProvider: string | null = null;
+    let assistantText = "";
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
       const stream = streamChatMessage({ threadId, content: text, badge: model });
