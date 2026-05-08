@@ -466,11 +466,13 @@ function UrgencyBadges({ counts, compact }: { counts: UrgencyCounts; compact?: b
   );
 }
 
-function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
+function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinned, onTogglePin }: {
   domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
   liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
   liveCount?: number;
   urgency?: UrgencyCounts;
+  pinned?: boolean;
+  onTogglePin?: () => void;
 }) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
@@ -480,6 +482,14 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
   return (
     <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group relative`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
+      {onTogglePin && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          title={pinned ? "Unpin" : "Pin to top"}
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
+        </button>
+      )}
       <div className="flex items-center justify-between flex-shrink-0 gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
