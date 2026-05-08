@@ -83,40 +83,55 @@ function VoiceSettingsPage() {
           </Link>
         </header>
 
-        <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur">
-          <div className="flex items-start justify-between gap-4">
-            <div className="space-y-1">
-              <div className="font-display text-lg">Prefer on-device audio</div>
-              <p className="text-sm text-muted-foreground">
-                When on, transcription and speech synthesis use models running
-                locally in your browser (Whisper + Piper, WASM). Slower on
-                first load, but your voice never leaves the device. When off,
-                we use cloud providers (Groq, ElevenLabs) — faster and
-                higher-fidelity, but your audio is sent to a third party for
-                processing. PRIVATE-tier turns always stay local regardless.
-              </p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preferLocal}
-              onClick={toggle}
-              disabled={syncing || saving}
-              className={cn(
-                "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-border transition-colors",
-                preferLocal ? "bg-primary/80" : "bg-muted",
-                (syncing || saving) && "opacity-60",
-              )}
-            >
-              <span
+        {toggleAvailable ? (
+          <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="font-display text-lg">Prefer on-device audio</div>
+                <p className="text-sm text-muted-foreground">
+                  When on, transcription and speech synthesis use models running
+                  locally on your device (Whisper + Piper). Slower on first
+                  load, but your voice never leaves the device. When off, we
+                  use cloud providers (Groq, ElevenLabs) — faster and
+                  higher-fidelity, but your audio is sent to a third party for
+                  processing. PRIVATE-tier turns always stay local regardless.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={preferLocal}
+                onClick={toggle}
+                disabled={syncing || saving}
                 className={cn(
-                  "inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform",
-                  preferLocal ? "translate-x-6" : "translate-x-1",
+                  "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border border-border transition-colors",
+                  preferLocal ? "bg-primary/80" : "bg-muted",
+                  (syncing || saving) && "opacity-60",
                 )}
-              />
-            </button>
-          </div>
-        </section>
+              >
+                <span
+                  className={cn(
+                    "inline-block h-5 w-5 transform rounded-full bg-background shadow transition-transform",
+                    preferLocal ? "translate-x-6" : "translate-x-1",
+                  )}
+                />
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur space-y-2">
+            <div className="font-display text-lg">On-device audio</div>
+            <p className="text-sm text-muted-foreground">
+              Full on-device speech (Whisper + Piper) ships in the
+              NeuralConnexions native app — coming Phase 4. On the web today,
+              PRIVATE turns use your browser's built-in speech recognition
+              {capability && !capability.speechRecognition
+                ? " (not supported in this browser — try Chrome, Edge, or Safari)"
+                : ""}{" "}
+              and reply as text only.
+            </p>
+          </section>
+        )}
 
         <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur space-y-3">
           <h2 className="font-display text-lg">What this changes</h2>
