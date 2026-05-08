@@ -532,24 +532,22 @@ function saveRequests(list: string[]) {
 }
 
 function MoreIntegrations() {
-  const [requested, setRequested] = useState<Set<string>>(() => new Set(loadRequests()));
+  const [connected, setConnected] = useState<Set<string>>(() => new Set(loadConnected()));
 
-  const onRequest = (id: string, label: string) => {
-    const next = new Set(requested);
+  const onConnect = (id: string, label: string) => {
+    const next = new Set(connected);
     next.add(id);
-    setRequested(next);
-    const list = loadRequests();
-    if (!list.includes(label)) {
-      list.push(label);
-      saveRequests(list);
+    setConnected(next);
+    const list = loadConnected();
+    if (!list.includes(id)) {
+      list.push(id);
+      saveConnected(list);
+    }
+    // Stub: real OAuth flow not yet wired. Surface intent to the user.
+    if (typeof window !== "undefined") {
+      window.alert(`${label} connection coming soon — we'll route you through OAuth here.`);
     }
   };
-
-  // Group by category, preserving insertion order
-  const grouped = POPULAR_TOOLS.reduce<Record<string, typeof POPULAR_TOOLS>>((acc, t) => {
-    (acc[t.category] ??= []).push(t);
-    return acc;
-  }, {});
 
   return (
     <section>
@@ -557,54 +555,42 @@ function MoreIntegrations() {
         <div>
           <h2 className="font-display text-xl font-semibold">More integrations</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Popular tools with public APIs. Request the ones you'd like next — we prioritize by demand.
+            The most-used tools — connect any of them to bring their data into your workspace.
           </p>
         </div>
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          Coming soon
-        </span>
       </div>
-      <div className="space-y-6">
-        {Object.entries(grouped).map(([category, tools]) => (
-          <div key={category}>
-            <h3 className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">
-              {category}
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {tools.map(({ id, label, blurb, Icon }) => {
-                const isRequested = requested.has(id);
-                return (
-                  <article key={id} className="glass rounded-2xl p-4 flex items-start gap-3">
-                    <div className="size-10 rounded-xl bg-secondary/60 ring-1 ring-border flex items-center justify-center shrink-0">
-                      <Icon className="size-4 text-foreground/80" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-display font-semibold text-sm">{label}</h4>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{blurb}</p>
-                    </div>
-                    <button
-                      onClick={() => onRequest(id, label)}
-                      disabled={isRequested}
-                      className={`shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium ring-1 transition ${
-                        isRequested
-                          ? "ring-emerald-500/30 bg-emerald-500/10 text-emerald-400 cursor-default"
-                          : "ring-border hover:bg-secondary text-foreground"
-                      }`}
-                    >
-                      {isRequested ? (
-                        <span className="inline-flex items-center gap-1">
-                          <Check className="size-3" /> Requested
-                        </span>
-                      ) : (
-                        "Request"
-                      )}
-                    </button>
-                  </article>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {POPULAR_TOOLS.map(({ id, label, blurb, Icon }) => {
+          const isConnected = connected.has(id);
+          return (
+            <article key={id} className="glass rounded-2xl p-4 flex items-start gap-3">
+              <div className="size-10 rounded-xl bg-secondary/60 ring-1 ring-border flex items-center justify-center shrink-0">
+                <Icon className="size-4 text-foreground/80" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-display font-semibold text-sm">{label}</h4>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{blurb}</p>
+              </div>
+              <button
+                onClick={() => onConnect(id, label)}
+                disabled={isConnected}
+                className={`shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium ring-1 transition ${
+                  isConnected
+                    ? "ring-emerald-500/30 bg-emerald-500/10 text-emerald-400 cursor-default"
+                    : "ring-primary/40 bg-primary/10 hover:bg-primary/20 text-foreground"
+                }`}
+              >
+                {isConnected ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="size-3" /> Connected
+                  </span>
+                ) : (
+                  "Connect"
+                )}
+              </button>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
