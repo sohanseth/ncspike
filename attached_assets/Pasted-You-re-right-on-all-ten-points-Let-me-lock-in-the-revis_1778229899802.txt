@@ -1,0 +1,45 @@
+You're right on all ten points. Let me lock in the revised design before we touch code.
+
+Adopted as-is
+The badge collision (#2) is the real call. Option A wins: keep FLASH/PRO/Genius/PRIVATE, add one setting "Prefer on-device when possible" that fans out across STT/TTS/inference. No second axis. The mapping when toggle is ON:
+
+Badge	STT	LLM	TTS
+PRIVATE	whisper.cpp WASM	Workers AI (T0)	Piper WASM
+FLASH	Groq Whisper	Groq Llama	Piper WASM
+PRO	Groq Whisper	Anthropic/OpenAI	Piper WASM (cloud TTS opt-in)
+Genius	cloud STT OK	OpenAI	cloud TTS OK
+When toggle is OFF, cloud STT/TTS allowed across the board for lower latency. One mental model, one switch.
+
+Local tier scoping (#1). Local mode advertises only: "Answer questions about your data, summarize, recall." Drafting, scheduling, multi-step actions show a chip: "Needs cloud — switch tier or allow once." iOS Safari gets a capability probe at first launch; if OPFS quota < 1.2GB or no WebGPU, Local is hidden, not silently downgraded. Cold-start gets a real progress UI ("Downloading 1.5GB once — 0:42 left"), not a spinner.
+
+Privacy badge honesty (#10). Balanced = amber, with literal copy: "Voice synthesis on device. Transcript sent to Groq (US, zero-retention). Audio bytes discarded after transcription." Green is reserved for Local-only round trips.
+
+Audio retention (#8). Hard rule wired into the STT adapter contract: audioBytes is a local Uint8Array that gets nulled in a finally block after the STT call. Never written to IndexedDB, never POSTed to our own backend. Add a unit test that fails if any STT path persists raw audio.
+
+VAD (#5). Silero VAD WASM, 200ms hangover, end-of-utterance threshold 0.5. Non-negotiable for the latency feel.
+
+Push-to-talk default (#6). Hold-to-talk on mic button (and Space on desktop). Wake word deferred — not even a paid feature in v1; revisit after native shell.
+
+Barge-in (#7). Mute mic during TTS playback for v1. Cleaner, no AEC roulette across Chrome builds. Add a "tap to interrupt" affordance on the speaking orb — tap = stop TTS, unmute, start listening. We get the conversational feel without fighting browser AEC.
+
+Graceful degradation (#9). Per-tier fallback ladder, declared in code, surfaced in UI:
+
+PRIVATE: whisper.cpp → [no fallback, show error "Local STT unavailable on this device"]
+FLASH:   Groq → Google STT → browser SpeechRecognition
+PRO:     Groq → Deepgram → Google
+Status pill in the input row shows the actual path: "Listening · Groq" not "Listening". No silent downgrades.
+
+Revised promises
+Speculative TTS streaming (#3) comes out of v1 scope. Ship sentence-boundary commit-on-final for v1, add streaming TTS in v1.1 once we have telemetry on which engines users actually pick.
+
+Local intent classifier (#4) ships only for the latency win on the ~5% trivially-local queries (time, date, "what's on my calendar today"). Marketed as "instant answers for simple questions," not as a cost lever. Honest framing.
+
+Pricing (#11). Updating the Best tier estimate to $20–$60/mo for heavy users with a visible monthly meter on Settings → Usage. Soft cap at $30 default, user can raise it. No silent overruns.
+
+What this changes in already-shipped code
+src/server/inference/router.ts — no changes, badge chains stay.
+New src/lib/voice-preferences.ts — single source of truth for the "Prefer on-device" toggle, persisted in localStorage + synced to voice_profiles row.
+New src/server/inference/stt/ and tts/ adapter dirs mirroring the LLM provider pattern, each declaring privacyTier and requiresNetwork.
+The Converse surface reads (badge × prefer-local) → resolves an (stt, llm, tts) triple → renders the honest status pill.
+Want me to write this up as the Phase 2.8 spec doc (docs/07-spec-phase-2.8-voice.md) so it gets the same treatment as 2.6 / 2.7 before any code lands?
+
