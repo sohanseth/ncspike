@@ -16,6 +16,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runResearchBatch } from "@/server/research-queue";
+import { runTraitExtractionAllUsers } from "@/server/trait-extraction";
 
 export type CronSummary = {
   users: number;
@@ -117,6 +118,16 @@ export async function runResearchBatchAllUsers(
     summary.succeeded += r.succeeded;
     summary.failed += r.failed;
     if (r.error) summary.errors.push({ userId, error: r.error });
+  }
+
+  // Phase 2.7 D8: trait sheet extraction for all users with recent memory.
+  // Runs after the research queue and BEFORE retention sweep so any
+  // extraction_failures rows we just wrote aren't immediately swept away.
+  // Errors isolated inside runTraitExtractionAllUsers — never thrown here.
+  try {
+    await runTraitExtractionAllUsers();
+  } catch (e) {
+    console.error("[research-cron] trait extraction batch threw:", e);
   }
 
   await sweepRetention();

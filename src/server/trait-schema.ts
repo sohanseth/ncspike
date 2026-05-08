@@ -57,7 +57,7 @@ const safeStringArray = (maxItems = 12) =>
 
 // ─── Categories ─────────────────────────────────────────────────────────────
 
-const PhysicalSchema = z
+export const PhysicalSchema = z
   .object({
     hair: safeString().optional(),
     scalp: safeString().optional(),
@@ -72,7 +72,7 @@ const PhysicalSchema = z
 // rather than silently stripped. Only `physical` stays open via `.catchall`
 // because the spec explicitly allows the extractor to add new physical keys
 // as patterns emerge.
-const HouseholdMemberSchema = z
+export const HouseholdMemberSchema = z
   .object({
     // `ref` is the identifier-free handle. Names are NEVER stored.
     ref: z
@@ -89,7 +89,7 @@ const HouseholdMemberSchema = z
   })
   .strict();
 
-const PreferencesSchema = z
+export const PreferencesSchema = z
   .object({
     shopping: safeStringArray().optional(),
     tone: z.enum(["concise", "warm", "playful", "formal", "professional"]).optional(),
@@ -110,7 +110,7 @@ const PROFESSIONAL_BANNED_KEYS = [
   "email",
 ] as const;
 
-const ProfessionalSchema = z
+export const ProfessionalSchema = z
   .object({
     role_band: z
       .enum([
@@ -141,7 +141,7 @@ const ProfessionalSchema = z
     }
   });
 
-const WellnessSchema = z
+export const WellnessSchema = z
   .object({
     sleep_pattern: safeString().optional(),
     activity_level: safeString().optional(),
@@ -149,7 +149,7 @@ const WellnessSchema = z
   })
   .strict();
 
-const TransientSchema = z
+export const TransientSchema = z
   .object({
     current_focus: safeString().optional(),
     expires_at: z.string().datetime().optional(),
@@ -161,12 +161,26 @@ const TransientSchema = z
 // shape regressions.
 const CategoryEmbeddingSchema = z.array(z.number()).length(384);
 
+/**
+ * Source-typed reference to whatever memory artifact contributed a trait.
+ *
+ * Phase 2.7 only emits `kind: 'memory'` (memory_nodes.id), but the shape is
+ * pre-widened so Phase 3's behavioural ingestion (browsing signal, calendar,
+ * email metadata) can feed the same extractor without a schema migration.
+ * See docs/09 §5 forward-compat note 1.
+ */
+export const SourceRefSchema = z.object({
+  kind: z.enum(["memory", "signal", "calendar", "contact", "email_meta"]),
+  id: z.string().uuid(),
+});
+export type SourceRef = z.infer<typeof SourceRefSchema>;
+
 // ─── TraitSheet root ────────────────────────────────────────────────────────
 
 export const TraitSheetSchema = z.object({
   schema_version: z.literal(1),
   derived_at: z.string().datetime(),
-  source_memory_ids: z.array(z.string().uuid()).max(2000),
+  source_memory_ids: z.array(SourceRefSchema).max(2000),
   // `.strict()` so a top-level "name" / "email" / unknown category key is
   // hard-rejected by the validator instead of silently dropped.
   categories: z
@@ -195,6 +209,24 @@ export const TRAIT_CATEGORIES: readonly TraitCategory[] = [
   "wellness",
   "transient",
 ] as const;
+
+/**
+ * Per-category schema lookup for the extractor's Day-2 per-category validation
+ * path. Each value validates the SHAPE of one category in isolation — the
+ * extractor calls these on every Llama patch before merging it into the
+ * candidate sheet, so one bad category doesn't roll back the others.
+ *
+ * Note `household` validates the FULL ARRAY (max 20 members), not a single
+ * member, because that's what the extractor receives back as a category patch.
+ */
+export const CATEGORY_PATCH_SCHEMAS = {
+  physical: PhysicalSchema,
+  household: z.array(HouseholdMemberSchema).max(20),
+  preferences: PreferencesSchema,
+  professional: ProfessionalSchema,
+  wellness: WellnessSchema,
+  transient: TransientSchema,
+} as const satisfies Record<TraitCategory, z.ZodTypeAny>;
 
 /**
  * Tier-tie-break order from spec §B3 — used when more than K categories pass
