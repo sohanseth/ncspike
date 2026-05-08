@@ -1745,7 +1745,7 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
       )}
       {visible.map(item => {
         const s = CAT_STYLE[item.category];
-        const draftable = (item.category === "urgent" || item.category === "today")
+        const draftable = item.category !== "ignore"
           && (status?.featureEnabled ?? true);
         return (
           <InboxRow
