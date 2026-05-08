@@ -7,7 +7,7 @@ import {
   Brain, TrendingUp, Zap, ArrowRight, Check,
   Send, X, ChevronDown, PenLine, Shield,
   Layers, RefreshCw, ChevronRight, Sparkles,
-  Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
+  Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
 } from "lucide-react";
@@ -2380,6 +2380,19 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           });
         } else if (evt.kind === "error") {
           errorMsg = evt.message;
+          // Friendly cap-exceeded toast (spec §1 line 351 / §A1 line 386).
+          if (evt.type === "cap_exceeded") {
+            const badgeLabel = (evt.badge ?? model).toString().toUpperCase();
+            const used = typeof evt.used === "number" ? evt.used : null;
+            const cap = typeof evt.cap === "number" ? evt.cap : null;
+            const tail = used !== null && cap !== null ? ` (${used}/${cap} today).` : ".";
+            void import("sonner").then(({ toast }) => {
+              toast.error(`Daily ${badgeLabel} limit reached${tail}`, {
+                description: "Try a different badge, or upgrade for higher caps.",
+                duration: 6000,
+              });
+            });
+          }
           break;
         }
       }
@@ -2443,7 +2456,10 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
               </div>
             </div>
           )}
-          {messages.map((msg,i)=>(
+          {messages.map((msg,i)=>{
+            const isLast = i === messages.length - 1;
+            const isStreamingPlaceholder = msg.role === "assistant" && isLast && sending && msg.text.length === 0;
+            return (
             <div key={i} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
               {msg.role==="assistant" ? (
                 <div className="max-w-[92%]">
@@ -2452,8 +2468,16 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                       <Zap size={10} style={{color:"#ddd6fe"}}/>
                     </div>
-                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80">
-                      <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]">
+                      {isStreamingPlaceholder ? (
+                        <div className="flex flex-col gap-1.5 py-0.5" aria-label="Assistant is responding" role="status">
+                          <div className="h-2 w-32 rounded bg-white/[0.08] animate-pulse"/>
+                          <div className="h-2 w-24 rounded bg-white/[0.06] animate-pulse" style={{animationDelay:"120ms"}}/>
+                          <div className="h-2 w-20 rounded bg-white/[0.05] animate-pulse" style={{animationDelay:"240ms"}}/>
+                        </div>
+                      ) : (
+                        <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                      )}
                     </div>
                   </div>
                   {msg.meta && (msg.meta.provider || msg.meta.model) && (
@@ -2471,20 +2495,8 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                 </div>
               )}
             </div>
-          ))}
-          {sending && (
-            <div className="flex justify-start">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
-                  <Loader size={10} className="animate-spin" style={{color:"#ddd6fe"}}/>
-                </div>
-                <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80">
-                  <p className="text-[12.5px] text-muted-foreground/60" style={{fontFamily:"'DM Sans',sans-serif"}}>Thinking…</p>
-                </div>
-              </div>
-            </div>
-          )}
+          );
+          })}
           {error && (
             <div className="flex justify-center">
               <div className="rounded-xl px-3 py-2 bg-red-500/10 border border-red-500/30 max-w-[90%]">
@@ -2513,6 +2525,33 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             {AI_MODELS.map(m=>{
               const Icon=m.icon;
               const isActive=model===m.id;
+              // Free-tier upsell on Genius (spec §A line 84-85: free = 0 Genius/day,
+              // badge disabled, upsell shown). Paid-tier wiring lands with subscription
+              // system; until then `getPaidTier` always returns false → all users free.
+              const isLocked = m.id === "genius";
+              if (isLocked) {
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    aria-disabled="true"
+                    title="Upgrade for Genius — the smartest model. Free tier: 0/day."
+                    onClick={() => {
+                      void import("sonner").then(({ toast }) => {
+                        toast("Genius is for paid plans", {
+                          description: "Upgrade to unlock the smartest model. Free tier gets FLASH, PRO, and PRIVATE.",
+                          duration: 5000,
+                        });
+                      });
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border border-white/[0.06] bg-white/[0.02] text-muted-foreground/40 cursor-not-allowed relative"
+                  >
+                    <Icon size={9}/>
+                    {m.label}
+                    <Lock size={8} className="ml-0.5 opacity-60"/>
+                  </button>
+                );
+              }
               return (
                 <button key={m.id} onClick={()=>setModel(m.id)}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border transition-all ${isActive?m.color:"text-muted-foreground/55 bg-transparent border-white/[0.07] hover:border-white/15 hover:text-foreground/70"}`}>

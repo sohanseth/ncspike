@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth-context";
+import { Toaster } from "@/components/ui/sonner";
 
 import appCss from "../styles.css?url";
 
@@ -85,10 +87,18 @@ function RootShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+function ClientToaster() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return null;
+  return <Toaster position="top-center" richColors closeButton />;
+}
+
 function RootComponent() {
   return (
     <AuthProvider>
       <Outlet />
+      <ClientToaster />
     </AuthProvider>
   );
 }

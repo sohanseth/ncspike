@@ -99,6 +99,19 @@ The on-device ONNX classifier from D1 was **not** built in V1. The "rules first 
 
 ---
 
+## Phase 2.6 Day 4 addendum (2026-05-08)
+
+Day 4 closes the D7 chat-providers slice with three UX polish items + one retention plumbing item, all tied back to spec `docs/05-spec-phase-2.6-chat-providers.md` §1 line 351 and §A1 lines 386–387:
+
+1. **Friendly cap-exceeded toast.** ChatPanel now distinguishes `evt.type === "cap_exceeded"` from generic stream errors and surfaces a sonner toast (`Daily {BADGE} limit reached (used/cap today). Try a different badge, or upgrade for higher caps.`). Generic errors still render inline. Toast lives at the route root (`__root.tsx`) so every route gets it without per-page wiring.
+2. **Loading skeleton, not "Thinking…".** While the assistant placeholder is empty (between user-send and first SSE delta), ChatPanel renders three pulse-skeleton bars inside the assistant bubble instead of a separate "Thinking…" row. Replaces the prior generic spinner block. Keeps the layout stable so the first delta doesn't reflow the conversation.
+3. **Genius badge upsell.** The Genius (formerly GPT-5; G3 lock 2026-05-08) badge is rendered in a permanently-disabled state for free users, with a Lock icon, `cursor-not-allowed`, and a click-handler that fires an upsell toast. Free-tier is hardcoded today because `getPaidTier()` still returns false everywhere — the wiring will become real when subscription billing lands. The disabled treatment is the same shape we'll keep when paid users see Genius enabled, so no future visual churn.
+4. **`inference_usage` retention rollup.** New migration `20260510000000_phase26_retention.sql` creates `inference_usage_daily` (per user × day × badge × provider, all status counts + token/cost sums) and extends `cleanup_phase2_retention()` with two new return columns (`inference_usage_rolled_up`, `inference_usage_daily_deleted`). Raw rows older than 30d fold into the daily table on each cron tick, then get deleted; daily aggregates older than 90d get deleted entirely. Matches spec C5 line 179 verbatim.
+
+**What this forecloses:** per-thread cap toasts (we deliberately keep cap UX at the chat surface, not duplicated per-message); a "skeleton during long pauses mid-stream" treatment (we only show it before the first delta — once content streams, the user sees real text); a separate disabled treatment for paid users on Genius when they're at cap (paid cap-exceeded uses the same toast as 1).
+
+**Sequencing note:** Day 4 deliberately does not touch the chat pipeline, the SSE format, or any adapter. All four items are UX/observability layers on top of the Day 3 streaming work. The next concrete chat-pipeline change is D8 (broker), spec `docs/06`.
+
 ## Questions resolved
 
 - **Tiny classifier model:** decision deferred to a 1-day spike at the start of Slice A (week 5). Spike picks between a DistilBERT-class model (~80MB, more accurate) and a MiniLM-class model (~25MB, faster on low-end phones). Default bias: smaller wins ties.
