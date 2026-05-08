@@ -138,3 +138,40 @@ Currently expected new deps for 2.8: none for Day 1 (use native `fetch` / `Media
 (append below as you add)
 
 - *(none yet)*
+
+---
+
+## Day 2 notes (2026-05-08)
+
+**Decision: no WASM on web — defer Whisper.cpp / Piper to the Capacitor native shell (~Phase 4).**
+
+Rationale: shipping `onnxruntime-web` (~12 MB gz / ~30 MB raw) plus Whisper tiny q5_1 (~31 MB) plus Piper en-US-amy-low ONNX (~30 MB) plus the espeak-ng phonemizer WASM (~5 MB) totals ~75–100 MB of cold first-PRIVATE-turn cost. `onnxruntime-web` can't be code-split out of the bundle graph either, so even users with `prefer_local_audio = false` would pay a parse cost on the worker. The roadmap memo already says PRIVATE is "scoped Q&A only until WebLLM 7B+ is realistic on phones," and Phase 4 = Capacitor native shell — which is the right runtime for these models.
+
+**What ships on web today:**
+- `PRIVATE` STT = `browser-speech-recognition` (Web Speech API). Real on Chromium + Safari 14.1+; returns empty in Firefox.
+- `PRIVATE` TTS = `text-only` (resolver enum already supports it).
+- Resolver `TOGGLE_OFF.PRIVATE` and `TOGGLE_ON.PRIVATE` both point at this pair on web.
+- `whisper-cpp-wasm` and `piper-wasm` adapters stay registered but throw a clear "available in the native app (Phase 4)" error if ever resolved — defense in depth.
+
+**Capability probe changes (`voice-capability.ts`):**
+- New `nativeShell: boolean` field (detects Capacitor + UA marker).
+- `wasmSimd` is forced to `false` whenever `!nativeShell`, so the "Prefer on-device audio" toggle stays hidden on web.
+- Also exposes `mediaDevices`, `audioContext`, `speechRecognition` for honest telemetry.
+- `isLocalAudioToggleAvailable()` returns `false` on web unconditionally.
+
+**Settings page (`workspace.voice-settings.tsx`):**
+- When `!toggleAvailable`, shows an "On-device audio" explainer card instead of the toggle, naming the native app + Phase 4. Detects "browser doesn't support SpeechRecognition" (Firefox) and adds a hint.
+- "What this changes" PRIVATE row reflects the web vs native reality.
+
+**StatusPill copy:**
+- When `triple.stt === "browser-speech-recognition"` and `triple.tts === "text-only"` → prefixes the pill with `LOCAL` and renders `browser-speech` instead of the raw provider id, so the user sees `LOCAL · 🎙 browser-speech · 🧠 <model> · 🔊 text-only`.
+
+**Deps NOT installed (deferred to native shell):**
+- `onnxruntime-web` — ~30 MB raw, ~12 MB gz. Defer.
+- Whisper.cpp tiny-q5_1 model (~31 MB). Defer.
+- Piper en-US-amy-low ONNX + espeak-ng WASM (~35 MB combined). Defer.
+- `@ffmpeg/ffmpeg` — not needed; Web Speech API consumes raw mic, no transcoding.
+
+**Spec touch-up needed (main agent):** docs/07 spec §V8 "local-audio capability" should be updated to reflect the web vs native split. Suggested edit: clarify that `prefer_local_audio` toggle is gated on `nativeShell === true` until Phase 4. Will land alongside broker work — no Day-2 conflict expected.
+
+**§6 of this doc:** Day 2 deliverables 5–7 (whisper-cpp-wasm, piper-wasm, full WASM capability probe) are explicitly descoped to the native shell milestone. The next contractor reading §6 should treat `browser-speech-recognition` + capability probe + settings gating + StatusPill copy as the actual Day 2 closure.
