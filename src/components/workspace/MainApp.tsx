@@ -2431,6 +2431,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           });
         } else if (evt.kind === "delta") {
           gotAnyDelta = true;
+          assistantText += evt.text;
           setMessages(prev => {
             const next = prev.slice();
             const last = next[next.length - 1];
