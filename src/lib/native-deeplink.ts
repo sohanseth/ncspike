@@ -159,10 +159,10 @@ async function getStore(): Promise<SecureStore> {
 
   // Try the native plugin first. Dynamic import so SSR doesn't choke.
   try {
-    // @ts-expect-error — optional native dep; resolved at runtime when present
+    // @ts-ignore — optional native dep; resolved at runtime when present
     const cap = await import("@capacitor/core");
     if (cap?.Capacitor?.isNativePlatform?.()) {
-      // @ts-expect-error — optional native dep
+      // @ts-ignore — optional native dep
       const ss = await import("@aparajita/capacitor-secure-storage");
       // The aparajita plugin exports `SecureStorage` with promise-based
       // get/set/remove that take a key string directly (not an options bag).
