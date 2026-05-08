@@ -18,6 +18,7 @@ create index if not exists drafts_source_node_idx on public.drafts(source_node_i
 
 alter table public.drafts enable row level security;
 
+drop policy if exists "own drafts all" on public.drafts;
 create policy "own drafts all" on public.drafts
   for all
   using (auth.uid() = user_id)

@@ -33,6 +33,7 @@ create unique index if not exists research_tasks_dedupe_idx
 
 alter table public.research_tasks enable row level security;
 
+drop policy if exists "own research tasks all" on public.research_tasks;
 create policy "own research tasks all" on public.research_tasks
   for all
   using (auth.uid() = user_id)

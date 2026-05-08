@@ -47,5 +47,6 @@ create index if not exists inference_usage_user_badge_day_idx
 alter table public.inference_usage enable row level security;
 
 -- Own-rows select. No insert/update/delete policies → service-role-only writes.
+drop policy if exists "own usage select" on public.inference_usage;
 create policy "own usage select" on public.inference_usage
   for select using (auth.uid() = user_id);

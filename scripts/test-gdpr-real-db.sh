@@ -54,23 +54,11 @@ echo "[gdpr-real-db] applying auth-schema shim"
 
 echo "[gdpr-real-db] applying $(ls "$ROOT/supabase/migrations/" | wc -l) migrations under ON_ERROR_STOP=1"
 # Migrations are applied with strict ON_ERROR_STOP so a real regression in
-# delete_user_data() or any per-user table fails loudly. The only narrow
-# transform we apply is wrap_create_policy.py, which converts top-level
-# `CREATE POLICY ...;` statements into DO blocks that swallow
-# `duplicate_object` errors. Four historical migrations re-declare a policy
-# from an earlier migration without an idempotency guard (CREATE POLICY has
-# no `if not exists` form); on the live cluster those re-applies were
-# silently no-ops, but on a fresh CI database they would otherwise abort
-# the migration before delete_user_data() is created.
-#
-# Every other statement type still hard-fails: a typo in a CREATE TABLE, a
-# broken function body, an invalid GRANT — anything other than a duplicate
-# policy — surfaces as an immediate non-zero exit here, before the test
-# suite ever runs. Follow-up #5 covers fixing the migrations themselves so
-# this transform can be retired.
+# delete_user_data() or any per-user table fails loudly. Migrations are
+# expected to be idempotent on a fresh database (tables/indexes use
+# `if not exists`, duplicate policies are guarded by `drop policy if exists`).
 for f in "$ROOT"/supabase/migrations/*.sql; do
-  python3 "$ROOT/scripts/lib/wrap_create_policy.py" < "$f" \
-    | "${PSQL[@]}" -f - >/dev/null
+  "${PSQL[@]}" -f "$f" >/dev/null
 done
 
 echo "[gdpr-real-db] verifying delete_user_data() exists with the latest signature"

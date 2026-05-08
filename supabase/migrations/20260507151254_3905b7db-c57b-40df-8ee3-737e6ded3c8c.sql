@@ -12,6 +12,7 @@ create index if not exists voice_profiles_user_id_idx on public.voice_profiles(u
 
 alter table public.voice_profiles enable row level security;
 
+drop policy if exists "own voice profile all" on public.voice_profiles;
 create policy "own voice profile all" on public.voice_profiles
   for all
   using (auth.uid() = user_id)
