@@ -334,6 +334,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       provider: r.provider,
       model: r.model,
       fallbackDepth: r.fallback_depth,
+      attachments: [],
     });
 
     return {
