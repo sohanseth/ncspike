@@ -2613,9 +2613,22 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full max-w-[520px] max-h-[85vh] rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
+      <div className={`w-full max-w-[520px] max-h-[85vh] rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
-        onClick={e=>e.stopPropagation()}>
+        onClick={e=>e.stopPropagation()}
+        onDragOver={e => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
+        onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
+        onDrop={e => {
+          e.preventDefault();
+          setIsDragging(false);
+          const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+          if (files.length) addFiles(files);
+        }}>
+        {isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/10 border-2 border-dashed border-primary/50 rounded-3xl pointer-events-none">
+            <p className="text-[13px] font-mono text-primary">Drop images to attach</p>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-shrink-0">
