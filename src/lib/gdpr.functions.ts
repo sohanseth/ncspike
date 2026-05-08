@@ -11,9 +11,10 @@
  *
  *   deleteAccount()     → SINGLE-TRANSACTION wipe via the
  *                         `public.delete_user_data(uuid)` Postgres function
- *                         (migration 20260514000010). Spec §14: "Single
- *                         transaction. If any delete fails, rollback and
- *                         surface the error — never leave half-wiped state."
+ *                         (migration 20260514000000_phase27_gdpr_and_retention).
+ *                         Spec §14: "Single transaction. If any delete fails,
+ *                         rollback and surface the error — never leave
+ *                         half-wiped state."
  *
  * Tables covered (export AND delete):
  *   user_traits, user_trait_blocks, user_provider_category_blocks,
