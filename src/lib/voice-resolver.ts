@@ -35,7 +35,19 @@ const LOCAL_STT = new Set<SttProviderId>(["whisper-cpp-wasm", "browser-speech-re
 const LOCAL_TTS = new Set<string>(["piper-wasm", "text-only"]);
 const CLOSED_LLM_PROVIDERS = new Set(["openai", "anthropic"]);
 
-export function resolveAudioPair(badge: Badge, preferLocal: boolean): AudioPair {
+export function resolveAudioPair(
+  badge: Badge,
+  preferLocal: boolean,
+  nativeShell: boolean = false,
+): AudioPair {
+  // Defense-in-depth: TOGGLE_ON FLASH/PRO/Genius rows reference `piper-wasm`,
+  // whose adapter throws `NATIVE_ONLY_MSG` on web. The settings UI hides the
+  // toggle when `!nativeShell` (capability probe forces wasmSimd=false), but
+  // the persisted `prefer_local_audio` value can survive across native↔web
+  // sessions, so we coerce to TOGGLE_OFF here whenever we're not in the
+  // native shell. This guarantees no web turn ever resolves to a stub adapter
+  // regardless of what's in localStorage / user_settings.
+  if (!nativeShell) return TOGGLE_OFF[badge];
   return preferLocal ? TOGGLE_ON[badge] : TOGGLE_OFF[badge];
 }
 

@@ -92,10 +92,18 @@ These can all land in parallel without us; nothing on this list depends on 2.7 b
 3. Migration `20260520_voice_columns.sql` adding the four `inference_usage` columns + `user_settings.prefer_local_audio` (per §4).
 4. Settings UI toggle for `prefer_local_audio`. **Build it as a new page** `src/routes/workspace.voice-settings.tsx` (or similar). Do not touch any existing settings page until 2.7 lands a unified settings surface.
 
-**Day 2:**
-5. `whisper-cpp-wasm` (PRIVATE-tier STT). Bundle and lazy-load. Acceptance: zero network calls when used.
-6. `piper-wasm` (PRIVATE/local TTS). Same acceptance.
-7. The capability detection in `voice-capability.ts` actually probing for WASM, mediaDevices, AudioContext.
+**Day 2:** *(revised 2026-05-08 after Option-2 decision — see Day 2 notes §11 below)*
+5. ~~`whisper-cpp-wasm` (PRIVATE-tier STT). Bundle and lazy-load.~~ **Descoped to Phase 4 (native shell).** Web stub throws `NATIVE_ONLY_MSG`; resolver no longer routes any web badge to it.
+6. ~~`piper-wasm` (PRIVATE/local TTS).~~ **Descoped to Phase 4.** Same stub treatment as above.
+7. ~~Capability detection in `voice-capability.ts` actually probing for WASM…~~ **Replaced.** `voice-capability.ts` now probes `nativeShell`, `mediaDevices`, `audioContext`, `speechRecognition`, and forces `wasmSimd: false` on web. `isLocalAudioToggleAvailable()` returns `false` whenever `nativeShell === false`, which on web is always.
+
+**Day 2 (replacement scope, what actually shipped):**
+5a. PRIVATE-on-web pair = `browser-speech-recognition` + `text-only` in **both** toggle states. Resolver tables in `voice-resolver.ts` reflect this; the toggle-ON FLASH/PRO/Genius rows that still reference `piper-wasm` are unreachable on web (kept only for type-level exhaustiveness; will become live when the native shell ships).
+5b. Capability probe surfaces `nativeShell`/`mediaDevices`/`audioContext`/`speechRecognition` and forces `wasmSimd=false` until `nativeShell === true`.
+5c. Settings page (`src/routes/workspace.voice-settings.tsx`) renders an explainer card whenever the toggle isn't available (i.e. always on web today), naming the native app + Phase 4 milestone, with a Firefox-no-SpeechRecognition hint.
+5d. `StatusPill` recognises the `(browser-speech-recognition, *, text-only)` shape and prefixes `LOCAL ·` plus renders `browser-speech` in place of the raw STT id.
+
+No new runtime deps installed (no `onnxruntime-web`, no `@ffmpeg/*`, no model files).
 
 **Day 3:**
 8. Latency budget test harness (records timing marks from a fake mic-release through the resolver) and the leak suite (synthetic users, asserts no PII in `inference_usage` rows attributable to voice turns). Both can live under `tests/voice/` and run independently.
@@ -141,7 +149,21 @@ Currently expected new deps for 2.8: none for Day 1 (use native `fetch` / `Media
 
 ---
 
-## Day 2 notes (2026-05-08)
+## 10b. Open issues to resolve before integration (added 2026-05-08 by main agent)
+
+These are flagged from the §6/§V8/§V9 revision pass. None block your Day 3 work; all must be resolved before main agent wires `ConverseInput` into ChatPanel.
+
+1. **Migration namespace + default mismatch (resolved by corrective migration).** Your `20260508092849_*.sql` violated §4 in two ways: timestamp prefix (`20260508` instead of `20260520_*`) and `prefer_local_audio` default (`true` instead of `false`). Main agent has added `supabase/migrations/20260510000010_phase26_voice_default_correction.sql` which resets the default to `false` and normalises existing rows. **Action for you:** for any *future* 2.8 migration, please use the agreed `20260520_*` prefix.
+
+2. **Resolver capability guard (already patched by main agent).** `resolveAudioPair()` now takes a third `nativeShell: boolean = false` argument and coerces `preferLocal=false` whenever `nativeShell !== true`. This is defense-in-depth so a stale `prefer_local_audio=true` value cannot route a web turn to the `piper-wasm` stub. **Action for you:** when you wire the resolver call from ConverseInput, pass `nativeShell` from the capability probe.
+
+3. **Auth + rate limit on `/api/stt/groq` and `/api/tts/elevenlabs` — release blocker.** Both endpoints currently accept anonymous requests, which exposes the Groq and ElevenLabs API keys to cost-drain abuse. Mirror the auth/quota pattern used by `/api/chat/stream` (Supabase JWT verification + per-user daily token cap) before main agent enables the integration. Treat this as P0 for Day 3.
+
+4. **Capability cache write path missing.** Spec §V9 says the probe result is cached in `user_settings.local_audio_capability` (jsonb). The probe runs and the column exists, but no code currently writes to it. Either add the write (your call — the capability file is in §3) or note in §11 that it's deferred and main agent will own it during integration.
+
+---
+
+## 11. Day 2 notes (2026-05-08)
 
 **Decision: no WASM on web — defer Whisper.cpp / Piper to the Capacitor native shell (~Phase 4).**
 

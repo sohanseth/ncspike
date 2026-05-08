@@ -65,15 +65,18 @@ Cost-per-active-user-per-day (CPAUD from 2.6) is the durable metric — voice pi
 | FLASH | `groq-whisper` | groq → google → cloudflare → lovable | `elevenlabs-flash` (cheap, 200ms) |
 | PRO | `groq-whisper` | anthropic → openai → groq → lovable | `elevenlabs-flash` |
 | Genius | `elevenlabs-scribe` (realtime) | openai → anthropic → lovable | `elevenlabs-multilingual-v2` (premium voice) |
-| PRIVATE | `whisper-cpp-wasm` | cloudflare (fail-closed) | `piper-wasm` |
+| PRIVATE *(native shell, Phase 4+)* | `whisper-cpp-wasm` | cloudflare (fail-closed) | `piper-wasm` |
+| PRIVATE *(web, today)* | `browser-speech-recognition` | cloudflare (fail-closed) | `text-only` |
 
-**Toggle ON ("prefer on-device"):**
+**Toggle ON ("prefer on-device") — native shell only; toggle is hidden on web:**
 | Badge | STT | LLM | TTS |
 | --- | --- | --- | --- |
 | FLASH | `groq-whisper`* | groq → google → cloudflare → lovable | `piper-wasm` |
 | PRO | `groq-whisper`* | anthropic → openai → groq → lovable | `piper-wasm` |
 | Genius | `groq-whisper` | openai → anthropic → lovable | `piper-wasm` |
 | PRIVATE | `whisper-cpp-wasm` | cloudflare (fail-closed) | `piper-wasm` |
+
+> **Web safety net (Phase 2.8 Day 2):** `resolveAudioPair()` coerces `preferLocal=false` whenever `nativeShell !== true`, so the Toggle ON rows above are unreachable on web even if a stale `prefer_local_audio=true` value is persisted in `user_settings` or `localStorage`. PRIVATE on web always resolves to the `(browser-speech-recognition, text-only)` pair regardless of toggle state.
 
 \* Toggle ON does not move STT to local for FLASH/PRO/Genius — `whisper.cpp` is too slow on mid-tier mobile (real-time factor 0.5–1.0 on Pixel 6a) for an "instant" badge. Local STT is reserved for PRIVATE, where the latency tradeoff is the point. The toggle's STT effect is "use on-device when it's the privacy story" — currently only PRIVATE.
 
@@ -129,33 +132,45 @@ The caller wraps every `transcribe()` in a `try/finally` that nulls the `audioBy
 **Decision:** Each badge has a deterministic STT and TTS fallback chain. Status pill reflects the actual provider hit, never the intended one. **No silent downgrades.**
 
 **STT chains:**
-- PRIVATE: `whisper-cpp-wasm` → **no fallback** (show error: "Local STT unavailable on this device. Switch tier or grant mic permission.")
+- PRIVATE *(native shell, Phase 4+)*: `whisper-cpp-wasm` → **no fallback** (show error: "Local STT unavailable on this device. Switch tier or grant mic permission.")
+- PRIVATE *(web, today)*: `browser-speech-recognition` → **no fallback** (show: "Voice input needs a Chromium-based browser, or use the native app for fully on-device transcription.")
 - FLASH: `groq-whisper` → `google-stt` → `browser-speech-recognition` (Safari only, on-device on Apple)
 - PRO: `groq-whisper` → `deepgram-nova-2` → `google-stt`
 - Genius: `elevenlabs-scribe` → `groq-whisper` → `google-stt`
 
 **TTS chains:**
-- PRIVATE: `piper-wasm` → **no fallback** (show: "Local TTS unavailable. Reply shown as text only.")
-- FLASH/PRO (toggle OFF): `elevenlabs-flash` → `piper-wasm` → text-only
-- Genius (toggle OFF): `elevenlabs-multilingual-v2` → `elevenlabs-flash` → `piper-wasm` → text-only
-- All badges (toggle ON): `piper-wasm` → text-only
+- PRIVATE *(native shell, Phase 4+)*: `piper-wasm` → **no fallback** (show: "Local TTS unavailable. Reply shown as text only.")
+- PRIVATE *(web, today)*: `text-only` directly (no synthesis attempted; reply rendered as text with the LOCAL pill).
+- FLASH/PRO (toggle OFF): `elevenlabs-flash` → `piper-wasm` *(native only)* → text-only
+- Genius (toggle OFF): `elevenlabs-multilingual-v2` → `elevenlabs-flash` → `piper-wasm` *(native only)* → text-only
+- All badges (toggle ON, native shell): `piper-wasm` → text-only — *unreachable on web; toggle is hidden until `nativeShell === true`.*
 
 **Why:** users on cheap Android with no WebGPU, or iOS Safari with full storage, will hit fallbacks regularly. Hiding the fallback under a marketing label trains them to distrust the privacy claim. Surfacing it builds trust and gives us a bug report channel ("status pill said `piper→text-only` — fix it").
 
 ### V9. Local-tier capability probe & scoping
-**Decision:** On first app open after 2.8 ships, run a one-time capability probe:
-1. WebGPU available? (`navigator.gpu`)
-2. OPFS quota ≥ 1.2GB? (StorageManager.estimate)
-3. WASM SIMD support? (small feature-detect script)
+**Decision (revised 2026-05-08, Phase 2.8 Day 2):** On first app open after 2.8 ships, run a one-time capability probe:
+1. `nativeShell` — running inside the Capacitor app? (`window.Capacitor?.isNativePlatform()` or `NeuralConnexionsApp` UA token)
+2. `mediaDevices` — `navigator.mediaDevices.getUserMedia` available?
+3. `audioContext` — `AudioContext` / `webkitAudioContext` available?
+4. `speechRecognition` — `SpeechRecognition` / `webkitSpeechRecognition` available?
+5. WebGPU available? (`navigator.gpu`) — telemetry only
+6. OPFS quota ≥ 1.2GB? (`StorageManager.estimate`) — telemetry only
+7. WASM SIMD support? **Forced `false` unless `nativeShell === true`.** Until the native shell ships (Phase 4), the heavy on-device pipeline is never lit even on browsers that technically support SIMD.
 
-Result is cached in `user_settings.local_audio_capability` (jsonb: `{webgpu: bool, opfsBytes: number, wasmSimd: bool, probedAt: iso}`). If any required capability is missing, the "Prefer on-device" toggle is **hidden, not disabled**. The PRIVATE badge stays available but its TTS falls back to text-only with an explainer.
+Result is cached in `user_settings.local_audio_capability` (jsonb: `{webgpu, opfsBytes, wasmSimd, probedAt, nativeShell, mediaDevices, audioContext, speechRecognition}`). The "Prefer on-device" toggle is **hidden, not disabled** whenever `nativeShell === false` OR `opfsBytes < 1.2GB` OR `wasmSimd === false`. On web today this resolves to: **always hidden**, with a settings-page explainer card naming the native app + Phase 4 milestone (and a Firefox-no-SpeechRecognition hint when relevant).
 
-**iOS Safari today:** OPFS cap is ~1GB per origin. WebLLM 3B model = 1.5GB. Probe will fail; toggle hidden on iPhone. PRIVATE badge still usable for text. Honest, not silently degraded.
+**Why we gate on `nativeShell` instead of probing real WASM SIMD on web:** even on browsers that pass the SIMD check, shipping ~107 MB of model + WASM runtime over the public web is the wrong trade for v1 — it inflates first-paint, blocks PWA install on cellular, and leaks a costly download to anyone who toggles PRIVATE out of curiosity. The native shell amortises that download via Capacitor asset bundling, so PRIVATE-on-device becomes a one-time install cost instead of a per-origin web fetch.
+
+**PRIVATE on web today:** STT = `browser-speech-recognition` (Chromium / Safari), TTS = `text-only`. The badge stays selectable; the StatusPill renders `LOCAL · browser-speech · <llm> · text-only` so the user knows exactly what they're getting. No cloud STT, no synthesised voice, no model download.
+
+**iOS Safari today:** SpeechRecognition is gated behind a private-API flag in Safari 17; on stock iOS the PRIVATE badge will hit the "no STT available" message. Native shell is the unblock, not a Safari workaround.
 
 **Local LLM scoping (re-stated for the spec):** The "Local 🟢" inference path that PRIVATE will eventually run via WebLLM (Phase 3) advertises only: "Answer questions about your data, summarize, recall." Drafting, scheduling, and multi-step actions show a chip in the input row: "Needs cloud — switch tier or allow once." The chip is added in 2.8 even though the WebLLM tier doesn't exist yet, so the affordance ships consistent.
 
-### V10. Cold-start UX for local stack
-**Decision:** First-use download UI is a real progress bar with bytes + ETA, not a spinner. Three downloadable assets:
+### V10. Cold-start UX for local stack *(deferred to native shell, Phase 4+)*
+**Decision (revised 2026-05-08):** This entire section applies only inside the Capacitor native shell. On web, none of these assets are downloaded — `whisper-cpp-wasm` and `piper-wasm` adapters throw `NATIVE_ONLY_MSG` if invoked, the resolver routes around them, and the capability probe forces `wasmSimd=false` so the toggle never appears. The native shell will bundle these assets at install time (Capacitor asset packaging) rather than fetching them per-origin, so the "real progress bar with bytes + ETA" UX below is the **first-PRIVATE-turn-after-app-install** flow, not a per-page-load flow.
+
+When the native shell ships, first-use download UI is a real progress bar with bytes + ETA, not a spinner. Three assets:
 - `silero-vad.wasm` (~2MB) — lazy-loaded on first Converse open
 - `whisper-cpp-tiny.wasm` + tiny model (~75MB) — lazy-loaded on first PRIVATE turn
 - `piper-en-US-amy-low.onnx` (~30MB) — lazy-loaded on first toggle-ON turn
