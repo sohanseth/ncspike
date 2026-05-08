@@ -2363,6 +2363,46 @@ type LiveChatMsg = {
 
 function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files);
+    setAttachments(prev => {
+      const next = [...prev];
+      for (const f of arr) {
+        if (next.length >= MAX_FILES_PER_MESSAGE) {
+          void import("sonner").then(({ toast }) =>
+            toast.error(`Max ${MAX_FILES_PER_MESSAGE} images per message`),
+          );
+          break;
+        }
+        const err = validateImage(f);
+        if (err) {
+          void import("sonner").then(({ toast }) => toast.error(err));
+          continue;
+        }
+        next.push(makePending(f));
+      }
+      return next;
+    });
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => {
+      const target = prev.find(p => p.id === id);
+      if (target) revokePending(target);
+      return prev.filter(p => p.id !== id);
+    });
+  }, []);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => () => {
+    attachments.forEach(revokePending);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [model, setModel] = useState<AIModel>("flash");
   const [messages, setMessages] = useState<LiveChatMsg[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
