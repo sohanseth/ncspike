@@ -453,6 +453,30 @@ export type Database = {
         }
         Relationships: []
       }
+      user_provider_category_blocks: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          provider_tier: number
+          user_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          id?: string
+          provider_tier: number
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          provider_tier?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_settings: {
         Row: {
           ai_mode: Database["public"]["Enums"]["ai_mode"]
@@ -486,6 +510,63 @@ export type Database = {
           updated_at?: string
           user_id?: string
           voice_drafts_consent_at?: string | null
+        }
+        Relationships: []
+      }
+      user_trait_blocks: {
+        Row: {
+          blocked_until: string
+          category: string
+          created_at: string
+          id: string
+          trait_path: string
+          user_id: string
+        }
+        Insert: {
+          blocked_until: string
+          category: string
+          created_at?: string
+          id?: string
+          trait_path: string
+          user_id: string
+        }
+        Update: {
+          blocked_until?: string
+          category?: string
+          created_at?: string
+          id?: string
+          trait_path?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_traits: {
+        Row: {
+          created_at: string
+          derived_at: string | null
+          sheet: Json
+          source_count: number
+          updated_at: string
+          user_id: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          derived_at?: string | null
+          sheet?: Json
+          source_count?: number
+          updated_at?: string
+          user_id: string
+          version?: number
+        }
+        Update: {
+          created_at?: string
+          derived_at?: string | null
+          sheet?: Json
+          source_count?: number
+          updated_at?: string
+          user_id?: string
+          version?: number
         }
         Relationships: []
       }
