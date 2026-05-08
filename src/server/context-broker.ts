@@ -24,7 +24,7 @@ import {
   CATEGORY_TIE_BREAK_ORDER,
   type TraitCategory,
   type TraitSheet,
-} from "@/server/trait-schema";
+} from "@/lib/trait-schema";
 import type { Badge } from "./inference/router";
 import type { PrivacyTier } from "./inference/tiers";
 

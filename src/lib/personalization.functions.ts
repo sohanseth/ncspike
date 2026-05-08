@@ -27,7 +27,7 @@ import {
   TraitSheetSchema,
   type TraitCategory,
   type TraitSheet,
-} from "@/server/trait-schema";
+} from "@/lib/trait-schema";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

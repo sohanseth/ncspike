@@ -20,7 +20,7 @@ import {
   unblockProviderCategory,
 } from "@/lib/personalization.functions";
 import { PROVIDER_TIERS, type ProviderId } from "@/server/inference/tiers";
-import type { TraitCategory } from "@/server/trait-schema";
+import type { TraitCategory } from "@/lib/trait-schema";
 
 export type ContextUsed = {
   categories: TraitCategory[];
