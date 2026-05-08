@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import {
+  authenticateAudioRequest,
+  enforceAudioRateLimit,
+  rateLimitResponse,
+} from "@/server/audio-auth.server";
 
 /**
  * POST /api/stt/groq — proxies an audio blob to Groq Whisper.
+ *
+ * Auth: requires a Supabase Bearer token. Per-user rate limited via
+ * `enforceAudioRateLimit('stt-groq')`. Closes P0 from handoff §10b.
  *
  * Privacy: the request body is forwarded to Groq verbatim and the response
  * is returned to the client. NOTHING is written to the database, storage, or
@@ -12,6 +20,12 @@ export const Route = createFileRoute("/api/stt/groq")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const auth = await authenticateAudioRequest(request);
+        if (!auth.ok) return auth.response;
+
+        const rl = await enforceAudioRateLimit(auth.userId, "stt-groq");
+        if (!rl.ok) return rateLimitResponse(rl);
+
         const apiKey = process.env.GROQ_API_KEY;
         if (!apiKey) {
           return new Response(
@@ -44,7 +58,6 @@ export const Route = createFileRoute("/api/stt/groq")({
         upstream.append("model", "whisper-large-v3-turbo");
         upstream.append("response_format", "json");
         if (typeof language === "string" && language) {
-          // Groq expects ISO 639-1; clients pass ISO 639-3, so strip to first 2 chars best-effort.
           upstream.append("language", language.slice(0, 2));
         }
 

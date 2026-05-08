@@ -1,14 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
+import {
+  authenticateAudioRequest,
+  enforceAudioRateLimit,
+  rateLimitResponse,
+} from "@/server/audio-auth.server";
 
 const Body = z.object({
   text: z.string().min(1).max(5000),
-  voiceId: z.string().min(1),
+  voiceId: z.string().min(1).max(128),
   modelId: z.enum(["eleven_turbo_v2_5", "eleven_multilingual_v2"]).default("eleven_turbo_v2_5"),
 });
 
 /**
  * POST /api/tts/elevenlabs — proxies text to ElevenLabs and streams MP3 back.
+ *
+ * Auth: requires a Supabase Bearer token. Per-user rate limited via
+ * `enforceAudioRateLimit('tts-elevenlabs')`. Closes P0 from handoff §10b.
  *
  * Privacy: audio bytes are never persisted server-side. The client wraps the
  * response in a Blob URL that lives only in memory.
@@ -17,6 +25,12 @@ export const Route = createFileRoute("/api/tts/elevenlabs")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const auth = await authenticateAudioRequest(request);
+        if (!auth.ok) return auth.response;
+
+        const rl = await enforceAudioRateLimit(auth.userId, "tts-elevenlabs");
+        if (!rl.ok) return rateLimitResponse(rl);
+
         const apiKey = process.env.ELEVENLABS_API_KEY;
         if (!apiKey) {
           return new Response(
