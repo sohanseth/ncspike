@@ -2024,12 +2024,12 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
                 onRequestConsent={requestConsent}
                 onCompose={onCompose}
                 onMarkDone={() => {
-                  setDone(d => [...d, item.id]);
+                  onResolve(item.id);
                   import("@/lib/gmail.functions").then(({ markInboxItemDone }) =>
                     markInboxItemDone({ data: { id: item.id, action: "done" } })
                   ).catch((e) => {
                     console.error("markInboxItemDone failed:", e);
-                    setDone(d => d.filter(x => x !== item.id));
+                    onUnresolve(item.id);
                   });
                 }}
                 draftable={draftable}
