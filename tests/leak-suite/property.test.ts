@@ -16,7 +16,7 @@
 import { describe, it, expect } from "vitest";
 import * as fc from "fast-check";
 import { scrub } from "@/server/pii-scrub";
-import { INJECTION_SENTINELS } from "@/server/trait-schema";
+import { INJECTION_SENTINELS } from "@/lib/trait-schema";
 
 describe("PII scrub — property tests", () => {
   it("invariant 1: known-name substring → scrub blocks", () => {

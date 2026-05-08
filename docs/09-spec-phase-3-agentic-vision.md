@@ -174,3 +174,132 @@ These are the calls I can't make alone — they're product decisions, not engine
 - Skim this doc when you have 15 minutes, push back on any framing that doesn't match what you actually want.
 - Answer Section 7 questions in your own time over the next week.
 - Tell Lovable about Phase 3 framing so they're not surprised when the home screen pivots from ChatPanel to Inbox.
+
+---
+
+## 9. v1 lock proposals (drafted 2026-05-08, post Phase 2.7 D8)
+
+D8 has landed. Phase 2.6 architect review came back APPROVED with one severe
+fixed in this session (cap-check ordering). Phase 2.7 architect review came
+back APPROVED clean. CPAUD viewer is up.
+
+The §7 questions are listed below with my **proposed answer** (so you can
+reply with one round of "yes / no / change to X" instead of writing them
+from scratch). Anything marked **NEEDS YOU** is a genuinely product call
+I can't make alone; everything else I'm willing to lock if you just say
+"agree."
+
+### 7.1 Browser support priority
+
+**Proposal: Chrome MV3 only at launch.**
+
+Rationale: Firefox MV3 support landed but is materially behind on the
+declarative-net-request and content-script lifecycle bits we need; the
+~3% audience does not pay for the maintenance second-axis. We can revisit
+once Phase 3.7 is shipped and we have actual user telemetry on browser mix.
+
+**Locks if you agree.** No further input needed.
+
+### 7.2 Importers list
+
+**Proposal for v1 (Phase 3.2 + 3.6 spillover):**
+
+| Importer | Why | Effort | Phase |
+| --- | --- | --- | --- |
+| Calendar (Google) | already have OAuth | S | 3.2 |
+| Contacts (Google) | already have OAuth | S | 3.2 |
+| Email metadata (Gmail, headers + label only — no bodies) | high-signal for "what is this person to me" | M | 3.2 stretch |
+| Manual CSV uploads (banking, fitness, etc.) | covers the long tail without per-vendor OAuth | M | 3.6 |
+
+**Explicitly out for v1**: Spotify, YouTube history, banking-API
+integrations (Plaid-class). They're either privacy-spicy (bank), low
+trait-density (Spotify play history rarely changes a recommendation), or
+require a vendor relationship we don't have (YouTube watch history is
+not a public API).
+
+**NEEDS YOU**: confirm "email metadata, headers + label only, never bodies"
+is the right floor. The risk is users will *want* the agent to read their
+inbox, but that crosses the broker's T3-blocked-content line and would
+need a separate spec.
+
+### 7.3 Bookmark / Library ergonomics
+
+**Proposal: auto-organised with manual override.**
+
+- Default view is "Recently saved" (flat reverse-chronological).
+- Agent runs a nightly clusterer (cheap embedding-based, T0 only) that
+  proposes 3-7 collections per ~50 saved items. The user accepts/rejects
+  each suggestion.
+- Manual folders are always allowed and never auto-mutated.
+- No tag system in v1 — too much UI surface area for unproven value.
+
+**Locks if you agree.** Rejection means I default to flat list + manual
+folders, no auto-organisation, which is shippable in half the time.
+
+### 7.4 Trust gate threshold for write-actions
+
+**Proposal: behaviour-based, not count-based, with an explicit on/off.**
+
+Replacing the original "50 accepted inbox items" with:
+
+- Write-actions (compose draft, set calendar event, send email) are
+  **opt-in per skill**, off by default.
+- The first time a skill wants to write, the inbox surfaces a one-time
+  "always allow this skill to write?" toggle.
+- No global threshold. Counts are gameable and time-based gates feel
+  arbitrary; per-skill explicit consent is what users will actually
+  trust.
+
+**Locks if you agree.** This also simplifies the Phase 3.3 task-queue
+spec — no per-user trust-score column.
+
+### 7.5 Pricing model implication (overnight agent budget)
+
+**Proposal for free tier:**
+
+- Daily agent-task budget = **8 task-runs/day**, with at most **2 of
+  those at PRO badge** (the rest must complete on FLASH or PRIVATE).
+- Hard kill at the budget — no fallback to a lower tier, the task just
+  defers to tomorrow with an inbox notice.
+- CPAUD ceiling stays $1.50/user/day per Phase 2.6 §2; agent runs count
+  the same as user-initiated runs.
+
+Justification: 8 tasks × ~$0.04 (PRO median) = $0.32 if everything went
+PRO; with the 2-PRO cap it's ~$0.20/day worst case for an idle user the
+agent runs jobs for. Comfortably under target.
+
+**NEEDS YOU**: confirm 8 is the right number, or pick another. I'd argue
+against any number > 12 (CPAUD risk) and against any number < 5 (agent
+becomes useless).
+
+### 7.6 Public stance on "the agent watches your browsing"
+
+**Proposal: lock the language now, in this doc, exactly as drafted in §7.**
+
+Reproduced for clarity:
+
+> **NeuralConnexions watches only what you let it. You name every
+> domain, you can revoke any of them in one tap, and your raw browsing
+> never leaves your device — only the patterns the agent learned from
+> it.**
+
+This becomes the canonical copy used in: the browser-extension install
+screen, the Phase 3.9 privacy-posture doc, the App Store description,
+and the marketing site. Locking it now means Lovable's onboarding work
+in 3.8 cites a single source of truth.
+
+**Locks if you agree.** Edits welcome.
+
+### Summary of what I need from you to lock v1
+
+You can answer in one round:
+
+1. §7.1 Chrome-only? **(default: yes)**
+2. §7.2 importers list as above + "email headers only, never bodies" floor? **(NEEDS YOU)**
+3. §7.3 auto-organised Library? **(default: yes)**
+4. §7.4 per-skill opt-in trust gate? **(default: yes)**
+5. §7.5 free-tier agent budget = 8/day with 2 PRO max? **(NEEDS YOU on the number)**
+6. §7.6 lock the marketing language as written? **(default: yes)**
+
+Any "yes" or silence on a default-yes line will be taken as approval and
+locked into v1. The two NEEDS YOU items genuinely block v1.

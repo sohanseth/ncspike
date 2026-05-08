@@ -17,7 +17,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { runChain, CapExceededError, ChainExhaustedError } from "@/server/inference/chat";
+import { runChain, CapExceededError, ChainExhaustedError, assertCap } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
 import { resolveBadgeForUser } from "@/server/personalization-routing";
 import { strictestTierInChain } from "@/lib/provider-tiers";
@@ -207,7 +207,20 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     //     reflects what actually ran, not what the UI clicked.
     const { badge: effectiveBadge } = await resolveBadgeForUser(userId, data.badge);
 
-    // 3. Persist the user message immediately so it survives chain failures.
+    // 3. Pre-flight cap + paidOnly check (spec §C6 ordering). Must happen
+    //    BEFORE persisting the user row — otherwise a cap-blocked send leaves
+    //    an orphan user bubble in the thread on next page load. assertCap
+    //    writes the `cap_exceeded` usage row and throws CapExceededError,
+    //    which the caller catches and surfaces as a Sonner toast.
+    const paidTierForCap = await getPaidTier(userId);
+    await assertCap({
+      userId,
+      threadId,
+      badge: effectiveBadge,
+      paidTier: paidTierForCap,
+    });
+
+    // 4. Persist the user message immediately so it survives chain failures.
     const { data: userRow, error: uErr } = await supabaseAdmin
       .from("chat_messages")
       .insert({
@@ -245,14 +258,19 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     // 5. Run the chain. CapExceededError and ChainExhaustedError surface to
     //    the caller as typed errors — UI shows a friendly upsell or retry.
-    const paidTier = await getPaidTier(userId);
+    //    Re-uses paidTierForCap from step 3 to avoid a second auth lookup.
     const result = await runChain({
       userId,
       threadId,
       badge: effectiveBadge,
       messages: [...historyMessages, { role: "user", content: data.content }],
-      paidTier,
+      paidTier: paidTierForCap,
       systemPrompt: broker.fragment || undefined,
+      // Pre-flight assertCap() already ran above (step 3), BEFORE the user
+      // row was persisted. Skipping the inner re-check closes the TOCTOU
+      // window where a concurrent send could otherwise throw cap_exceeded
+      // here and orphan the just-inserted user row.
+      assumeCapChecked: true,
     });
 
     // 6. Persist the assistant reply with routing breadcrumb + context audit.

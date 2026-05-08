@@ -11,7 +11,7 @@ import {
   ProfessionalSchema,
   HouseholdMemberSchema,
   PreferencesSchema,
-} from "@/server/trait-schema";
+} from "@/lib/trait-schema";
 
 const baseEmbedding = (): number[] => Array.from({ length: 384 }, (_, i) => (i % 5) / 7);
 

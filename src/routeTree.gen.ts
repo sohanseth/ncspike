@@ -20,6 +20,7 @@ import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy
 import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
+import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
 import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
 import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
@@ -82,6 +83,11 @@ const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
   path: '/workspace/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceInternalCpaudRoute = WorkspaceInternalCpaudRouteImport.update({
+  id: '/workspace/internal/cpaud',
+  path: '/workspace/internal/cpaud',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiTtsElevenlabsRoute = ApiTtsElevenlabsRouteImport.update({
   id: '/api/tts/elevenlabs',
   path: '/api/tts/elevenlabs',
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRoutesByTo {
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRoutesById {
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRouteTypes {
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   id:
     | '__root__'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   fileRoutesById: FileRoutesById
 }
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiSttGroqRoute: typeof ApiSttGroqRoute
   ApiTtsElevenlabsRoute: typeof ApiTtsElevenlabsRoute
+  WorkspaceInternalCpaudRoute: typeof WorkspaceInternalCpaudRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
 }
 
@@ -318,6 +331,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/internal/cpaud': {
+      id: '/workspace/internal/cpaud'
+      path: '/workspace/internal/cpaud'
+      fullPath: '/workspace/internal/cpaud'
+      preLoaderRoute: typeof WorkspaceInternalCpaudRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/tts/elevenlabs': {
       id: '/api/tts/elevenlabs'
       path: '/api/tts/elevenlabs'
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiSttGroqRoute: ApiSttGroqRoute,
   ApiTtsElevenlabsRoute: ApiTtsElevenlabsRoute,
+  WorkspaceInternalCpaudRoute: WorkspaceInternalCpaudRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
 }
 export const routeTree = rootRouteImport

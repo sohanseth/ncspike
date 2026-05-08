@@ -94,6 +94,55 @@ async function countTodayUsage(userId: string, badge: Badge): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Pre-flight cap + paidOnly check. Throws CapExceededError (and writes the
+ * `cap_exceeded` usage row) before any side-effect — callers MUST run this
+ * BEFORE persisting the user `chat_messages` row, or a blocked send leaves
+ * an orphan user bubble in the thread on next page load (spec §C6 ordering).
+ */
+export async function assertCap(args: {
+  userId: string;
+  threadId: string | null;
+  badge: Badge;
+  paidTier: boolean;
+}): Promise<void> {
+  const { badge } = args;
+  const cfg = chainFor(badge);
+
+  if (cfg.paidOnly && !args.paidTier) {
+    await writeUsage({
+      userId: args.userId,
+      threadId: args.threadId,
+      badge,
+      chain: cfg.chain,
+      providerUsed: cfg.chain[0],
+      modelUsed: null,
+      fallbackDepth: 0,
+      latencyMs: 0,
+      status: "cap_exceeded",
+      errorClass: "cap_exceeded",
+    });
+    throw new CapExceededError(badge, 0, 0);
+  }
+
+  const cap = capFor(badge, args.paidTier);
+  const used = await countTodayUsage(args.userId, badge);
+  if (used >= cap) {
+    await writeUsage({
+      userId: args.userId,
+      threadId: args.threadId,
+      badge,
+      chain: cfg.chain,
+      providerUsed: cfg.chain[0],
+      modelUsed: null,
+      fallbackDepth: 0,
+      latencyMs: 0,
+      status: "cap_exceeded",
+    });
+    throw new CapExceededError(badge, used, cap);
+  }
+}
+
 type WriteUsageArgs = {
   userId: string;
   threadId: string | null;
@@ -144,45 +193,28 @@ export type RunChainArgs = {
   systemPrompt?: string;
   maxTokens?: number;
   temperature?: number;
+  /**
+   * Set true when the caller has already invoked `assertCap()` BEFORE
+   * persisting the user `chat_messages` row. Skips the inner re-check
+   * so a TOCTOU race (concurrent send) cannot throw `CapExceededError`
+   * after the user row is on disk, which would orphan it. Default
+   * false keeps any future caller safe (re-checks; may orphan but
+   * never overspends).
+   */
+  assumeCapChecked?: boolean;
 };
 
 export async function runChain(args: RunChainArgs): Promise<ChainResult> {
   const { badge } = args;
   const cfg = chainFor(badge);
 
-  // Free users see the upsell, not an error chain attempt.
-  if (cfg.paidOnly && !args.paidTier) {
-    await writeUsage({
+  if (!args.assumeCapChecked) {
+    await assertCap({
       userId: args.userId,
       threadId: args.threadId,
       badge,
-      chain: cfg.chain,
-      providerUsed: cfg.chain[0],
-      modelUsed: null,
-      fallbackDepth: 0,
-      latencyMs: 0,
-      status: "cap_exceeded",
-      errorClass: "cap_exceeded",
+      paidTier: args.paidTier,
     });
-    throw new CapExceededError(badge, 0, 0);
-  }
-
-  // Cap check (status='ok' only, per §C3 — failed attempts don't burn quota).
-  const cap = capFor(badge, args.paidTier);
-  const used = await countTodayUsage(args.userId, badge);
-  if (used >= cap) {
-    await writeUsage({
-      userId: args.userId,
-      threadId: args.threadId,
-      badge,
-      chain: cfg.chain,
-      providerUsed: cfg.chain[0],
-      modelUsed: null,
-      fallbackDepth: 0,
-      latencyMs: 0,
-      status: "cap_exceeded",
-    });
-    throw new CapExceededError(badge, used, cap);
   }
 
   const fullMessages: InferenceMessage[] = [
@@ -294,37 +326,13 @@ export async function* runChainStream(
   const { badge } = args;
   const cfg = chainFor(badge);
 
-  if (cfg.paidOnly && !args.paidTier) {
-    await writeUsage({
+  if (!args.assumeCapChecked) {
+    await assertCap({
       userId: args.userId,
       threadId: args.threadId,
       badge,
-      chain: cfg.chain,
-      providerUsed: cfg.chain[0],
-      modelUsed: null,
-      fallbackDepth: 0,
-      latencyMs: 0,
-      status: "cap_exceeded",
-      errorClass: "cap_exceeded",
+      paidTier: args.paidTier,
     });
-    throw new CapExceededError(badge, 0, 0);
-  }
-
-  const cap = capFor(badge, args.paidTier);
-  const used = await countTodayUsage(args.userId, badge);
-  if (used >= cap) {
-    await writeUsage({
-      userId: args.userId,
-      threadId: args.threadId,
-      badge,
-      chain: cfg.chain,
-      providerUsed: cfg.chain[0],
-      modelUsed: null,
-      fallbackDepth: 0,
-      latencyMs: 0,
-      status: "cap_exceeded",
-    });
-    throw new CapExceededError(badge, used, cap);
   }
 
   const fullMessages: InferenceMessage[] = [

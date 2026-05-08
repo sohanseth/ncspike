@@ -23,6 +23,7 @@ import {
   CapExceededError,
   ChainExhaustedError,
   UserAbortError,
+  assertCap,
   type ChainStreamEvent,
 } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
@@ -150,6 +151,41 @@ export const Route = createFileRoute("/api/chat/stream")({
         // what actually ran rather than what the UI clicked.
         const { badge: effectiveBadge } = await resolveBadgeForUser(userId, v.badge);
 
+        // Pre-flight cap + paidOnly check (spec §C6 ordering). Must happen
+        // BEFORE the user-row insert — otherwise a cap-blocked send leaves
+        // an orphan user bubble in the thread on next page load. On block
+        // we return a one-shot SSE stream carrying the same `cap_exceeded`
+        // error event the in-stream catch would have emitted, so the
+        // client's existing handler treats it identically.
+        const paidTier = await getPaidTier(userId);
+        try {
+          await assertCap({
+            userId,
+            threadId,
+            badge: effectiveBadge,
+            paidTier,
+          });
+        } catch (e) {
+          if (e instanceof CapExceededError) {
+            const frame = sseEvent("error", {
+              kind: "cap_exceeded",
+              message: e.message,
+              badge: e.badge,
+              used: e.used,
+              cap: e.cap,
+            });
+            return new Response(frame, {
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache, no-transform",
+                connection: "keep-alive",
+              },
+            });
+          }
+          throw e;
+        }
+
         // Persist user message immediately so it survives chain failures.
         const { data: userRow, error: uErr } = await supabaseAdmin
           .from("chat_messages")
@@ -163,8 +199,6 @@ export const Route = createFileRoute("/api/chat/stream")({
           .select("id")
           .single();
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
-
-        const paidTier = await getPaidTier(userId);
         const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
         let broker: AssembleResult = {
@@ -304,6 +338,10 @@ export const Route = createFileRoute("/api/chat/stream")({
                   messages: [...historyMessages, { role: "user", content: v.content }],
                   paidTier,
                   systemPrompt: broker.fragment || undefined,
+                  // Pre-flight assertCap() ran BEFORE the user-row insert
+                  // above. Skip the inner re-check so a TOCTOU race cannot
+                  // throw cap_exceeded here and orphan the user row.
+                  assumeCapChecked: true,
                 },
                 { signal: userAbort.signal },
               )) {
