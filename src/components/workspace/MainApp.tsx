@@ -1865,8 +1865,9 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
 // ─── Other tile (size-aware) ──────────────────────────────────────────────────
 
-function OtherCard({ size, count, items, onClick }: {
+function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
   size: "xl"|"md"|"sm"; count: number; items: InboxItem[]; onClick: () => void;
+  pinned?: boolean; onTogglePin?: () => void;
 }) {
   const isXL = size === "xl";
   const isSM = size === "sm";
