@@ -16,11 +16,11 @@ import {
   type InferenceRequest,
   type InferenceResult,
 } from "./types";
-import type { ProviderId } from "./tiers";
+import type { ProviderId } from "@/lib/provider-tiers";
 
 export type { InferenceMessage, InferenceRequest, InferenceResult } from "./types";
 export { InferenceError } from "./types";
-export { PROVIDER_TIERS, tierOf, strictestTierInChain, type PrivacyTier, type ProviderId } from "./tiers";
+export { PROVIDER_TIERS, tierOf, strictestTierInChain, type PrivacyTier, type ProviderId } from "@/lib/provider-tiers";
 
 const PROVIDER_LOADERS: Record<ProviderId, () => Promise<InferenceProvider>> = {
   lovable: async () => lovableProvider,
