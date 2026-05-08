@@ -2353,6 +2353,8 @@ const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }
 type LiveChatMsg = {
   role: "user" | "assistant";
   text: string;
+  /** Local preview URLs for image attachments (user messages only). */
+  images?: string[];
   /** Routing breadcrumb shown under assistant messages. */
   meta?: { provider: string | null; model: string | null; fallbackDepth: number | null };
   /** Personalization context the broker injected for this turn (D8 Day 5). */
