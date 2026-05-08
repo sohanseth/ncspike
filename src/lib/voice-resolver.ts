@@ -16,14 +16,19 @@ const TOGGLE_OFF: Record<Badge, AudioPair> = {
   FLASH: { stt: "groq-whisper", tts: "elevenlabs-flash" },
   PRO: { stt: "groq-whisper", tts: "elevenlabs-flash" },
   Genius: { stt: "elevenlabs-scribe", tts: "elevenlabs-multilingual-v2" },
-  PRIVATE: { stt: "whisper-cpp-wasm", tts: "piper-wasm" },
+  // Web today: no Whisper.cpp / Piper WASM (deferred to native shell, ~Phase 4).
+  // PRIVATE on web = browser SpeechRecognition + text-only reply.
+  PRIVATE: { stt: "browser-speech-recognition", tts: "text-only" },
 };
 
 const TOGGLE_ON: Record<Badge, AudioPair> = {
+  // Toggle is hidden on web (capability probe forces wasmSimd=false), so these
+  // FLASH/PRO/Genius rows are unreachable until the native shell ships. Kept
+  // here so the type-level Record<Badge, …> stays exhaustive.
   FLASH: { stt: "groq-whisper", tts: "piper-wasm" },
   PRO: { stt: "groq-whisper", tts: "piper-wasm" },
   Genius: { stt: "groq-whisper", tts: "piper-wasm" },
-  PRIVATE: { stt: "whisper-cpp-wasm", tts: "piper-wasm" },
+  PRIVATE: { stt: "browser-speech-recognition", tts: "text-only" },
 };
 
 const LOCAL_STT = new Set<SttProviderId>(["whisper-cpp-wasm", "browser-speech-recognition"]);

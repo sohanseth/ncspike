@@ -1,17 +1,17 @@
 import type { TtsAdapter } from "./types";
 
-/** Piper en-US-amy-low (~30MB ONNX) running in WASM. T0. */
+const NATIVE_ONLY_MSG =
+  "PRIVATE on-device audio is available in the NeuralConnexions native app (coming Phase 4). On web, PRIVATE uses browser speech recognition with text-only replies.";
+
+/**
+ * Piper en-US-amy-low (~30MB ONNX) running in WASM. T0.
+ * Web build: stub. See whisper-cpp-wasm for the same rationale.
+ */
 export const piperWasm: TtsAdapter = {
   id: "piper-wasm",
   privacyTier: "T0",
   requiresNetwork: false,
-  async speak(text, _opts) {
-    const t0 = performance.now();
-    return {
-      audioUrl: "",
-      model: "piper-en-US-amy-low-v3",
-      latencyMs: Math.round(performance.now() - t0),
-      chars: text.length,
-    };
+  async speak(_text, _opts) {
+    throw new Error(NATIVE_ONLY_MSG);
   },
 };
