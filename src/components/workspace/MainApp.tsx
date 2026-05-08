@@ -1784,6 +1784,23 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
   type Tile =
     | { kind: "domain"; id: DomainId; weight: number; count: number }
     | { kind: "other";  weight: number; count: number };
+
+  // Pinned tile (hybrid: pin always takes xl slot, rest auto-rank)
+  const [pinnedKey, setPinnedKey] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    return window.localStorage.getItem("nc.pinnedTile");
+  });
+  const togglePin = useCallback((key: string) => {
+    setPinnedKey(prev => {
+      const next = prev === key ? null : key;
+      try {
+        if (next) window.localStorage.setItem("nc.pinnedTile", next);
+        else window.localStorage.removeItem("nc.pinnedTile");
+      } catch {}
+      return next;
+    });
+  }, []);
+
   const tiles = useMemo<Tile[]>(() => {
     const domainTiles: Tile[] = (Object.values(DOMAINS) as DomainData[]).map(d => {
       const u = urgencyByDomain[d.id] ?? { urgent: 0, today: 0, proactive: 0 };
@@ -1791,13 +1808,16 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       const weight = u.urgent * 4 + u.today * 2 + u.proactive + count * 0.25 + d.activity * 0.05;
       return { kind: "domain", id: d.id, weight, count };
     });
-    const otherWeight = otherCount * 0.6; // each "other" item is lower-signal than a categorized one
+    const otherWeight = otherCount * 0.6;
     const otherTile: Tile = { kind: "other", weight: otherWeight, count: otherCount };
-    return [...domainTiles, otherTile].sort((a, b) => b.weight - a.weight);
-  }, [liveByDomain, urgencyByDomain, otherCount]);
+    const all = [...domainTiles, otherTile].sort((a, b) => b.weight - a.weight);
+    if (!pinnedKey) return all;
+    const idx = all.findIndex(t => (t.kind === "domain" ? t.id : "other") === pinnedKey);
+    if (idx <= 0) return all;
+    const [pinned] = all.splice(idx, 1);
+    return [pinned, ...all];
+  }, [liveByDomain, urgencyByDomain, otherCount, pinnedKey]);
 
-  // Slot shapes: d0 = xl (2×2), d1/d2 = md, d3/d4/d5 = sm.
-  // Tiles get assigned to slots in ranked order.
   const slots = ["xl", "md", "md", "sm", "sm", "sm"] as const;
 
   return (
