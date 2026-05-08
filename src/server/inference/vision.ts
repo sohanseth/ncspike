@@ -119,9 +119,8 @@ async function runCloudflareVision(
     else args.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
   }
 
-  let res: Response;
-  try {
-    res = await fetch(url, {
+  const doFetch = () =>
+    fetch(url, {
       method: "POST",
       signal: ctrl.signal,
       headers: {
@@ -134,6 +133,27 @@ async function runCloudflareVision(
         max_tokens: 1024,
       }),
     });
+
+  let res: Response;
+  try {
+    res = await doFetch();
+    // Llama 3.2 vision requires a one-time community-license acceptance per
+    // account. Cloudflare returns 403 with a "Model Agreement" message until
+    // the account submits `{ prompt: "agree" }`. Auto-accept and retry once.
+    if (res.status === 403) {
+      const body = await res.clone().text().catch(() => "");
+      if (/Model Agreement/i.test(body)) {
+        await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ prompt: "agree" }),
+        }).catch(() => null);
+        res = await doFetch();
+      }
+    }
   } finally {
     clearTimeout(timer);
   }
