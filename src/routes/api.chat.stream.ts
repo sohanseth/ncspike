@@ -34,6 +34,7 @@ import {
   logContextDecision,
   type AssembleResult,
 } from "@/server/context-broker";
+import { runVisionTurn, type VisionAttachment } from "@/server/inference/vision";
 
 const HISTORY_WINDOW = 20;
 const VALID_BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"] as const;
