@@ -14,9 +14,12 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
 import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
+import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
+import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 import { Route as ApiChatStreamRouteImport } from './routes/api.chat.stream'
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
@@ -46,6 +49,11 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   path: '/workspace/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceVoiceSettingsRoute = WorkspaceVoiceSettingsRouteImport.update({
+  id: '/workspace/voice-settings',
+  path: '/workspace/voice-settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
   id: '/workspace/usage',
   path: '/workspace/usage',
@@ -59,6 +67,16 @@ const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
 const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
   id: '/workspace/connections',
   path: '/workspace/connections',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTtsElevenlabsRoute = ApiTtsElevenlabsRouteImport.update({
+  id: '/api/tts/elevenlabs',
+  path: '/api/tts/elevenlabs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSttGroqRoute = ApiSttGroqRouteImport.update({
+  id: '/api/stt/groq',
+  path: '/api/stt/groq',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
@@ -85,9 +103,12 @@ export interface FileRoutesByFullPath {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
+  '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/stt/groq': typeof ApiSttGroqRoute
+  '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRoutesByTo {
@@ -98,9 +119,12 @@ export interface FileRoutesByTo {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
+  '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/stt/groq': typeof ApiSttGroqRoute
+  '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRoutesById {
@@ -112,9 +136,12 @@ export interface FileRoutesById {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
+  '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/stt/groq': typeof ApiSttGroqRoute
+  '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
 export interface FileRouteTypes {
@@ -127,9 +154,12 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/usage'
+    | '/workspace/voice-settings'
     | '/workspace/'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/stt/groq'
+    | '/api/tts/elevenlabs'
     | '/api/public/google/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -140,9 +170,12 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/usage'
+    | '/workspace/voice-settings'
     | '/workspace'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/stt/groq'
+    | '/api/tts/elevenlabs'
     | '/api/public/google/callback'
   id:
     | '__root__'
@@ -153,9 +186,12 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/usage'
+    | '/workspace/voice-settings'
     | '/workspace/'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/stt/groq'
+    | '/api/tts/elevenlabs'
     | '/api/public/google/callback'
   fileRoutesById: FileRoutesById
 }
@@ -167,9 +203,12 @@ export interface RootRouteChildren {
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspaceUsageRoute: typeof WorkspaceUsageRoute
+  WorkspaceVoiceSettingsRoute: typeof WorkspaceVoiceSettingsRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
   ApiChatStreamRoute: typeof ApiChatStreamRoute
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
+  ApiSttGroqRoute: typeof ApiSttGroqRoute
+  ApiTtsElevenlabsRoute: typeof ApiTtsElevenlabsRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
 }
 
@@ -210,6 +249,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/voice-settings': {
+      id: '/workspace/voice-settings'
+      path: '/workspace/voice-settings'
+      fullPath: '/workspace/voice-settings'
+      preLoaderRoute: typeof WorkspaceVoiceSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/usage': {
       id: '/workspace/usage'
       path: '/workspace/usage'
@@ -229,6 +275,20 @@ declare module '@tanstack/react-router' {
       path: '/workspace/connections'
       fullPath: '/workspace/connections'
       preLoaderRoute: typeof WorkspaceConnectionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tts/elevenlabs': {
+      id: '/api/tts/elevenlabs'
+      path: '/api/tts/elevenlabs'
+      fullPath: '/api/tts/elevenlabs'
+      preLoaderRoute: typeof ApiTtsElevenlabsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/stt/groq': {
+      id: '/api/stt/groq'
+      path: '/api/stt/groq'
+      fullPath: '/api/stt/groq'
+      preLoaderRoute: typeof ApiSttGroqRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/whatsapp': {
@@ -263,20 +323,14 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspaceUsageRoute: WorkspaceUsageRoute,
+  WorkspaceVoiceSettingsRoute: WorkspaceVoiceSettingsRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
   ApiChatStreamRoute: ApiChatStreamRoute,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
+  ApiSttGroqRoute: ApiSttGroqRoute,
+  ApiTtsElevenlabsRoute: ApiTtsElevenlabsRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}
