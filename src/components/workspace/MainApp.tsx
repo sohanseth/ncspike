@@ -2494,7 +2494,8 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
       }
       setSending(false);
     }
-    return { provider: finalProvider };
+    if (finalProvider) setLastLlmProvider(finalProvider);
+    return { provider: finalProvider, text: assistantText };
   }, [threadId, model]);
 
   const handleSend = useCallback(() => {
