@@ -73,16 +73,33 @@ type RequestBody = {
   threadId: string | null;
   content: string;
   badge: Badge;
+  /** Storage paths in the chat-attachments bucket. May be empty. */
+  attachments: string[];
 };
+
+const MAX_ATTACHMENTS = 10;
+const ALLOWED_MIMES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 function validateBody(raw: unknown): RequestBody | string {
   if (!raw || typeof raw !== "object") return "Invalid body";
   const r = raw as Record<string, unknown>;
-  if (typeof r.content !== "string" || r.content.trim().length === 0) return "Message content is required";
-  if (r.content.length > 8000) return "Message too long (max 8000 chars)";
+  // Allow empty content when attachments are present (e.g. pure image turn).
+  const text = typeof r.content === "string" ? r.content : "";
+  const atts = Array.isArray(r.attachments) ? r.attachments : [];
+  if (text.trim().length === 0 && atts.length === 0) return "Message content is required";
+  if (text.length > 8000) return "Message too long (max 8000 chars)";
   if (!isBadge(r.badge)) return "Invalid badge";
   if (r.threadId !== null && typeof r.threadId !== "string") return "Invalid threadId";
-  return { threadId: r.threadId, content: r.content.trim(), badge: r.badge };
+  if (atts.length > MAX_ATTACHMENTS) return `Too many attachments (max ${MAX_ATTACHMENTS})`;
+  for (const a of atts) {
+    if (typeof a !== "string" || a.length === 0 || a.length > 512) return "Invalid attachment path";
+  }
+  return {
+    threadId: r.threadId,
+    content: text.trim(),
+    badge: r.badge,
+    attachments: atts as string[],
+  };
 }
 
 function sseEvent(name: string, data: unknown): string {
