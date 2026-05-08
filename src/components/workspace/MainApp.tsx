@@ -15,20 +15,40 @@ import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 import { ContextFooter } from "@/components/workspace/ContextFooter";
 import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
 // Lazy-loaded so the entire voice surface (resolver, StatusPill, SpeakingOrb)
-// is code-split out of the main bundle when the dogfood flag is off.
+// is code-split out of the main bundle until the user opens Chat.
 const ConverseInput = lazy(() =>
   import("@/components/workspace/ConverseInput").then((m) => ({ default: m.ConverseInput })),
 );
+import { StatusPill } from "@/components/workspace/StatusPill";
+import { buildTriple } from "@/lib/voice-resolver";
+import { readPreferLocalAudio } from "@/lib/voice-preferences";
+import { supabase } from "@/integrations/supabase/client";
 import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Phase 2.8 Day-2 dogfooding flag. Default off; flip on locally with
-// `VITE_ENABLE_CONVERSE_VOICE=true` to mount ConverseInput inside ChatPanel
-// and exercise resolver / StatusPill / settings end-to-end. Skipped on SSR.
-const CONVERSE_VOICE_FLAG: boolean =
-  typeof import.meta !== "undefined" &&
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_ENABLE_CONVERSE_VOICE === "true";
+// Default ElevenLabs voice for the unified Converse surface (matches the
+// server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
+const DEFAULT_TTS_VOICE = "JBFqnCBsd6RMkjVDRZzb";
+
+/** Play assistant text via the proxied ElevenLabs endpoint. PRIVATE badge skips. */
+async function playAssistantTts(text: string, badge: VoiceBadge): Promise<HTMLAudioElement | null> {
+  if (badge === "PRIVATE" || !text.trim()) return null;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+  const res = await fetch("/api/tts/elevenlabs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ text: text.slice(0, 5000), voiceId: DEFAULT_TTS_VOICE }),
+  });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = () => URL.revokeObjectURL(url);
+  void audio.play().catch(() => URL.revokeObjectURL(url));
+  return audio;
+}
 
 const AI_MODEL_TO_BADGE: Record<AIModel, VoiceBadge> = {
   flash: "FLASH",
@@ -2338,6 +2358,18 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Unified Converse surface: text vs voice modes share the same message list
+  // and stream pipeline. Voice mode auto-plays the assistant reply via the
+  // proxied ElevenLabs endpoint (skipped for PRIVATE badge per spec §3).
+  const [mode, setMode] = useState<"text" | "voice">("text");
+  const [lastLlmProvider, setLastLlmProvider] = useState<string | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceBadge = AI_MODEL_TO_BADGE[model];
+  const preferLocal = readPreferLocalAudio();
+  const triple = useMemo(
+    () => buildTriple(voiceBadge, preferLocal, lastLlmProvider),
+    [voiceBadge, preferLocal, lastLlmProvider],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -2360,8 +2392,8 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const sendingRef = useRef(false);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
 
-  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null }> => {
-    if (!text) return { provider: null };
+  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null; text: string }> => {
+    if (!text) return { provider: null, text: "" };
     if (sendingRef.current) {
       throw new Error("BUSY");
     }
@@ -2377,6 +2409,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     let gotAnyDelta = false;
     let errorMsg: string | null = null;
     let finalProvider: string | null = null;
+    let assistantText = "";
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
       const stream = streamChatMessage({ threadId, content: text, badge: model });
@@ -2398,6 +2431,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           });
         } else if (evt.kind === "delta") {
           gotAnyDelta = true;
+          assistantText += evt.text;
           setMessages(prev => {
             const next = prev.slice();
             const last = next[next.length - 1];
@@ -2460,7 +2494,8 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
       }
       setSending(false);
     }
-    return { provider: finalProvider };
+    if (finalProvider) setLastLlmProvider(finalProvider);
+    return { provider: finalProvider, text: assistantText };
   }, [threadId, model]);
 
   const handleSend = useCallback(() => {
@@ -2470,18 +2505,25 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     void runChatTurn(text).catch(() => { /* keyboard path can't BUSY-race itself */ });
   }, [input, sending, runChatTurn]);
 
-  // ConverseInput integration seam (Phase 2.8 Day 2 dogfooding, flag-gated).
-  // Wraps runChatTurn so a voice (or ConverseInput-typed) turn streams into the
-  // same thread as the keyboard input. Returns empty `text` because the reply
-  // already renders in the message list — ConverseInput only uses the return
-  // value to optionally play TTS audio (skipped here: text-only on web).
-  // BUSY race: ConverseInput is also visually disabled below via a
-  // pointer-events overlay while `sending`, so this catch is defense-in-depth
-  // for the rare race between state-tick and pointer-up.
-  const sendVoiceMessage = useCallback<SendVoiceMessage>(async (text) => {
+  // Unified Converse seam: voice turns stream into the same thread as the
+  // keyboard input, then auto-play the assembled assistant text via the
+  // proxied ElevenLabs endpoint. PRIVATE skips TTS (browser-speech + text-only
+  // per spec §3 V2). We return the assembled text so ConverseInput could
+  // surface it too if desired — the UI source of truth is still the message list.
+  const sendVoiceMessage = useCallback<SendVoiceMessage>(async (text, badge) => {
     try {
-      const { provider } = await runChatTurn(text);
-      return { text: "", llmProvider: provider ?? undefined };
+      const { provider, text: replyText } = await runChatTurn(text);
+      // Stop any in-flight TTS before kicking off a new one.
+      ttsAudioRef.current?.pause();
+      ttsAudioRef.current = null;
+      if (replyText && badge !== "PRIVATE") {
+        try {
+          ttsAudioRef.current = await playAssistantTts(replyText, badge);
+        } catch {
+          /* TTS is best-effort — text reply already rendered. */
+        }
+      }
+      return { text: replyText, llmProvider: provider ?? undefined };
     } catch (e) {
       if (e instanceof Error && e.message === "BUSY") {
         void import("sonner").then(({ toast }) => {
@@ -2510,6 +2552,9 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             <MessageCircle size={11} style={{color:"#ddd6fe"}}/>
           </div>
           <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Chat</span>
+          {mode === "voice" && (
+            <StatusPill triple={triple} className="hidden sm:inline-flex" />
+          )}
           <div className="flex items-center gap-1">
             {["Memory","Inbox","Calendar"].map(ctx=>(
               <span key={ctx} className="px-1.5 py-px rounded-md text-[8.5px] font-mono bg-primary/10 text-primary/70 border border-primary/15">{ctx}</span>
@@ -2589,21 +2634,54 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           )}
         </div>
 
-        {/* Input + model selector */}
+        {/* Mode toggle + active input + model selector */}
         <div className="p-4 border-t border-border flex-shrink-0 flex flex-col gap-2.5">
-          <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
-            <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
-              onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
-              disabled={sending}
-              placeholder={sending ? "Sending…" : "Message your assistant…"}
-              className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
-              style={{fontFamily:"'DM Sans',sans-serif"}}/>
-            <button onClick={handleSend} disabled={sending || !input.trim()}
-              className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-              style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
-              <Send size={11}/>
-            </button>
+          {/* Text ↔ Voice segmented control */}
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] self-start">
+            {(["text","voice"] as const).map(m => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-mono tracking-wide transition-colors ${
+                  mode === m
+                    ? "bg-primary/20 text-primary border border-primary/30"
+                    : "text-muted-foreground/55 hover:text-foreground/80"
+                }`}
+              >
+                {m === "text" ? "Text" : "Voice"}
+              </button>
+            ))}
           </div>
+
+          {mode === "text" ? (
+            <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+              <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
+                disabled={sending}
+                placeholder={sending ? "Sending…" : "Message your assistant…"}
+                className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
+                style={{fontFamily:"'DM Sans',sans-serif"}}/>
+              <button onClick={handleSend} disabled={sending || !input.trim()}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
+                <Send size={11}/>
+              </button>
+            </div>
+          ) : (
+            <div
+              className={sending ? "pointer-events-none opacity-50" : ""}
+              aria-busy={sending}
+            >
+              <Suspense fallback={<div className="h-16 rounded-lg bg-white/[0.03] animate-pulse" />}>
+                <ConverseInput
+                  badge={voiceBadge}
+                  sendVoiceMessage={sendVoiceMessage}
+                />
+              </Suspense>
+            </div>
+          )}
           <div className="flex items-center gap-1.5 flex-wrap">
             {AI_MODELS.map(m=>{
               const Icon=m.icon;
@@ -2645,30 +2723,6 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             })}
           </div>
 
-          {CONVERSE_VOICE_FLAG && (
-            <div className="pt-2 border-t border-white/[0.06]">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/40 mb-1.5">
-                Converse (Phase 2.8 preview)
-              </div>
-              {/* Pointer-events overlay closes the BUSY race without touching
-                  ConverseInput (Lovable-owned per §3). When ChatPanel is
-                  streaming, ConverseInput is non-interactive AND visually
-                  dimmed, so a user can't fire a second turn whose `text`
-                  would be cleared by ConverseInput before runChatTurn
-                  rejects with BUSY. */}
-              <div
-                className={sending ? "pointer-events-none opacity-50" : ""}
-                aria-busy={sending}
-              >
-                <Suspense fallback={<div className="h-16 rounded-lg bg-white/[0.03] animate-pulse" />}>
-                  <ConverseInput
-                    badge={AI_MODEL_TO_BADGE[model]}
-                    sendVoiceMessage={sendVoiceMessage}
-                  />
-                </Suspense>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
