@@ -1765,19 +1765,26 @@ function HomeCanvas({ onDomain, onOther }: {
     [inbox]
   );
 
-  const sorted = useMemo(() => {
-    const arr = Object.values(DOMAINS) as DomainData[];
-    return arr.slice().sort((a: DomainData, b: DomainData) => {
-      const ua = (urgencyByDomain[a.id]?.urgent ?? 0) + (urgencyByDomain[a.id]?.today ?? 0);
-      const ub = (urgencyByDomain[b.id]?.urgent ?? 0) + (urgencyByDomain[b.id]?.today ?? 0);
-      if (ua !== ub) return ub - ua;
-      const ca = liveByDomain[a.id]?.length ?? -1;
-      const cb = liveByDomain[b.id]?.length ?? -1;
-      if (ca !== cb) return cb - ca;
-      return b.activity - a.activity;
+  // Build a unified tile list (5 domains + Other) and rank by weight.
+  // Weight: urgent*4 + today*2 + proactive*1 + total*0.25 (ties → static activity).
+  type Tile =
+    | { kind: "domain"; id: DomainId; weight: number; count: number }
+    | { kind: "other";  weight: number; count: number };
+  const tiles = useMemo<Tile[]>(() => {
+    const domainTiles: Tile[] = (Object.values(DOMAINS) as DomainData[]).map(d => {
+      const u = urgencyByDomain[d.id] ?? { urgent: 0, today: 0, proactive: 0 };
+      const count = liveByDomain[d.id]?.length ?? 0;
+      const weight = u.urgent * 4 + u.today * 2 + u.proactive + count * 0.25 + d.activity * 0.05;
+      return { kind: "domain", id: d.id, weight, count };
     });
-  }, [liveByDomain, urgencyByDomain]);
-  const ids = sorted.map(d => d.id);
+    const otherWeight = otherCount * 0.6; // each "other" item is lower-signal than a categorized one
+    const otherTile: Tile = { kind: "other", weight: otherWeight, count: otherCount };
+    return [...domainTiles, otherTile].sort((a, b) => b.weight - a.weight);
+  }, [liveByDomain, urgencyByDomain, otherCount]);
+
+  // Slot shapes: d0 = xl (2×2), d1/d2 = md, d3/d4/d5 = sm.
+  // Tiles get assigned to slots in ranked order.
+  const slots = ["xl", "md", "md", "sm", "sm", "sm"] as const;
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
@@ -1805,38 +1812,78 @@ function HomeCanvas({ onDomain, onOther }: {
 
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
-          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 other"`}}>
-          {([0,1,2,3,4] as const).map(i => {
-            const id = ids[i] as DomainId | undefined;
-            if (!id) return null;
-            const live = liveByDomain[id];
-            const sizes = ["xl","lg","md","sm","sm"] as const;
+          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 110px",gridTemplateAreas:`"s0 s0 s1" "s0 s0 s2" "s3 s4 s5"`}}>
+          {tiles.slice(0, 6).map((tile, i) => {
+            const size = slots[i];
+            const key = tile.kind === "domain" ? tile.id : "other";
             return (
-              <div key={id} style={{gridArea:`d${i}`}}>
-                <DomainCard domain={DOMAINS[id]} size={sizes[i]} onClick={()=>onDomain(id)}
-                  liveItems={live} liveCount={live?.length} urgency={urgencyByDomain[id]}/>
+              <div key={key} style={{gridArea:`s${i}`}}>
+                {tile.kind === "domain" ? (
+                  <DomainCard
+                    domain={DOMAINS[tile.id]}
+                    size={size}
+                    onClick={() => onDomain(tile.id)}
+                    liveItems={liveByDomain[tile.id]}
+                    liveCount={liveByDomain[tile.id]?.length}
+                    urgency={urgencyByDomain[tile.id]}
+                  />
+                ) : (
+                  <OtherCard size={size} count={tile.count} onClick={onOther}/>
+                )}
               </div>
             );
           })}
-          <div style={{gridArea:"other"}}>
-            <button onClick={onOther}
-              className="w-full h-full rounded-2xl border border-white/[0.07] flex items-center gap-3 px-4 cursor-pointer hover:border-white/20 hover:brightness-110 transition-all text-left"
-              style={{background:"radial-gradient(ellipse at 0% 50%,rgba(255,255,255,0.04) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
-              <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.04] border border-white/[0.06]">
-                <Inbox size={12} className="text-muted-foreground/70"/>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11.5px] font-semibold text-foreground/80 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>Other</p>
-                <p className="text-[9.5px] text-muted-foreground/45 truncate font-mono">
-                  {otherCount === 0 ? "nothing pending" : `${otherCount} uncategorized`}
-                </p>
-              </div>
-              <ArrowRight size={11} className="text-muted-foreground/30 flex-shrink-0"/>
-            </button>
-          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Other tile (size-aware) ──────────────────────────────────────────────────
+
+function OtherCard({ size, count, onClick }: { size: "xl"|"md"|"sm"; count: number; onClick: () => void }) {
+  const isXL = size === "xl";
+  const isSM = size === "sm";
+  return (
+    <button onClick={onClick}
+      className={`group w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
+      style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
+      <div className={`flex items-center justify-between ${isSM ? "" : "w-full"}`}>
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]`}>
+            <Inbox size={isXL ? 14 : 12} className="text-muted-foreground/80"/>
+          </div>
+          <span className={`${isXL ? "text-[13px]" : "text-[12px]"} font-semibold text-foreground/85 truncate`} style={{fontFamily:"'DM Sans',sans-serif"}}>Other</span>
+        </div>
+        {!isSM && count > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border flex-shrink-0"
+            style={{background:"rgba(255,255,255,0.05)", borderColor:"rgba(255,255,255,0.12)", color:"rgba(255,255,255,0.7)"}}>
+            {count}
+          </span>
+        )}
+      </div>
+      {isSM ? (
+        <div className="flex-1 min-w-0">
+          <p className="text-[9.5px] text-muted-foreground/55 truncate font-mono">
+            {count === 0 ? "nothing pending" : `${count} item${count===1?"":"s"}`}
+          </p>
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 flex flex-col justify-end">
+          <p className="text-[10.5px] text-muted-foreground/55 font-mono">
+            {count === 0 ? "Nothing uncategorized" : `${count} message${count===1?"":"s"} need a closer look`}
+          </p>
+          {isXL && count > 0 && (
+            <p className="text-[10px] text-muted-foreground/35 mt-1">Low-signal or unrouted mail collects here.</p>
+          )}
+        </div>
+      )}
+      {!isSM && (
+        <div className="flex items-center justify-end pt-2 border-t border-white/[0.06]">
+          <ArrowRight size={11} className="text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors"/>
+        </div>
+      )}
+    </button>
   );
 }
 
