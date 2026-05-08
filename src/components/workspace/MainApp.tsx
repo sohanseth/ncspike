@@ -1756,10 +1756,11 @@ function HomeCanvas({ onDomain, onOther }: {
     return out;
   }, [inbox]);
 
-  const otherCount = useMemo(
-    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore").length,
+  const otherList = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore"),
     [inbox]
   );
+  const otherCount = otherList.length;
   const totalUrgent = useMemo(
     () => (inbox ?? []).filter(i => i.category === "urgent").length,
     [inbox]
