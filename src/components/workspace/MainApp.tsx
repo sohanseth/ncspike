@@ -12,6 +12,7 @@ import {
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
+import { motion, AnimatePresence } from "framer-motion";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -1717,9 +1718,10 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
 
-function HomeCanvas({ onDomain, onOther }: {
+function HomeCanvas({ onDomain, onOther, doneIds }: {
   onDomain:(id:DomainId)=>void;
   onOther:()=>void;
+  doneIds: Set<string>;
 }) {
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
@@ -1727,7 +1729,8 @@ function HomeCanvas({ onDomain, onOther }: {
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
-  const { items: inbox, error: inboxErr } = useInbox();
+  const { items: inboxRaw, error: inboxErr } = useInbox();
+  const inbox = useMemo(() => (inboxRaw ?? []).filter(i => !doneIds.has(i.id)), [inboxRaw, doneIds]);
 
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
@@ -1812,29 +1815,39 @@ function HomeCanvas({ onDomain, onOther }: {
       )}
 
       <div className="flex-shrink-0 overflow-x-auto">
-        <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
+        <motion.div layout className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 110px",gridTemplateAreas:`"s0 s0 s1" "s0 s0 s2" "s3 s4 s5"`}}>
-          {tiles.slice(0, 6).map((tile, i) => {
-            const size = slots[i];
-            const key = tile.kind === "domain" ? tile.id : "other";
-            return (
-              <div key={key} style={{gridArea:`s${i}`}}>
-                {tile.kind === "domain" ? (
-                  <DomainCard
-                    domain={DOMAINS[tile.id]}
-                    size={size}
-                    onClick={() => onDomain(tile.id)}
-                    liveItems={liveByDomain[tile.id]}
-                    liveCount={liveByDomain[tile.id]?.length}
-                    urgency={urgencyByDomain[tile.id]}
-                  />
-                ) : (
-                  <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
-                )}
-              </div>
-            );
-          })}
-        </div>
+          <AnimatePresence initial={false}>
+            {tiles.slice(0, 6).map((tile, i) => {
+              const size = slots[i];
+              const key = tile.kind === "domain" ? tile.id : "other";
+              return (
+                <motion.div
+                  key={key}
+                  layout
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+                  style={{gridArea:`s${i}`, minWidth: 0}}
+                >
+                  {tile.kind === "domain" ? (
+                    <DomainCard
+                      domain={DOMAINS[tile.id]}
+                      size={size}
+                      onClick={() => onDomain(tile.id)}
+                      liveItems={liveByDomain[tile.id]}
+                      liveCount={liveByDomain[tile.id]?.length}
+                      urgency={urgencyByDomain[tile.id]}
+                    />
+                  ) : (
+                    <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
+                  )}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   );
@@ -1911,10 +1924,13 @@ function OtherCard({ size, count, items, onClick }: {
 
 // ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose, onCompose }: {
+function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve }: {
   domainId: DomainId | "other";
   onClose: () => void;
   onCompose: () => void;
+  doneIds: Set<string>;
+  onResolve: (id: string) => void;
+  onUnresolve: (id: string) => void;
 }) {
   const isOther = domainId === "other";
   const domain = isOther ? null : DOMAINS[domainId];
@@ -1923,7 +1939,6 @@ function DomainDetail({ domainId, onClose, onCompose }: {
 
   const { items: inbox, error: inboxErr } = useInbox();
   const { status, refresh } = useVoiceDraftsStatus();
-  const [done, setDone] = useState<string[]>([]);
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
   const requestConsent = async (): Promise<boolean> => {
@@ -1942,7 +1957,7 @@ function DomainDetail({ domainId, onClose, onCompose }: {
     return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
   }, [inbox, isOther, domainId]);
 
-  const visible = items.filter(i => !done.includes(i.id));
+  const visible = items.filter(i => !doneIds.has(i.id));
   const fallbackC = C.professional;
   const cardC = c ?? fallbackC;
 
@@ -2009,12 +2024,12 @@ function DomainDetail({ domainId, onClose, onCompose }: {
                 onRequestConsent={requestConsent}
                 onCompose={onCompose}
                 onMarkDone={() => {
-                  setDone(d => [...d, item.id]);
+                  onResolve(item.id);
                   import("@/lib/gmail.functions").then(({ markInboxItemDone }) =>
                     markInboxItemDone({ data: { id: item.id, action: "done" } })
                   ).catch((e) => {
                     console.error("markInboxItemDone failed:", e);
-                    setDone(d => d.filter(x => x !== item.id));
+                    onUnresolve(item.id);
                   });
                 }}
                 draftable={draftable}
@@ -3046,6 +3061,9 @@ export function MainApp() {
   const [exploreOpen, setExploreOpen] = useState(false);
   const [testOpen,    setTestOpen]    = useState(false);
   const [tasks,       setTasks]       = useState<AgentTask[]>(AGENT_TASKS);
+  const [doneIds,     setDoneIds]     = useState<Set<string>>(() => new Set());
+  const resolveItem   = (id: string) => setDoneIds(s => { const n = new Set(s); n.add(id); return n; });
+  const unresolveItem = (id: string) => setDoneIds(s => { const n = new Set(s); n.delete(id); return n; });
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
@@ -3082,7 +3100,7 @@ export function MainApp() {
 
         <div className="flex-1 relative flex flex-col" style={{minHeight:"calc(100dvh - 56px)"}}>
           {/* Main canvas */}
-          {!mapView && <HomeCanvas onDomain={handleDomain} onOther={handleOther}/>}
+          {!mapView && <HomeCanvas onDomain={handleDomain} onOther={handleOther} doneIds={doneIds}/>}
           {mapView==="mindmap" && <MindMapCanvas/>}
           {mapView==="memory"  && <MemoryCanvas/>}
           {mapView==="signals" && <SignalsCanvas/>}
@@ -3095,7 +3113,7 @@ export function MainApp() {
           />
 
           {/* Domain detail drawer */}
-          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")}/>}
+          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")} doneIds={doneIds} onResolve={resolveItem} onUnresolve={unresolveItem}/>}
         </div>
       </div>
 
