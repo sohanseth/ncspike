@@ -1840,59 +1840,147 @@ function HomeCanvas({ onDomain, onOther }: {
   );
 }
 
-// ─── Domain detail drawer ─────────────────────────────────────────────────────
+// ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose }: { domainId:DomainId; onClose:()=>void }) {
-  const domain=DOMAINS[domainId]; const c=C[domainId]; const { Icon }=domain;
-  const [done, setDone] = useState<number[]>([]);
+function DomainDetail({ domainId, onClose, onCompose }: {
+  domainId: DomainId | "other";
+  onClose: () => void;
+  onCompose: () => void;
+}) {
+  const isOther = domainId === "other";
+  const domain = isOther ? null : DOMAINS[domainId];
+  const c = isOther ? null : C[domainId];
+  const Icon = domain?.Icon;
+
+  const { items: inbox, error: inboxErr } = useInbox();
+  const { status, refresh } = useVoiceDraftsStatus();
+  const [done, setDone] = useState<string[]>([]);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
+  const requestConsent = async (): Promise<boolean> => {
+    setConsentOpen(true);
+    return new Promise<boolean>((resolve) => { consentResolverRef.current = resolve; });
+  };
+  const closeConsent = (accepted: boolean) => {
+    setConsentOpen(false);
+    consentResolverRef.current?.(accepted);
+    consentResolverRef.current = null;
+  };
+
+  const items = useMemo(() => {
+    if (!inbox) return [];
+    if (isOther) return inbox.filter(i => i.category === "needs_review" || i.category === "ignore");
+    return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
+  }, [inbox, isOther, domainId]);
+
+  const visible = items.filter(i => !done.includes(i.id));
+  const fallbackC = C.professional;
+  const cardC = c ?? fallbackC;
+
   return (
-    <div className="absolute inset-0 z-20 flex items-stretch justify-end">
-      <div className="w-full max-w-[400px] h-full flex flex-col border-l border-border"
-        style={{background:"rgba(18,15,30,0.97)",backdropFilter:"blur(20px)"}}>
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border flex-shrink-0">
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{background:`linear-gradient(135deg,${c.tile}dd,${c.tile}66)`,boxShadow:`0 1px 10px ${c.glow}`}}>
-            <Icon size={13} style={{color:c.icon}}/>
+    <div className="fixed inset-0 z-40 flex flex-col" style={{background:"rgba(14,11,26,0.98)",backdropFilter:"blur(24px)"}}>
+      {/* Header with prominent back button */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-white/[0.08] bg-background/70 backdrop-blur-md"
+        style={{paddingTop:"max(env(safe-area-inset-top), 0.75rem)"}}>
+        <button onClick={onClose}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] text-foreground/85 hover:bg-white/[0.07] hover:border-white/20 transition-all flex-shrink-0">
+          <ArrowLeft size={14}/>
+          <span className="text-[12px] font-medium" style={{fontFamily:"'DM Sans',sans-serif"}}>Back</span>
+        </button>
+        {isOther ? (
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]">
+            <Inbox size={13} className="text-muted-foreground/80"/>
           </div>
-          <span className="text-[14px] font-semibold flex-1 text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{domain.label}</span>
-          <span className="text-[9px] font-mono px-2 py-px rounded-full border" style={{color:c.hex,borderColor:`${c.hex}40`,background:`${c.hex}14`}}>{domain.weekLabel}</span>
-          <button onClick={onClose} className="ml-1 text-muted-foreground hover:text-foreground transition-colors"><X size={14}/></button>
+        ) : (
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{background:`linear-gradient(135deg,${cardC.tile}dd,${cardC.tile}66)`,boxShadow:`0 1px 10px ${cardC.glow}`}}>
+            {Icon && <Icon size={13} style={{color:cardC.icon}}/>}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-foreground truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {isOther ? "Other" : domain!.label}
+          </p>
+          <p className="text-[10px] font-mono text-muted-foreground/50">
+            {visible.length} {visible.length === 1 ? "item" : "items"}
+          </p>
         </div>
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2 scrollbar-none">
-          <Mono className="block mb-1">This week</Mono>
-          {domain.items.filter(i=>!done.includes(i.id)).map(item=>(
-            <div key={item.id} className={`group flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-all ${item.urgent?"border-red-400/20 bg-red-400/[0.04]":"border-white/[0.07] bg-white/[0.02] hover:border-white/15"}`}>
-              <span className={`mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.urgent?"bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.7)]":c.dot}`}/>
-              <div className="flex-1 min-w-0">
-                <p className="text-[12.5px] text-foreground/85 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.text}</p>
-                <p className="text-[10.5px] text-muted-foreground/70 mt-0.5">{item.meta}</p>
-              </div>
-              {item.progress>0 && <Ring progress={item.progress} color={c.light}/>}
-              <button onClick={()=>setDone(d=>[...d,item.id])} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-emerald-400 flex-shrink-0">
-                <Check size={12}/>
-              </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-none">
+        <div className="max-w-2xl mx-auto flex flex-col gap-2">
+          {inboxErr && (
+            <div className="rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-3">
+              <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr}</p>
             </div>
-          ))}
-          {domain.connectionNote && (
-            <div className="mt-2 rounded-xl border border-cyan-400/20 px-4 py-3"
+          )}
+          {!inbox && !inboxErr && (
+            <div className="rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading…</div>
+          )}
+          {inbox && visible.length === 0 && (
+            <div className="rounded-2xl border border-white/[0.06] px-4 py-6 flex flex-col items-center gap-2 text-center">
+              <Check size={16} className="text-emerald-400"/>
+              <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                {isOther ? "Nothing uncategorized" : "Nothing pending here"}
+              </p>
+            </div>
+          )}
+          {visible.map(item => {
+            const s = CAT_STYLE[item.category];
+            const draftable = (item.category === "urgent" || item.category === "today")
+              && (status?.featureEnabled ?? true);
+            return (
+              <InboxRow
+                key={item.id}
+                item={item}
+                c={cardC}
+                s={s}
+                consented={status?.consented ?? false}
+                onRequestConsent={requestConsent}
+                onCompose={onCompose}
+                onMarkDone={() => {
+                  setDone(d => [...d, item.id]);
+                  import("@/lib/gmail.functions").then(({ markInboxItemDone }) =>
+                    markInboxItemDone({ data: { id: item.id, action: "done" } })
+                  ).catch((e) => {
+                    console.error("markInboxItemDone failed:", e);
+                    setDone(d => d.filter(x => x !== item.id));
+                  });
+                }}
+                draftable={draftable}
+              />
+            );
+          })}
+
+          {!isOther && domain?.connectionNote && (
+            <div className="mt-3 rounded-xl border border-cyan-400/20 px-4 py-3"
               style={{background:"radial-gradient(ellipse at 0% 0%,rgba(6,182,212,0.08) 0%,transparent 65%)"}}>
               <div className="flex items-center gap-1.5 mb-1"><TrendingUp size={10} className="text-cyan-400"/><Mono className="!text-cyan-400/60">Cross-domain</Mono></div>
               <p className="text-[11.5px] text-foreground/65 leading-snug">{domain.connectionNote}</p>
             </div>
           )}
-          <div className="mt-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
-            <Mono className="block mb-2">Sources</Mono>
-            <div className="flex flex-wrap gap-1.5">
-              {domain.sources.map(s=>(
-                <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-white/[0.03] border border-white/[0.06]">
-                  <span className="w-1 h-1 rounded-full bg-emerald-400/80"/>
-                  {s}
-                </span>
-              ))}
+          {!isOther && domain && (
+            <div className="mt-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+              <Mono className="block mb-2">Sources</Mono>
+              <div className="flex flex-wrap gap-1.5">
+                {domain.sources.map(s=>(
+                  <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-white/[0.03] border border-white/[0.06]">
+                    <span className="w-1 h-1 rounded-full bg-emerald-400/80"/>
+                    {s}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
+
+      <ConsentModal
+        open={consentOpen}
+        onClose={() => closeConsent(false)}
+        onAccepted={() => { void refresh(); closeConsent(true); }}
+      />
     </div>
   );
 }
