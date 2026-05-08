@@ -1718,9 +1718,10 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
 
-function HomeCanvas({ onDomain, onOther }: {
+function HomeCanvas({ onDomain, onOther, doneIds }: {
   onDomain:(id:DomainId)=>void;
   onOther:()=>void;
+  doneIds: Set<string>;
 }) {
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
@@ -1728,7 +1729,8 @@ function HomeCanvas({ onDomain, onOther }: {
   const greet = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const dateLabel = new Date().toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
 
-  const { items: inbox, error: inboxErr } = useInbox();
+  const { items: inboxRaw, error: inboxErr } = useInbox();
+  const inbox = useMemo(() => (inboxRaw ?? []).filter(i => !doneIds.has(i.id)), [inboxRaw, doneIds]);
 
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
