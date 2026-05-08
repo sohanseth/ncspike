@@ -26,7 +26,7 @@ import {
   type TraitSheet,
 } from "@/lib/trait-schema";
 import type { Badge } from "./inference/router";
-import type { PrivacyTier } from "./inference/tiers";
+import type { PrivacyTier } from "@/lib/provider-tiers";
 
 export type AssembleArgs = {
   userId: string;

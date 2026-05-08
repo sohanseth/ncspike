@@ -28,7 +28,7 @@ import {
 import { chainFor, type Badge } from "@/server/inference/router";
 import { resolveBadgeForUser } from "@/server/personalization-routing";
 import type { InferenceMessage } from "@/server/inference";
-import { strictestTierInChain, type ProviderId } from "@/server/inference/tiers";
+import { strictestTierInChain, type ProviderId } from "@/lib/provider-tiers";
 import {
   assembleSystemPrompt,
   logContextDecision,
