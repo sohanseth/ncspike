@@ -182,6 +182,149 @@ export const Route = createFileRoute("/api/chat/stream")({
           .single();
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
 
+        // ─────────────────────────────────────────────────────────────
+        // Vision branch: when the turn has image attachments, persist
+        // attachment rows and bypass the chain runner. PRIVATE keeps
+        // its fail-closed contract because runVisionTurn routes PRIVATE
+        // exclusively to Cloudflare. Other badges go through the
+        // Lovable AI Gateway directly with a vision-capable model.
+        // ─────────────────────────────────────────────────────────────
+        if (v.attachments.length > 0) {
+          // Validate all attachment paths belong to this user (path prefix
+          // = userId), then download each blob from the private bucket.
+          const visionAttachments: VisionAttachment[] = [];
+          const persistRows: Array<{ storage_path: string; mime: string; bytes: number }> = [];
+          for (const path of v.attachments) {
+            if (!path.startsWith(`${userId}/`)) {
+              return new Response("Attachment path not owned by user", { status: 403 });
+            }
+            const dl = await supabaseAdmin.storage
+              .from("chat-attachments")
+              .download(path);
+            if (dl.error || !dl.data) {
+              return new Response(`Attachment download failed: ${path}`, { status: 400 });
+            }
+            const blob = dl.data;
+            const mime = blob.type || "application/octet-stream";
+            if (!ALLOWED_MIMES.has(mime)) {
+              return new Response(`Unsupported attachment mime: ${mime}`, { status: 400 });
+            }
+            const bytes = new Uint8Array(await blob.arrayBuffer());
+            // Sign a URL for the client renderer (24h). Optional — model uses bytes.
+            const sign = await supabaseAdmin.storage
+              .from("chat-attachments")
+              .createSignedUrl(path, 60 * 60 * 24);
+            visionAttachments.push({
+              url: sign.data?.signedUrl ?? "",
+              bytes,
+              mime,
+            });
+            persistRows.push({ storage_path: path, mime, bytes: bytes.length });
+          }
+
+          // Link attachments to the just-persisted user message.
+          if (persistRows.length > 0) {
+            const { error: aErr } = await supabaseAdmin
+              .from("chat_message_attachments")
+              .insert(
+                persistRows.map((r) => ({
+                  message_id: userRow.id,
+                  user_id: userId,
+                  storage_path: r.storage_path,
+                  mime: r.mime,
+                  bytes: r.bytes,
+                })),
+              );
+            if (aErr) console.warn("[api.chat.stream] attachment persist failed:", aErr.message);
+          }
+
+          // Build text history (vision turn does not see prior images).
+          const visionHistory = (history ?? [])
+            .reverse()
+            .filter((m) => m.role === "user" || m.role === "assistant")
+            .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+          const encoderV = new TextEncoder();
+          const visionBody = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              const send = (name: string, data: unknown) => {
+                try {
+                  controller.enqueue(encoderV.encode(sseEvent(name, data)));
+                } catch {
+                  /* closed */
+                }
+              };
+              send("init", { threadId, userMessageId: userRow.id });
+              const t0 = Date.now();
+              try {
+                const result = await runVisionTurn({
+                  badge: effectiveBadge,
+                  history: visionHistory,
+                  userText: v.content,
+                  attachments: visionAttachments,
+                  signal: request.signal ?? undefined,
+                });
+                send("meta", { provider: result.provider, fallbackDepth: 0 });
+                send("delta", { text: result.text });
+                const { data: aRow } = await supabaseAdmin
+                  .from("chat_messages")
+                  .insert({
+                    user_id: userId,
+                    thread_id: threadId,
+                    role: "assistant",
+                    content: result.text,
+                    badge: effectiveBadge,
+                    provider: result.provider,
+                    model: result.model,
+                    fallback_depth: 0,
+                  } as never)
+                  .select("id")
+                  .single();
+                await supabaseAdmin.from("inference_usage").insert({
+                  user_id: userId,
+                  thread_id: threadId,
+                  badge: effectiveBadge,
+                  provider_chain: [result.provider],
+                  provider_used: result.provider,
+                  model_used: result.model,
+                  fallback_depth: 0,
+                  latency_ms: Date.now() - t0,
+                  status: "ok",
+                });
+                await supabaseAdmin
+                  .from("chat_threads")
+                  .update({ updated_at: new Date().toISOString() })
+                  .eq("id", threadId)
+                  .eq("user_id", userId);
+                send("done", {
+                  messageId: aRow?.id ?? null,
+                  provider: result.provider,
+                  model: result.model,
+                  fallbackDepth: 0,
+                  inputTokens: null,
+                  outputTokens: null,
+                  contextUsed: null,
+                  traitSheetVersion: null,
+                });
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : "Vision turn failed";
+                send("error", { kind: "internal", message: msg });
+              } finally {
+                try { controller.close(); } catch { /* already */ }
+              }
+            },
+          });
+          return new Response(visionBody, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              "X-Accel-Buffering": "no",
+              Connection: "keep-alive",
+            },
+          });
+        }
+
         const paidTier = await getPaidTier(userId);
         const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
