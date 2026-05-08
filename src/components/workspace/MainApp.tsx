@@ -2703,8 +2703,17 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 max-w-[80%]">
-                  <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 max-w-[80%] flex flex-col gap-2">
+                  {msg.images && msg.images.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {msg.images.map((src, k) => (
+                        <img key={k} src={src} alt="" className="rounded-lg max-h-40 object-cover w-full border border-white/10" />
+                      ))}
+                    </div>
+                  )}
+                  {msg.text && (
+                    <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                  )}
                 </div>
               )}
             </div>
