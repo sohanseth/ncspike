@@ -2284,13 +2284,6 @@ function SignalsCanvas() {
 
 // ─── Chat tool panel ──────────────────────────────────────────────────────────
 
-const CHAT_MSGS = [
-  { role:"user", text:"What are the key items for Q2?" },
-  { role:"ai",   text:"3 critical items:\n\n1. Finalise roadmap doc — due Wednesday\n2. Align on mid-market goals with Priya\n3. Partnership terms with Sarah — respond today", sources:["Notion · Q2 Roadmap","Calendar · Today","Gmail thread"] },
-  { role:"user", text:"Draft the agenda for the 10am sync" },
-  { role:"ai",   text:"Q2 Planning · May 6 · 10:00–10:15\n\n1. Roadmap status — 3 min\n2. Mid-market goals — 5 min\n3. Pricing v3 decision — 4 min\n4. Next actions — 3 min", sources:["Your calendar","Memory · tone profile"] },
-];
-
 const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }[] = [
   { id:"flash",   label:"FLASH",   icon:Zap,          color:"text-primary bg-primary/15 border-primary/30" },
   { id:"pro",     label:"PRO",     icon:Brain,         color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
@@ -2298,10 +2291,22 @@ const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }
   { id:"private", label:"PRIVATE", icon:Shield,        color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
 ];
 
+type LiveChatMsg = {
+  role: "user" | "assistant";
+  text: string;
+  /** Routing breadcrumb shown under assistant messages. */
+  meta?: { provider: string | null; model: string | null; fallbackDepth: number | null };
+};
+
 function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [input, setInput] = useState("");
   const [model, setModel] = useState<AIModel>("flash");
+  const [messages, setMessages] = useState<LiveChatMsg[]>([]);
+  const [threadId, setThreadId] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(()=>{ if(open) setTimeout(()=>inputRef.current?.focus(),80); },[open]);
   useEffect(()=>{
@@ -2309,6 +2314,41 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     window.addEventListener("keydown",handler);
     return ()=>window.removeEventListener("keydown",handler);
   },[onClose]);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, sending]);
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setError(null);
+    setSending(true);
+    setMessages(prev => [...prev, { role: "user", text }]);
+    setInput("");
+    try {
+      const { sendChatMessage } = await import("@/lib/chat.functions");
+      const res = await sendChatMessage({ data: { threadId, content: text, badge: model } });
+      setThreadId(res.threadId);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        text: res.assistantMessage.content,
+        meta: {
+          provider: res.assistantMessage.provider,
+          model: res.assistantMessage.model,
+          fallbackDepth: res.assistantMessage.fallbackDepth,
+        },
+      }]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to send message";
+      setError(msg);
+      // Roll back the optimistic user message so they can retry.
+      setMessages(prev => prev.slice(0, -1));
+      setInput(text);
+    } finally {
+      setSending(false);
+    }
+  }, [input, sending, threadId, model]);
 
   if(!open) return null;
 
@@ -2336,10 +2376,23 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 scrollbar-none min-h-0">
-          {CHAT_MSGS.map((msg,i)=>(
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 scrollbar-none min-h-0">
+          {messages.length === 0 && !sending && (
+            <div className="flex-1 flex items-center justify-center text-center px-6">
+              <div className="max-w-[260px]">
+                <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center"
+                  style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
+                  <Zap size={16} style={{color:"#ddd6fe"}}/>
+                </div>
+                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                  Ask anything. Pick a badge below to choose how I think — fast, deep, or private.
+                </p>
+              </div>
+            </div>
+          )}
+          {messages.map((msg,i)=>(
             <div key={i} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
-              {msg.role==="ai" ? (
+              {msg.role==="assistant" ? (
                 <div className="max-w-[92%]">
                   <div className="flex items-start gap-2">
                     <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
@@ -2347,32 +2400,58 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       <Zap size={10} style={{color:"#ddd6fe"}}/>
                     </div>
                     <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80">
-                      <p className="text-[12.5px] text-foreground/80 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}} dangerouslySetInnerHTML={{__html:msg.text.replace(/\n/g,"<br/>")}}/>
+                      <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
                     </div>
                   </div>
-                  {msg.sources && (
+                  {msg.meta && (msg.meta.provider || msg.meta.model) && (
                     <div className="flex gap-1 mt-1.5 ml-8 flex-wrap">
-                      {msg.sources.map(s=><span key={s} className="text-[8.5px] font-mono text-muted-foreground/35 px-1.5 py-px rounded-md bg-white/[0.03] border border-white/[0.05]">{s}</span>)}
+                      <span className="text-[8.5px] font-mono text-muted-foreground/35 px-1.5 py-px rounded-md bg-white/[0.03] border border-white/[0.05]">
+                        {msg.meta.provider}{msg.meta.model ? ` · ${msg.meta.model}` : ""}
+                        {msg.meta.fallbackDepth && msg.meta.fallbackDepth > 0 ? ` · fallback ${msg.meta.fallbackDepth}` : ""}
+                      </span>
                     </div>
                   )}
                 </div>
               ) : (
                 <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 max-w-[80%]">
-                  <p className="text-[12.5px] text-foreground/85" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                  <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
                 </div>
               )}
             </div>
           ))}
+          {sending && (
+            <div className="flex justify-start">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                  style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
+                  <Loader size={10} className="animate-spin" style={{color:"#ddd6fe"}}/>
+                </div>
+                <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80">
+                  <p className="text-[12.5px] text-muted-foreground/60" style={{fontFamily:"'DM Sans',sans-serif"}}>Thinking…</p>
+                </div>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="flex justify-center">
+              <div className="rounded-xl px-3 py-2 bg-red-500/10 border border-red-500/30 max-w-[90%]">
+                <p className="text-[11.5px] text-red-300/90" style={{fontFamily:"'DM Sans',sans-serif"}}>{error}</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Input + model selector */}
         <div className="p-4 border-t border-border flex-shrink-0 flex flex-col gap-2.5">
           <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
             <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
-              placeholder="Message your assistant…"
-              className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none"
+              onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
+              disabled={sending}
+              placeholder={sending ? "Sending…" : "Message your assistant…"}
+              className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
               style={{fontFamily:"'DM Sans',sans-serif"}}/>
-            <button className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0"
+            <button onClick={handleSend} disabled={sending || !input.trim()}
+              className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
               style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
               <Send size={11}/>
             </button>
