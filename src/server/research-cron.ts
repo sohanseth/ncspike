@@ -77,7 +77,7 @@ async function sweepRetention(): Promise<void> {
     }
     const row = Array.isArray(cleaned) ? cleaned[0] : cleaned;
     console.log(
-      `[research-cron] retention swept: research_tasks=${row?.research_tasks_deleted ?? 0} tool_invocations=${row?.tool_invocations_deleted ?? 0} device_tokens=${row?.device_tokens_deleted ?? 0} cron_run=${row?.cron_run_deleted ?? 0} push_permission_events=${row?.push_permission_events_deleted ?? 0} auth_callback_rejections=${row?.auth_callback_rejections_deleted ?? 0}`,
+      `[research-cron] retention swept: research_tasks=${row?.research_tasks_deleted ?? 0} tool_invocations=${row?.tool_invocations_deleted ?? 0} device_tokens=${row?.device_tokens_deleted ?? 0} cron_run=${row?.cron_run_deleted ?? 0} push_permission_events=${row?.push_permission_events_deleted ?? 0} auth_callback_rejections=${row?.auth_callback_rejections_deleted ?? 0} chat_context_log=${row?.chat_context_log_deleted ?? 0} pii_scrub_events=${row?.pii_scrub_events_deleted ?? 0} extraction_failures=${row?.extraction_failures_deleted ?? 0}`,
     );
   } catch (e) {
     console.warn("[research-cron] retention sweep threw:", e);

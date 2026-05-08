@@ -15,6 +15,7 @@ import {
 import { TRAIT_CATEGORIES, type TraitCategory } from "@/lib/trait-schema";
 import { cn } from "@/lib/utils";
 import { Loader, Download, Trash2, RefreshCw, ShieldOff } from "lucide-react";
+import { PersonalizationDisclosure } from "@/components/workspace/PersonalizationDisclosure";
 
 export const Route = createFileRoute("/workspace/personalization")({
   component: PersonalizationPage,
@@ -156,6 +157,7 @@ function PersonalizationPage() {
 
   return (
     <div className="min-h-screen bg-background p-6 text-foreground">
+      <PersonalizationDisclosure userId={user.id} />
       <div className="mx-auto max-w-3xl space-y-6">
         <header className="flex items-center justify-between">
           <div>

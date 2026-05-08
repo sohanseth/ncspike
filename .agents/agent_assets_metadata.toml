@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "tCmOzD5cCVR-yMVLL_GNx"
+uri = "file://.local/phase27_apply.sql.txt"
+type = "text"
+title = "Phase 2.7 migrations (refreshed) — paste into Supabase SQL Editor"

@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
 import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
+import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy'
 import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
@@ -58,6 +59,11 @@ const WorkspaceVoiceSettingsRoute = WorkspaceVoiceSettingsRouteImport.update({
 const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
   id: '/workspace/usage',
   path: '/workspace/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspacePrivacyRoute = WorkspacePrivacyRouteImport.update({
+  id: '/workspace/privacy',
+  path: '/workspace/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspacePersonalizationRoute =
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
+  '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
@@ -127,6 +134,7 @@ export interface FileRoutesByTo {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
+  '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace': typeof WorkspaceIndexRoute
@@ -145,6 +153,7 @@ export interface FileRoutesById {
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
+  '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
@@ -164,6 +173,7 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
+    | '/workspace/privacy'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace/'
@@ -181,6 +191,7 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
+    | '/workspace/privacy'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace'
@@ -198,6 +209,7 @@ export interface FileRouteTypes {
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
+    | '/workspace/privacy'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace/'
@@ -216,6 +228,7 @@ export interface RootRouteChildren {
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspacePersonalizationRoute: typeof WorkspacePersonalizationRoute
+  WorkspacePrivacyRoute: typeof WorkspacePrivacyRoute
   WorkspaceUsageRoute: typeof WorkspaceUsageRoute
   WorkspaceVoiceSettingsRoute: typeof WorkspaceVoiceSettingsRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
@@ -275,6 +288,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace/usage'
       fullPath: '/workspace/usage'
       preLoaderRoute: typeof WorkspaceUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/privacy': {
+      id: '/workspace/privacy'
+      path: '/workspace/privacy'
+      fullPath: '/workspace/privacy'
+      preLoaderRoute: typeof WorkspacePrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspace/personalization': {
@@ -344,6 +364,7 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspacePersonalizationRoute: WorkspacePersonalizationRoute,
+  WorkspacePrivacyRoute: WorkspacePrivacyRoute,
   WorkspaceUsageRoute: WorkspaceUsageRoute,
   WorkspaceVoiceSettingsRoute: WorkspaceVoiceSettingsRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
