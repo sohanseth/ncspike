@@ -18,6 +18,7 @@ import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
+import { Route as ApiChatStreamRouteImport } from './routes/api.chat.stream'
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
 
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -65,6 +66,11 @@ const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
   path: '/api/public/whatsapp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiChatStreamRoute = ApiChatStreamRouteImport.update({
+  id: '/api/chat/stream',
+  path: '/api/chat/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicGoogleCallbackRoute = ApiPublicGoogleCallbackRouteImport.update({
   id: '/api/public/google/callback',
   path: '/api/public/google/callback',
@@ -80,6 +86,7 @@ export interface FileRoutesByFullPath {
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/': typeof WorkspaceIndexRoute
+  '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace': typeof WorkspaceIndexRoute
+  '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/': typeof WorkspaceIndexRoute
+  '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -119,6 +128,7 @@ export interface FileRouteTypes {
     | '/workspace/drafts'
     | '/workspace/usage'
     | '/workspace/'
+    | '/api/chat/stream'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -131,6 +141,7 @@ export interface FileRouteTypes {
     | '/workspace/drafts'
     | '/workspace/usage'
     | '/workspace'
+    | '/api/chat/stream'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   id:
@@ -143,6 +154,7 @@ export interface FileRouteTypes {
     | '/workspace/drafts'
     | '/workspace/usage'
     | '/workspace/'
+    | '/api/chat/stream'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
   fileRoutesById: FileRoutesById
@@ -156,6 +168,7 @@ export interface RootRouteChildren {
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspaceUsageRoute: typeof WorkspaceUsageRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
+  ApiChatStreamRoute: typeof ApiChatStreamRoute
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
 }
@@ -225,6 +238,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/chat/stream': {
+      id: '/api/chat/stream'
+      path: '/api/chat/stream'
+      fullPath: '/api/chat/stream'
+      preLoaderRoute: typeof ApiChatStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/google/callback': {
       id: '/api/public/google/callback'
       path: '/api/public/google/callback'
@@ -244,6 +264,7 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspaceUsageRoute: WorkspaceUsageRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
+  ApiChatStreamRoute: ApiChatStreamRoute,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
 }

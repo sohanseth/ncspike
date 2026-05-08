@@ -16,13 +16,16 @@
  */
 import {
   InferenceError,
+  type InferenceChunk,
   type InferenceProvider,
   type InferenceRequest,
   type InferenceResult,
 } from "./types";
+import { parseSseEvents, httpErrorToInferenceError } from "./sse-helpers";
 
 const DEFAULT_MODEL = "@cf/meta/llama-3.1-8b-instruct";
 const TIMEOUT_MS = 15_000;
+const STREAM_TIMEOUT_MS = 60_000;
 
 export const cloudflareProvider: InferenceProvider = {
   id: "cloudflare",
@@ -111,5 +114,74 @@ export const cloudflareProvider: InferenceProvider = {
       provider: "cloudflare",
       model,
     };
+  },
+
+  async *generateStream(
+    req: InferenceRequest,
+    opts?: { signal?: AbortSignal },
+  ): AsyncGenerator<InferenceChunk, void, void> {
+    const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+    const apiToken = process.env.CLOUDFLARE_API_TOKEN;
+    const model = process.env.CLOUDFLARE_AI_MODEL || DEFAULT_MODEL;
+    if (!accountId || !apiToken) {
+      const missing = [
+        ...(!accountId ? ["CLOUDFLARE_ACCOUNT_ID"] : []),
+        ...(!apiToken ? ["CLOUDFLARE_API_TOKEN"] : []),
+      ];
+      throw new InferenceError(
+        `Missing Cloudflare env var(s): ${missing.join(", ")}`,
+        "cloudflare",
+        { errorClass: "missing_credentials" },
+      );
+    }
+    // Cloudflare Workers AI streams as SSE (when stream:true), with payloads
+    // shaped like {"response":"chunk"} per data line, terminated by "[DONE]".
+    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), STREAM_TIMEOUT_MS);
+    if (opts?.signal) {
+      if (opts.signal.aborted) ctrl.abort();
+      else opts.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+    }
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: { Authorization: `Bearer ${apiToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: req.messages,
+          max_tokens: req.maxTokens ?? 512,
+          temperature: req.temperature ?? 0.4,
+          stream: true,
+        }),
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const isAbort = (e as { name?: string })?.name === "AbortError";
+      throw new InferenceError(
+        isAbort ? "Cloudflare stream timed out" : "Cloudflare stream fetch failed",
+        "cloudflare",
+        { retriable: true, errorClass: isAbort ? "timeout" : "network", cause: e },
+      );
+    }
+    if (!res.ok) {
+      clearTimeout(timer);
+      throw httpErrorToInferenceError(res.status, "cloudflare");
+    }
+    try {
+      for await (const payload of parseSseEvents(res, "cloudflare")) {
+        if (payload === "[DONE]") break;
+        try {
+          const obj = JSON.parse(payload) as { response?: string };
+          if (obj.response) yield { type: "delta", text: obj.response };
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    yield { type: "done", model };
   },
 };

@@ -11,14 +11,17 @@
  */
 import {
   InferenceError,
+  type InferenceChunk,
   type InferenceMessage,
   type InferenceProvider,
   type InferenceRequest,
   type InferenceResult,
 } from "./types";
+import { parseSseEvents, httpErrorToInferenceError } from "./sse-helpers";
 
 const DEFAULT_MODEL = "claude-haiku-4-5";
 const TIMEOUT_MS = 15_000;
+const STREAM_TIMEOUT_MS = 60_000;
 const ANTHROPIC_VERSION = "2023-06-01";
 
 function splitSystem(messages: InferenceMessage[]): {
@@ -126,5 +129,86 @@ export const anthropicProvider: InferenceProvider = {
       inputTokens: json.usage?.input_tokens,
       outputTokens: json.usage?.output_tokens,
     };
+  },
+
+  async *generateStream(
+    req: InferenceRequest,
+    opts?: { signal?: AbortSignal },
+  ): AsyncGenerator<InferenceChunk, void, void> {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
+    if (!apiKey) {
+      throw new InferenceError("Missing ANTHROPIC_API_KEY", "anthropic", { errorClass: "missing_credentials" });
+    }
+    const { system, msgs } = splitSystem(req.messages);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), STREAM_TIMEOUT_MS);
+    if (opts?.signal) {
+      if (opts.signal.aborted) ctrl.abort();
+      else opts.signal.addEventListener("abort", () => ctrl.abort(), { once: true });
+    }
+    let res: Response;
+    try {
+      res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: ctrl.signal,
+        headers: {
+          "x-api-key": apiKey,
+          "anthropic-version": ANTHROPIC_VERSION,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: msgs,
+          ...(system ? { system } : {}),
+          max_tokens: req.maxTokens ?? 512,
+          temperature: req.temperature ?? 0.4,
+          stream: true,
+        }),
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const isAbort = (e as { name?: string })?.name === "AbortError";
+      throw new InferenceError(
+        isAbort ? "Anthropic stream timed out" : "Anthropic stream fetch failed",
+        "anthropic",
+        { retriable: true, errorClass: isAbort ? "timeout" : "network", cause: e },
+      );
+    }
+    if (!res.ok) {
+      clearTimeout(timer);
+      throw httpErrorToInferenceError(res.status, "anthropic");
+    }
+    // Anthropic SSE: each event is type-tagged; we care about
+    //   message_start  → carries usage.input_tokens
+    //   content_block_delta → delta.type=text_delta with .text
+    //   message_delta  → carries usage.output_tokens (final)
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    try {
+      for await (const payload of parseSseEvents(res, "anthropic")) {
+        try {
+          const obj = JSON.parse(payload) as {
+            type?: string;
+            delta?: { type?: string; text?: string };
+            message?: { usage?: { input_tokens?: number } };
+            usage?: { output_tokens?: number };
+          };
+          if (obj.type === "content_block_delta" && obj.delta?.type === "text_delta") {
+            const text = obj.delta.text;
+            if (text) yield { type: "delta", text };
+          } else if (obj.type === "message_start" && obj.message?.usage?.input_tokens) {
+            inputTokens = obj.message.usage.input_tokens;
+          } else if (obj.type === "message_delta" && obj.usage?.output_tokens) {
+            outputTokens = obj.usage.output_tokens;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } finally {
+      clearTimeout(timer);
+    }
+    yield { type: "done", model, inputTokens, outputTokens };
   },
 };

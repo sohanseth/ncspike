@@ -1,0 +1,377 @@
+/**
+ * SSE endpoint for streaming chat replies. POST-only.
+ *
+ * Wire protocol:
+ *   event: meta   data: {"provider":"groq","fallbackDepth":0,"threadId":"…","userMessageId":"…"}
+ *   event: delta  data: {"text":"Hello"}              (0..N times)
+ *   event: done   data: {"messageId":"…","provider":"groq","model":"…","fallbackDepth":0,
+ *                        "inputTokens":12,"outputTokens":34}
+ *   event: error  data: {"kind":"cap_exceeded"|"chain_exhausted"|"validation"|"internal",
+ *                        "message":"…","badge":"flash","used":20,"cap":20}
+ *
+ * Auth: bearer token in `Authorization` header (same pattern as the server-fn
+ * middleware). The Supabase access token is verified inline because TanStack
+ * Start server functions don't support streaming responses — we need a raw
+ * Response with a ReadableStream body, hence a file route.
+ */
+import { createFileRoute } from "@tanstack/react-router";
+import { createClient } from "@supabase/supabase-js";
+import type { Database } from "@/integrations/supabase/types";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import {
+  runChainStream,
+  CapExceededError,
+  ChainExhaustedError,
+  UserAbortError,
+  type ChainStreamEvent,
+} from "@/server/inference/chat";
+import type { Badge } from "@/server/inference/router";
+import type { InferenceMessage } from "@/server/inference";
+import type { ProviderId } from "@/server/inference/tiers";
+
+const HISTORY_WINDOW = 20;
+const VALID_BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"] as const;
+
+function isBadge(x: unknown): x is Badge {
+  return typeof x === "string" && (VALID_BADGES as readonly string[]).includes(x);
+}
+
+async function getPaidTier(_userId: string): Promise<boolean> {
+  return false;
+}
+
+async function authenticate(request: Request): Promise<{ userId: string } | Response> {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
+    return new Response("Server misconfigured: missing Supabase env vars", { status: 500 });
+  }
+  const auth = request.headers.get("authorization");
+  if (!auth?.startsWith("Bearer ")) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  const token = auth.slice(7);
+  if (!token) return new Response("Unauthorized", { status: 401 });
+  const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const { data, error } = await supabase.auth.getClaims(token);
+  if (error || !data?.claims?.sub) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+  return { userId: data.claims.sub };
+}
+
+type RequestBody = {
+  threadId: string | null;
+  content: string;
+  badge: Badge;
+};
+
+function validateBody(raw: unknown): RequestBody | string {
+  if (!raw || typeof raw !== "object") return "Invalid body";
+  const r = raw as Record<string, unknown>;
+  if (typeof r.content !== "string" || r.content.trim().length === 0) return "Message content is required";
+  if (r.content.length > 8000) return "Message too long (max 8000 chars)";
+  if (!isBadge(r.badge)) return "Invalid badge";
+  if (r.threadId !== null && typeof r.threadId !== "string") return "Invalid threadId";
+  return { threadId: r.threadId, content: r.content.trim(), badge: r.badge };
+}
+
+function sseEvent(name: string, data: unknown): string {
+  return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+export const Route = createFileRoute("/api/chat/stream")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        const auth = await authenticate(request);
+        if (auth instanceof Response) return auth;
+        const userId = auth.userId;
+
+        let raw: unknown;
+        try {
+          raw = await request.json();
+        } catch {
+          return new Response("Invalid JSON body", { status: 400 });
+        }
+        const v = validateBody(raw);
+        if (typeof v === "string") return new Response(v, { status: 400 });
+
+        // Resolve thread up-front so we can include the id in the meta event.
+        let threadId = v.threadId;
+        if (threadId) {
+          const { data: existing, error: oErr } = await supabaseAdmin
+            .from("chat_threads")
+            .select("id")
+            .eq("id", threadId)
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (oErr) return new Response("Thread lookup failed", { status: 500 });
+          if (!existing) return new Response("Thread not found", { status: 404 });
+        } else {
+          const title = v.content.slice(0, 60).replace(/\s+/g, " ").trim() || "New chat";
+          const { data: t, error: tErr } = await supabaseAdmin
+            .from("chat_threads")
+            .insert({ user_id: userId, title })
+            .select("id")
+            .single();
+          if (tErr) return new Response("Thread create failed", { status: 500 });
+          threadId = t.id;
+        }
+
+        // Load history.
+        const { data: history } = await supabaseAdmin
+          .from("chat_messages")
+          .select("role, content, created_at")
+          .eq("user_id", userId)
+          .eq("thread_id", threadId)
+          .order("created_at", { ascending: false })
+          .limit(HISTORY_WINDOW - 1);
+
+        const historyMessages: InferenceMessage[] = (history ?? [])
+          .reverse()
+          .filter((m) => m.role === "user" || m.role === "assistant")
+          .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+        // Persist user message immediately so it survives chain failures.
+        const { data: userRow, error: uErr } = await supabaseAdmin
+          .from("chat_messages")
+          .insert({
+            user_id: userId,
+            thread_id: threadId,
+            role: "user",
+            content: v.content,
+            badge: v.badge,
+          })
+          .select("id")
+          .single();
+        if (uErr) return new Response("Failed to persist user message", { status: 500 });
+
+        const paidTier = await getPaidTier(userId);
+        const encoder = new TextEncoder();
+
+        // userAbort fires when the consumer (the client) cancels the
+        // ReadableStream OR the inbound request itself is aborted. Both
+        // routes converge here so the upstream provider fetch is cancelled
+        // and we get one clean place to write the user_abort telemetry.
+        const userAbort = new AbortController();
+        let aborted = false;
+        const onAbort = () => {
+          if (aborted) return;
+          aborted = true;
+          userAbort.abort();
+        };
+        request.signal?.addEventListener("abort", onAbort, { once: true });
+
+        const body = new ReadableStream<Uint8Array>({
+          async start(controller) {
+            const send = (name: string, data: unknown) => {
+              if (aborted) return;
+              try {
+                controller.enqueue(encoder.encode(sseEvent(name, data)));
+              } catch {
+                // Controller may already be closed if the consumer cancelled.
+              }
+            };
+            // Track partials so we can persist on user_abort per spec C6 step 8.
+            let assistantText = "";
+            let lastProvider: ProviderId | null = null;
+            let lastModel = "";
+            let lastFallbackDepth = 0;
+            let inputTokens: number | undefined;
+            let outputTokens: number | undefined;
+            let metaSeen = false;
+
+            // Hoisted so both the catch block and finalizeAbort can inspect
+            // it. Once non-null, runChainStream has already written
+            // status='ok' usage and we must take the normal completion path
+            // even if a disconnect happens after this point.
+            let finalEvt: Extract<ChainStreamEvent, { kind: "done" }> | null = null;
+
+            // Single source of truth for both abort code paths:
+            //  (a) post-loop, when "if (aborted) break" exits the for-await
+            //  (b) catch block, when runChainStream throws UserAbortError
+            //      because the upstream fetch was aborted mid-await.
+            // Idempotent — we only insert when there's something worth saving.
+            let finalized = false;
+            const finalizeAbort = async () => {
+              if (finalized) return;
+              // Never re-classify a completed generation: if the chain
+              // succeeded (finalEvt captured), runChainStream already wrote
+              // status='ok'. Bail out instead of writing a contradictory
+              // user_abort row + bogus [interrupted] assistant copy.
+              if (finalEvt) {
+                try { controller.close(); } catch { /* already closed */ }
+                return;
+              }
+              finalized = true;
+              if (assistantText && metaSeen && lastProvider) {
+                await supabaseAdmin
+                  .from("chat_messages")
+                  .insert({
+                    user_id: userId,
+                    thread_id: threadId,
+                    role: "assistant",
+                    content: `${assistantText} [interrupted]`,
+                    badge: v.badge,
+                    provider: lastProvider,
+                    model: lastModel || null,
+                    fallback_depth: lastFallbackDepth,
+                  });
+                await supabaseAdmin
+                  .from("inference_usage")
+                  .insert({
+                    user_id: userId,
+                    thread_id: threadId,
+                    badge: v.badge,
+                    provider_chain: [lastProvider],
+                    provider_used: lastProvider,
+                    model_used: lastModel || lastProvider,
+                    fallback_depth: lastFallbackDepth,
+                    input_tokens: inputTokens ?? null,
+                    output_tokens: outputTokens ?? null,
+                    latency_ms: 0,
+                    status: "user_abort",
+                  });
+              }
+              try { controller.close(); } catch { /* already closed */ }
+            };
+
+            try {
+              send("init", { threadId, userMessageId: userRow.id });
+
+              for await (const evt of runChainStream(
+                {
+                  userId,
+                  threadId,
+                  badge: v.badge,
+                  messages: [...historyMessages, { role: "user", content: v.content }],
+                  paidTier,
+                },
+                { signal: userAbort.signal },
+              )) {
+                // Always inspect the event first — a 'done' that arrives in
+                // the same tick as the abort flip must still be honored so
+                // we don't drop a successful completion into the abort path.
+                if (evt.kind === "done") {
+                  finalEvt = evt;
+                  lastProvider = evt.provider;
+                  lastModel = evt.model;
+                  lastFallbackDepth = evt.fallbackDepth;
+                  inputTokens = evt.inputTokens;
+                  outputTokens = evt.outputTokens;
+                  break;
+                }
+                if (aborted) break;
+                if (evt.kind === "meta") {
+                  metaSeen = true;
+                  lastProvider = evt.provider;
+                  lastFallbackDepth = evt.fallbackDepth;
+                  send("meta", {
+                    provider: evt.provider,
+                    fallbackDepth: evt.fallbackDepth,
+                  });
+                } else if (evt.kind === "delta") {
+                  assistantText += evt.text;
+                  send("delta", { text: evt.text });
+                }
+              }
+
+              // No done event reached + we know we aborted → user disconnect
+              // mid-stream. (finalizeAbort itself also no-ops if finalEvt was
+              // captured, as a defense-in-depth check.)
+              if (!finalEvt && aborted) {
+                await finalizeAbort();
+                return;
+              }
+
+              if (!finalEvt) {
+                send("error", { kind: "internal", message: "Stream ended without done event" });
+                controller.close();
+                return;
+              }
+
+              // Persist assistant reply with routing breadcrumb.
+              const { data: aRow } = await supabaseAdmin
+                .from("chat_messages")
+                .insert({
+                  user_id: userId,
+                  thread_id: threadId,
+                  role: "assistant",
+                  content: assistantText,
+                  badge: v.badge,
+                  provider: finalEvt.provider,
+                  model: finalEvt.model,
+                  fallback_depth: finalEvt.fallbackDepth,
+                })
+                .select("id")
+                .single();
+
+              await supabaseAdmin
+                .from("chat_threads")
+                .update({ updated_at: new Date().toISOString() })
+                .eq("id", threadId)
+                .eq("user_id", userId);
+
+              send("done", {
+                messageId: aRow?.id ?? null,
+                provider: finalEvt.provider,
+                model: finalEvt.model,
+                fallbackDepth: finalEvt.fallbackDepth,
+                inputTokens: finalEvt.inputTokens ?? null,
+                outputTokens: finalEvt.outputTokens ?? null,
+              });
+              controller.close();
+            } catch (e) {
+              // Same invariant as the post-loop branch: only treat as
+              // user_abort if we never reached a successful done event.
+              if ((aborted || e instanceof UserAbortError) && !finalized) {
+                await finalizeAbort();
+                return;
+              }
+              if (e instanceof CapExceededError) {
+                send("error", {
+                  kind: "cap_exceeded",
+                  message: e.message,
+                  badge: e.badge,
+                  used: e.used,
+                  cap: e.cap,
+                });
+              } else if (e instanceof ChainExhaustedError) {
+                send("error", {
+                  kind: "chain_exhausted",
+                  message: e.message,
+                  badge: e.badge,
+                  lastErrorClass: e.lastErrorClass,
+                });
+              } else {
+                const message = e instanceof Error ? e.message : "Internal error";
+                send("error", { kind: "internal", message });
+              }
+              controller.close();
+            }
+          },
+          cancel() {
+            // Consumer (client fetch) cancelled the stream. Trip the same
+            // abort path as request.signal so the upstream provider fetch is
+            // cancelled and partial-state persistence runs in start()'s loop
+            // exit branch above.
+            onAbort();
+          },
+        });
+
+        return new Response(body, {
+          status: 200,
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            Connection: "keep-alive",
+          },
+        });
+      },
+    },
+  },
+});

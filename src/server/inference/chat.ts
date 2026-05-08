@@ -18,6 +18,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getProvider, InferenceError, type InferenceMessage } from "./index";
+import type { InferenceChunk } from "./types";
 import { capFor, chainFor, type Badge } from "./router";
 import { costMicroUsd } from "./pricing";
 import type { ProviderId } from "./tiers";
@@ -45,6 +46,19 @@ export class ChainExhaustedError extends Error {
     this.badge = badge;
     this.chain = chain;
     this.lastErrorClass = lastErrorClass;
+  }
+}
+
+/**
+ * Thrown by `runChainStream` when the caller's AbortSignal fires. Distinct
+ * from generic provider errors so the route can finalize as `user_abort`
+ * (partial assistant persist + telemetry) rather than `error`/`exhausted`,
+ * and so we never iterate fallback providers after a user disconnect.
+ */
+export class UserAbortError extends Error {
+  constructor() {
+    super("User aborted stream");
+    this.name = "UserAbortError";
   }
 }
 
@@ -238,6 +252,209 @@ export async function runChain(args: RunChainArgs): Promise<ChainResult> {
       const retriable = e instanceof InferenceError ? e.retriable : false;
       if (!retriable) throw e;
       // Otherwise advance to next provider.
+    }
+  }
+
+  throw new ChainExhaustedError(badge, cfg.chain, lastErrorClass);
+}
+
+/**
+ * Streaming variant of `runChain`. Yields a synthetic event protocol the
+ * SSE route maps onto wire events:
+ *
+ *   { kind: "meta",  provider, model, fallbackDepth }       — once, when a provider commits
+ *   { kind: "delta", text }                                  — 0..N times
+ *   { kind: "done",  text, provider, model, fallbackDepth, inputTokens, outputTokens }
+ *
+ * Fallback semantics:
+ *   - If a provider errors BEFORE emitting any delta and the error is retriable
+ *     (and badge is not failClosed), advance to the next provider silently.
+ *   - If a provider errors AFTER emitting deltas, we cannot restart without
+ *     confusing the UI — re-throw as ChainExhaustedError. The caller (route)
+ *     will emit a final `error` event; user sees a partial reply with an error.
+ *   - PRIVATE always re-throws on first error (failClosed).
+ */
+export type ChainStreamEvent =
+  | { kind: "meta"; provider: ProviderId; model: string; fallbackDepth: number }
+  | { kind: "delta"; text: string }
+  | {
+      kind: "done";
+      text: string;
+      provider: ProviderId;
+      model: string;
+      fallbackDepth: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    };
+
+export async function* runChainStream(
+  args: RunChainArgs,
+  opts: { signal?: AbortSignal } = {},
+): AsyncGenerator<ChainStreamEvent, void, void> {
+  const { badge } = args;
+  const cfg = chainFor(badge);
+
+  if (cfg.paidOnly && !args.paidTier) {
+    await writeUsage({
+      userId: args.userId,
+      threadId: args.threadId,
+      badge,
+      chain: cfg.chain,
+      providerUsed: cfg.chain[0],
+      modelUsed: null,
+      fallbackDepth: 0,
+      latencyMs: 0,
+      status: "cap_exceeded",
+      errorClass: "cap_exceeded",
+    });
+    throw new CapExceededError(badge, 0, 0);
+  }
+
+  const cap = capFor(badge, args.paidTier);
+  const used = await countTodayUsage(args.userId, badge);
+  if (used >= cap) {
+    await writeUsage({
+      userId: args.userId,
+      threadId: args.threadId,
+      badge,
+      chain: cfg.chain,
+      providerUsed: cfg.chain[0],
+      modelUsed: null,
+      fallbackDepth: 0,
+      latencyMs: 0,
+      status: "cap_exceeded",
+    });
+    throw new CapExceededError(badge, used, cap);
+  }
+
+  const fullMessages: InferenceMessage[] = [
+    { role: "system", content: args.systemPrompt ?? DEFAULT_SYSTEM_PROMPT },
+    ...args.messages,
+  ];
+
+  let lastErrorClass = "unknown";
+  for (let i = 0; i < cfg.chain.length; i++) {
+    const providerId = cfg.chain[i];
+    const t0 = Date.now();
+    let emittedAnyDelta = false;
+    let buffer = "";
+    let modelUsed: string | null = null;
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    try {
+      const provider = await getProvider(providerId);
+      const stream = provider.generateStream
+        ? provider.generateStream(
+            {
+              messages: fullMessages,
+              maxTokens: args.maxTokens,
+              temperature: args.temperature,
+            },
+            { signal: opts.signal },
+          )
+        : (async function* (): AsyncGenerator<InferenceChunk, void, void> {
+            // Adapter has no streaming variant — fall back to non-streaming
+            // and emit the whole reply as one delta.
+            const r = await provider.generate({
+              messages: fullMessages,
+              maxTokens: args.maxTokens,
+              temperature: args.temperature,
+            });
+            yield { type: "delta", text: r.text };
+            yield {
+              type: "done",
+              model: r.model,
+              inputTokens: r.inputTokens,
+              outputTokens: r.outputTokens,
+            };
+          })();
+
+      for await (const chunk of stream) {
+        if (chunk.type === "delta") {
+          if (!emittedAnyDelta) {
+            // Hand the caller the routing breadcrumb the moment a provider
+            // commits — used by the UI to render the status pill live.
+            yield { kind: "meta", provider: providerId, model: "", fallbackDepth: i };
+          }
+          emittedAnyDelta = true;
+          buffer += chunk.text;
+          yield { kind: "delta", text: chunk.text };
+        } else {
+          modelUsed = chunk.model;
+          inputTokens = chunk.inputTokens;
+          outputTokens = chunk.outputTokens;
+        }
+      }
+
+      if (!emittedAnyDelta) {
+        // Stream completed cleanly but never produced text. Treat as bad shape.
+        throw new InferenceError(`${providerId} stream produced no text`, providerId, {
+          retriable: false,
+          errorClass: "bad_response_shape",
+        });
+      }
+
+      const latencyMs = Date.now() - t0;
+      await writeUsage({
+        userId: args.userId,
+        threadId: args.threadId,
+        badge,
+        chain: cfg.chain,
+        providerUsed: providerId,
+        modelUsed,
+        fallbackDepth: i,
+        inputTokens,
+        outputTokens,
+        latencyMs,
+        status: "ok",
+      });
+
+      yield {
+        kind: "done",
+        text: buffer,
+        provider: providerId,
+        model: modelUsed ?? "",
+        fallbackDepth: i,
+        inputTokens,
+        outputTokens,
+      };
+      return;
+    } catch (e) {
+      // User-abort takes precedence over any provider error: the upstream
+      // fetch was aborted because the consumer disconnected, so a 'provider
+      // failed' usage row would be misleading and we MUST NOT iterate
+      // fallback providers (would re-spend tokens for a user who's gone).
+      if (opts.signal?.aborted) {
+        throw new UserAbortError();
+      }
+      const latencyMs = Date.now() - t0;
+      const errClass = e instanceof InferenceError ? e.errorClass : "unknown";
+      lastErrorClass = errClass;
+      const status = errClass === "provider_429" ? "rate_limited" : "error";
+      await writeUsage({
+        userId: args.userId,
+        threadId: args.threadId,
+        badge,
+        chain: cfg.chain,
+        providerUsed: providerId,
+        modelUsed,
+        fallbackDepth: i,
+        inputTokens,
+        outputTokens,
+        latencyMs,
+        status,
+        errorClass: errClass,
+      });
+
+      if (cfg.failClosed) throw e;
+      // Cannot fall back mid-stream — would require restarting the rendered
+      // text and confuse the UI.
+      if (emittedAnyDelta) {
+        throw new ChainExhaustedError(badge, cfg.chain, errClass);
+      }
+      const retriable = e instanceof InferenceError ? e.retriable : false;
+      if (!retriable) throw e;
+      // Otherwise advance to next provider in chain.
     }
   }
 

@@ -62,9 +62,42 @@ export class InferenceError extends Error {
   }
 }
 
+/**
+ * A single streaming output token batch.
+ *
+ * `delta` events arrive 0..N times during a stream and carry incremental text.
+ * `done` arrives exactly once at the end with final usage + model id.
+ *
+ * Adapters MUST normalize their wire format (OpenAI SSE / Anthropic event SSE
+ * / Cloudflare NDJSON / Gemini SSE) into this shape so the chain runner is
+ * provider-agnostic.
+ */
+export type InferenceChunk =
+  | { type: "delta"; text: string }
+  | {
+      type: "done";
+      model: string;
+      inputTokens?: number;
+      outputTokens?: number;
+    };
+
 export type InferenceProvider = {
   id: ProviderId;
   /** Privacy tier per docs/06 §B4. Higher = stricter. */
   privacyTier: PrivacyTier;
   generate(req: InferenceRequest): Promise<InferenceResult>;
+  /**
+   * Optional streaming variant. Adapters that do not implement it cause the
+   * chain runner to fall back to `generate()` and emit a single `delta` with
+   * the full text (no "fake streaming" — the user just sees the reply land
+   * all at once for that provider). Day 3 of D7 ships streaming for all six.
+   *
+   * `opts.signal` lets the caller propagate user-abort all the way to the
+   * upstream HTTP fetch, so we don't keep paying for tokens after the user
+   * navigates away.
+   */
+  generateStream?(
+    req: InferenceRequest,
+    opts?: { signal?: AbortSignal },
+  ): AsyncGenerator<InferenceChunk, void, void>;
 };

@@ -2324,28 +2324,81 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     if (!text || sending) return;
     setError(null);
     setSending(true);
-    setMessages(prev => [...prev, { role: "user", text }]);
+    // Optimistic: append user msg + an empty assistant msg that we'll fill via deltas.
+    setMessages(prev => [
+      ...prev,
+      { role: "user", text },
+      { role: "assistant", text: "" },
+    ]);
     setInput("");
+
+    let gotAnyDelta = false;
+    let errorMsg: string | null = null;
     try {
-      const { sendChatMessage } = await import("@/lib/chat.functions");
-      const res = await sendChatMessage({ data: { threadId, content: text, badge: model } });
-      setThreadId(res.threadId);
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        text: res.assistantMessage.content,
-        meta: {
-          provider: res.assistantMessage.provider,
-          model: res.assistantMessage.model,
-          fallbackDepth: res.assistantMessage.fallbackDepth,
-        },
-      }]);
+      const { streamChatMessage } = await import("@/lib/chat-stream");
+      const stream = streamChatMessage({ threadId, content: text, badge: model });
+      for await (const evt of stream) {
+        if (evt.kind === "init") {
+          setThreadId(evt.threadId);
+        } else if (evt.kind === "meta") {
+          setMessages(prev => {
+            const next = prev.slice();
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              next[next.length - 1] = {
+                ...last,
+                meta: { provider: evt.provider, model: "", fallbackDepth: evt.fallbackDepth },
+              };
+            }
+            return next;
+          });
+        } else if (evt.kind === "delta") {
+          gotAnyDelta = true;
+          setMessages(prev => {
+            const next = prev.slice();
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              next[next.length - 1] = { ...last, text: last.text + evt.text };
+            }
+            return next;
+          });
+        } else if (evt.kind === "done") {
+          setMessages(prev => {
+            const next = prev.slice();
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              next[next.length - 1] = {
+                ...last,
+                meta: {
+                  provider: evt.provider,
+                  model: evt.model,
+                  fallbackDepth: evt.fallbackDepth,
+                },
+              };
+            }
+            return next;
+          });
+        } else if (evt.kind === "error") {
+          errorMsg = evt.message;
+          break;
+        }
+      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to send message";
-      setError(msg);
-      // Roll back the optimistic user message so they can retry.
-      setMessages(prev => prev.slice(0, -1));
-      setInput(text);
+      errorMsg = e instanceof Error ? e.message : "Failed to send message";
     } finally {
+      if (errorMsg) {
+        setError(errorMsg);
+        if (!gotAnyDelta) {
+          // Roll back both the empty assistant placeholder and the user message
+          // so they can edit + retry.
+          setMessages(prev => prev.slice(0, -2));
+          setInput(text);
+        } else {
+          // Partial reply landed; keep what was streamed but drop the empty
+          // tail-case won't apply since gotAnyDelta=true means the assistant
+          // message has content.
+        }
+      }
       setSending(false);
     }
   }, [input, sending, threadId, model]);
