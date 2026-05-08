@@ -25,9 +25,14 @@ import {
   UserAbortError,
   type ChainStreamEvent,
 } from "@/server/inference/chat";
-import type { Badge } from "@/server/inference/router";
+import { chainFor, type Badge } from "@/server/inference/router";
 import type { InferenceMessage } from "@/server/inference";
-import type { ProviderId } from "@/server/inference/tiers";
+import { strictestTierInChain, type ProviderId } from "@/server/inference/tiers";
+import {
+  assembleSystemPrompt,
+  logContextDecision,
+  type AssembleResult,
+} from "@/server/context-broker";
 
 const HISTORY_WINDOW = 20;
 const VALID_BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"] as const;
@@ -150,6 +155,29 @@ export const Route = createFileRoute("/api/chat/stream")({
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
 
         const paidTier = await getPaidTier(userId);
+
+        // D8 step 5: assemble personalization fragment before opening the
+        // stream. Broker is best-effort — any failure proceeds with the
+        // chain runner's DEFAULT_SYSTEM_PROMPT.
+        const cfg = chainFor(v.badge);
+        const tier = strictestTierInChain(cfg.chain);
+        let broker: AssembleResult = {
+          fragment: "",
+          contextUsed: { categories: [], trait_paths: [] },
+          scrubBlocked: false,
+          traitSheetVersion: null,
+        };
+        try {
+          broker = await assembleSystemPrompt({
+            userId,
+            query: v.content,
+            badge: v.badge,
+            strictestTierInChain: tier,
+          });
+        } catch (e) {
+          console.warn(`[api.chat.stream] broker failed, proceeding with default prompt:`, e);
+        }
+
         const encoder = new TextEncoder();
 
         // userAbort fires when the consumer (the client) cancels the
@@ -208,7 +236,10 @@ export const Route = createFileRoute("/api/chat/stream")({
               }
               finalized = true;
               if (assistantText && metaSeen && lastProvider) {
-                await supabaseAdmin
+                // Architect Day-4 LOW fix: include context_used + trait_sheet_version
+                // on the aborted-message row so audit metadata isn't lost when a
+                // user disconnects mid-stream after the broker has already run.
+                const { data: abortRow } = await supabaseAdmin
                   .from("chat_messages")
                   .insert({
                     user_id: userId,
@@ -219,7 +250,24 @@ export const Route = createFileRoute("/api/chat/stream")({
                     provider: lastProvider,
                     model: lastModel || null,
                     fallback_depth: lastFallbackDepth,
+                    context_used:
+                      broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
+                    trait_sheet_version: broker.traitSheetVersion,
+                  } as never)
+                  .select("id")
+                  .single();
+                if (abortRow?.id) {
+                  await logContextDecision({
+                    userId,
+                    messageId: abortRow.id,
+                    badge: v.badge,
+                    strictestTier: tier,
+                    contextUsed: broker.contextUsed,
+                    fragmentLength: broker.fragment.length,
+                    scrubBlocked: broker.scrubBlocked,
+                    traitSheetVersion: broker.traitSheetVersion,
                   });
+                }
                 await supabaseAdmin
                   .from("inference_usage")
                   .insert({
@@ -249,6 +297,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                   badge: v.badge,
                   messages: [...historyMessages, { role: "user", content: v.content }],
                   paidTier,
+                  systemPrompt: broker.fragment || undefined,
                 },
                 { signal: userAbort.signal },
               )) {
@@ -293,7 +342,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                 return;
               }
 
-              // Persist assistant reply with routing breadcrumb.
+              // Persist assistant reply with routing breadcrumb + context audit.
               const { data: aRow } = await supabaseAdmin
                 .from("chat_messages")
                 .insert({
@@ -305,9 +354,27 @@ export const Route = createFileRoute("/api/chat/stream")({
                   provider: finalEvt.provider,
                   model: finalEvt.model,
                   fallback_depth: finalEvt.fallbackDepth,
-                })
+                  context_used:
+                    broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
+                  trait_sheet_version: broker.traitSheetVersion,
+                } as never)
                 .select("id")
                 .single();
+
+              // Step 8a — chat_context_log AFTER assistant persistence so the
+              // FK target exists. Best-effort, non-blocking.
+              if (aRow?.id) {
+                await logContextDecision({
+                  userId,
+                  messageId: aRow.id,
+                  badge: v.badge,
+                  strictestTier: tier,
+                  contextUsed: broker.contextUsed,
+                  fragmentLength: broker.fragment.length,
+                  scrubBlocked: broker.scrubBlocked,
+                  traitSheetVersion: broker.traitSheetVersion,
+                });
+              }
 
               await supabaseAdmin
                 .from("chat_threads")

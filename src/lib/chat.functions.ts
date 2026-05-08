@@ -18,8 +18,14 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runChain, CapExceededError, ChainExhaustedError } from "@/server/inference/chat";
-import type { Badge } from "@/server/inference/router";
+import { chainFor, type Badge } from "@/server/inference/router";
+import { strictestTierInChain } from "@/server/inference/tiers";
 import type { InferenceMessage } from "@/server/inference";
+import {
+  assembleSystemPrompt,
+  logContextDecision,
+  type AssembleResult,
+} from "@/server/context-broker";
 
 const HISTORY_WINDOW = 20; // §G5 message-count cap; token cap arrives with D8.
 const VALID_BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"] as const;
@@ -209,7 +215,29 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       .single();
     if (uErr) throw uErr;
 
-    // 4. Run the chain. CapExceededError and ChainExhaustedError surface to
+    // 4. Resolve chain + assemble personalization fragment (D8 step 5).
+    //    Broker is best-effort — any failure falls back to the chain runner's
+    //    DEFAULT_SYSTEM_PROMPT so chat never breaks on a broker bug.
+    const cfg = chainFor(data.badge);
+    const tier = strictestTierInChain(cfg.chain);
+    let broker: AssembleResult = {
+      fragment: "",
+      contextUsed: { categories: [], trait_paths: [] },
+      scrubBlocked: false,
+      traitSheetVersion: null,
+    };
+    try {
+      broker = await assembleSystemPrompt({
+        userId,
+        query: data.content,
+        badge: data.badge,
+        strictestTierInChain: tier,
+      });
+    } catch (e) {
+      console.warn(`[chat.sendChatMessage] broker failed, proceeding with default prompt:`, e);
+    }
+
+    // 5. Run the chain. CapExceededError and ChainExhaustedError surface to
     //    the caller as typed errors — UI shows a friendly upsell or retry.
     const paidTier = await getPaidTier(userId);
     const result = await runChain({
@@ -218,9 +246,10 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       badge: data.badge,
       messages: [...historyMessages, { role: "user", content: data.content }],
       paidTier,
+      systemPrompt: broker.fragment || undefined,
     });
 
-    // 5. Persist the assistant reply with routing breadcrumb.
+    // 6. Persist the assistant reply with routing breadcrumb + context audit.
     const { data: aRow, error: aErr } = await supabaseAdmin
       .from("chat_messages")
       .insert({
@@ -232,10 +261,25 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         provider: result.provider,
         model: result.model,
         fallback_depth: result.fallbackDepth,
-      })
+        context_used: broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
+        trait_sheet_version: broker.traitSheetVersion,
+      } as never)
       .select("id, thread_id, role, content, created_at, badge, provider, model, fallback_depth")
       .single();
     if (aErr) throw aErr;
+
+    // 6a. Step 8a — chat_context_log row, AFTER assistant message persistence
+    //     so the message_id FK target exists. Best-effort, non-blocking.
+    await logContextDecision({
+      userId,
+      messageId: aRow.id,
+      badge: data.badge,
+      strictestTier: tier,
+      contextUsed: broker.contextUsed,
+      fragmentLength: broker.fragment.length,
+      scrubBlocked: broker.scrubBlocked,
+      traitSheetVersion: broker.traitSheetVersion,
+    });
 
     // 6. Touch the thread's updated_at so it floats to the top of the list.
     await supabaseAdmin
