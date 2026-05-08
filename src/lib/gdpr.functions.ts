@@ -40,7 +40,7 @@ export type AccountExport = {
   counts: Record<string, number>;
 };
 
-const EXPORT_TABLES = [
+export const EXPORT_TABLES = [
   "user_traits",
   "user_trait_blocks",
   "user_provider_category_blocks",
@@ -57,43 +57,50 @@ const EXPORT_TABLES = [
   "user_settings",
 ] as const;
 
+/**
+ * Pure handler for exportAccountData. Exposed for direct testing — the
+ * server-fn wrapper just resolves the userId from auth context and calls
+ * this. Keep all data-shaping logic here so tests don't need to mock
+ * tanstack/react-start.
+ */
+export async function exportAccountDataFor(userId: string): Promise<AccountExport> {
+  const tables: Record<string, unknown[]> = {};
+  const counts: Record<string, number> = {};
+
+  for (const table of EXPORT_TABLES) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from(table)
+      .select("*")
+      .eq("user_id", userId);
+    if (error) {
+      // Tables that may not exist yet in this environment shouldn't block
+      // the export — record an empty array and continue.
+      if (/relation .* does not exist|schema cache/i.test(String(error.message))) {
+        tables[table] = [];
+        counts[table] = 0;
+        continue;
+      }
+      throw error;
+    }
+    const rows = Array.isArray(data) ? data : [];
+    tables[table] = rows;
+    counts[table] = rows.length;
+  }
+
+  const payload = {
+    schema: "neuralconnexions.account-export.v1",
+    userId,
+    exportedAt: new Date().toISOString(),
+    tables,
+  };
+  const json = JSON.stringify(payload, null, 2);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return { json, filename: `nc-account-export-${stamp}.json`, counts };
+}
+
 export const exportAccountData = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .handler(async ({ context }): Promise<AccountExport> => {
-    const userId = context.userId;
-    const tables: Record<string, unknown[]> = {};
-    const counts: Record<string, number> = {};
-
-    for (const table of EXPORT_TABLES) {
-      const { data, error } = await (supabaseAdmin as any)
-        .from(table)
-        .select("*")
-        .eq("user_id", userId);
-      if (error) {
-        // Tables that may not exist yet in this environment shouldn't block
-        // the export — record an empty array and continue.
-        if (/relation .* does not exist|schema cache/i.test(String(error.message))) {
-          tables[table] = [];
-          counts[table] = 0;
-          continue;
-        }
-        throw error;
-      }
-      const rows = Array.isArray(data) ? data : [];
-      tables[table] = rows;
-      counts[table] = rows.length;
-    }
-
-    const payload = {
-      schema: "neuralconnexions.account-export.v1",
-      userId,
-      exportedAt: new Date().toISOString(),
-      tables,
-    };
-    const json = JSON.stringify(payload, null, 2);
-    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-    return { json, filename: `nc-account-export-${stamp}.json`, counts };
-  });
+  .handler(({ context }): Promise<AccountExport> => exportAccountDataFor(context.userId));
 
 // ─── Delete ─────────────────────────────────────────────────────────────────
 
@@ -104,7 +111,7 @@ export type AccountDeleteResult = {
 };
 
 /** Map RPC return columns → human-readable table names for the UI. */
-const RPC_COLUMN_TO_TABLE: Record<string, string> = {
+export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   chat_messages_deleted: "chat_messages",
   chat_threads_deleted: "chat_threads",
   chat_context_log_deleted: "chat_context_log",
@@ -121,25 +128,29 @@ const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   user_settings_deleted: "user_settings",
 };
 
+/**
+ * Pure handler for deleteAccount. Same rationale as exportAccountDataFor:
+ * keep the data path testable without mocking tanstack/react-start.
+ */
+export async function deleteAccountFor(userId: string): Promise<AccountDeleteResult> {
+  const { data, error } = await (supabaseAdmin as any).rpc("delete_user_data", {
+    target_user_id: userId,
+  });
+  if (error) {
+    throw new Error(`Account delete failed: ${error.message}`);
+  }
+
+  const row = Array.isArray(data) ? data[0] : data;
+  const perTable: Record<string, number> = {};
+  if (row && typeof row === "object") {
+    for (const [col, label] of Object.entries(RPC_COLUMN_TO_TABLE)) {
+      const v = (row as Record<string, unknown>)[col];
+      perTable[label] = typeof v === "number" ? v : 0;
+    }
+  }
+  return { deleted: true, perTable };
+}
+
 export const deleteAccount = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .handler(async ({ context }): Promise<AccountDeleteResult> => {
-    const userId = context.userId;
-
-    const { data, error } = await (supabaseAdmin as any).rpc("delete_user_data", {
-      target_user_id: userId,
-    });
-    if (error) {
-      throw new Error(`Account delete failed: ${error.message}`);
-    }
-
-    const row = Array.isArray(data) ? data[0] : data;
-    const perTable: Record<string, number> = {};
-    if (row && typeof row === "object") {
-      for (const [col, label] of Object.entries(RPC_COLUMN_TO_TABLE)) {
-        const v = (row as Record<string, unknown>)[col];
-        perTable[label] = typeof v === "number" ? v : 0;
-      }
-    }
-    return { deleted: true, perTable };
-  });
+  .handler(({ context }): Promise<AccountDeleteResult> => deleteAccountFor(context.userId));
