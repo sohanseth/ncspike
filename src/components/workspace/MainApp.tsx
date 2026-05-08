@@ -2358,6 +2358,18 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Unified Converse surface: text vs voice modes share the same message list
+  // and stream pipeline. Voice mode auto-plays the assistant reply via the
+  // proxied ElevenLabs endpoint (skipped for PRIVATE badge per spec §3).
+  const [mode, setMode] = useState<"text" | "voice">("text");
+  const [lastLlmProvider, setLastLlmProvider] = useState<string | null>(null);
+  const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
+  const voiceBadge = AI_MODEL_TO_BADGE[model];
+  const preferLocal = readPreferLocalAudio();
+  const triple = useMemo(
+    () => buildTriple(voiceBadge, preferLocal, lastLlmProvider),
+    [voiceBadge, preferLocal, lastLlmProvider],
+  );
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
