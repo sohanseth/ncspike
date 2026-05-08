@@ -20,8 +20,28 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getProvider, InferenceError, type InferenceMessage } from "./index";
 import type { InferenceChunk } from "./types";
 import { capFor, chainFor, type Badge } from "./router";
+import { isOnDeviceProvider } from "@/lib/provider-tiers";
 import { costMicroUsd } from "./pricing";
 import type { ProviderId } from "@/lib/provider-tiers";
+
+/**
+ * Defense-in-depth: if the resolved chain contains any on-device provider,
+ * the server-side chain runner refuses to execute. The PRIVATE badge runs
+ * entirely on the client (see `src/lib/on-device-chat.ts` and docs/11);
+ * reaching this code path means the dispatcher missed a case. Throw with
+ * a clear, telemetry-safe message so the bug surfaces immediately rather
+ * than as an opaque chain-exhausted later.
+ */
+function assertNoOnDeviceProviders(badge: Badge, chain: ProviderId[]): void {
+  const od = chain.find(isOnDeviceProvider);
+  if (od !== undefined) {
+    throw new Error(
+      `Badge '${badge}' resolves to an on-device chain (${od}). The server ` +
+        `cannot run on-device generation; the client must call the on-device ` +
+        `path directly via prepareOnDeviceTurn / finalizeOnDeviceTurn. See docs/11.`,
+    );
+  }
+}
 
 export class CapExceededError extends Error {
   public readonly badge: Badge;
@@ -207,6 +227,7 @@ export type RunChainArgs = {
 export async function runChain(args: RunChainArgs): Promise<ChainResult> {
   const { badge } = args;
   const cfg = chainFor(badge);
+  assertNoOnDeviceProviders(badge, cfg.chain);
 
   if (!args.assumeCapChecked) {
     await assertCap({
@@ -325,6 +346,7 @@ export async function* runChainStream(
 ): AsyncGenerator<ChainStreamEvent, void, void> {
   const { badge } = args;
   const cfg = chainFor(badge);
+  assertNoOnDeviceProviders(badge, cfg.chain);
 
   if (!args.assumeCapChecked) {
     await assertCap({

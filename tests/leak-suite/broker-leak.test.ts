@@ -1,5 +1,5 @@
 /**
- * THE leak suite — 200 queries × 4 badges × 4 tiers = 3200 broker
+ * THE leak suite — 200 queries × 4 badges × 5 tiers = 4000 broker
  * invocations against the synthetic Aarav Mehta sheet. ZERO PII overlap is
  * required between any assembled fragment and the synthetic PII set.
  *
@@ -26,7 +26,8 @@ import type { TraitCategory } from "@/server/trait-schema";
  * If the broker drift, this test catches it: any tier-forbidden category that
  * appears in the assembled fragment is a policy bug, not just a leak risk.
  */
-const TIER_FORBIDDEN: Record<0 | 1 | 2 | 3, readonly TraitCategory[]> = {
+const TIER_FORBIDDEN: Record<-1 | 0 | 1 | 2 | 3, readonly TraitCategory[]> = {
+  [-1]: [], // on-device: no restrictions, data never leaves device
   0: [],
   1: ["household", "transient"],
   2: ["household", "transient"],
@@ -96,7 +97,12 @@ import type { Badge } from "@/server/inference/router";
 import type { PrivacyTier } from "@/server/inference/tiers";
 
 const BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"];
-const TIERS: readonly PrivacyTier[] = [0, 1, 2, 3];
+// Tier -1 was added in Phase 2.8 (on-device PRIVATE tier — see docs/11).
+// It must be exercised by the leak suite even though its policy is the
+// most permissive (all categories allowed): the zero-PII guarantee on the
+// assembled fragment still holds because the trait sheet itself is built
+// PII-free in extraction (Phase 2.7 §B3).
+const TIERS: readonly PrivacyTier[] = [-1, 0, 1, 2, 3];
 
 describe("Broker leak suite — 200 queries × 4 badges × 4 tiers", () => {
   // Lazy-import after mocks are in place.
@@ -106,7 +112,7 @@ describe("Broker leak suite — 200 queries × 4 badges × 4 tiers", () => {
     ({ assembleSystemPrompt } = await import("@/server/context-broker"));
   });
 
-  it("zero PII overlap across all 3200 invocations", async () => {
+  it("zero PII overlap across all 4000 invocations", async () => {
     const userId = "00000000-0000-0000-0000-000000000001";
     let invocations = 0;
     let leakCount = 0;

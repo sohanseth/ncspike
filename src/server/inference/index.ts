@@ -22,6 +22,30 @@ export type { InferenceMessage, InferenceRequest, InferenceResult } from "./type
 export { InferenceError } from "./types";
 export { PROVIDER_TIERS, tierOf, strictestTierInChain, type PrivacyTier, type ProviderId } from "@/lib/provider-tiers";
 
+/**
+ * Server-side stub for on-device providers. The PRIVATE badge runs entirely
+ * on the user's device — the server must NEVER execute generation for these
+ * IDs. The client dispatcher in `src/lib/chat-stream.ts` short-circuits
+ * before ever POSTing to `/api/chat/stream`; this stub is a defense-in-depth
+ * guard in case anything reaches the chain runner anyway. See docs/11.
+ */
+function onDeviceServerStub(id: ProviderId): InferenceProvider {
+  const msg =
+    `Provider '${id}' is on-device only and cannot run on the server. ` +
+    `The client must invoke the on-device path directly. See docs/11.`;
+  async function* throwing(): AsyncGenerator<never, void, void> {
+    throw new InferenceError(msg, id, { errorClass: "unknown", retriable: false });
+  }
+  return {
+    id,
+    privacyTier: -1,
+    async generate() {
+      throw new InferenceError(msg, id, { errorClass: "unknown", retriable: false });
+    },
+    generateStream: throwing,
+  } satisfies InferenceProvider;
+}
+
 const PROVIDER_LOADERS: Record<ProviderId, () => Promise<InferenceProvider>> = {
   lovable: async () => lovableProvider,
   cloudflare: async () => (await import("./cloudflare")).cloudflareProvider,
@@ -29,6 +53,9 @@ const PROVIDER_LOADERS: Record<ProviderId, () => Promise<InferenceProvider>> = {
   google: async () => (await import("./google")).googleProvider,
   openai: async () => (await import("./openai")).openaiProvider,
   anthropic: async () => (await import("./anthropic")).anthropicProvider,
+  onDeviceApple: async () => onDeviceServerStub("onDeviceApple"),
+  onDeviceAndroid: async () => onDeviceServerStub("onDeviceAndroid"),
+  onDeviceWebLLM: async () => onDeviceServerStub("onDeviceWebLLM"),
 };
 
 const _cache = new Map<ProviderId, Promise<InferenceProvider>>();

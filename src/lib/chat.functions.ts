@@ -26,6 +26,7 @@ import {
   assembleSystemPrompt,
   logContextDecision,
   type AssembleResult,
+  type ContextUsed,
 } from "@/server/context-broker";
 
 const HISTORY_WINDOW = 20; // §G5 message-count cap; token cap arrives with D8.
@@ -333,3 +334,314 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
 // Re-export typed errors so the UI can do `instanceof` checks if desired.
 export { CapExceededError, ChainExhaustedError };
+
+// ──────────────────────────────────────────────────────────────────────────────
+// On-device path (Phase 2.8 — see docs/11-spec-on-device-tier.md).
+//
+// The PRIVATE badge runs entirely on the user's device. The chain runner
+// CANNOT execute on-device adapters (defense-in-depth in chat.ts asserts
+// this), so the client uses the two server-fns below instead of the SSE
+// /api/chat/stream route used by hosted tiers:
+//
+//   prepareOnDeviceTurn  — cap-check + user-row persist + tier-(-1) broker.
+//                          Returns the system prompt, history, and ids the
+//                          client needs to run generation locally.
+//   finalizeOnDeviceTurn — assistant-row persist + zero-cost telemetry +
+//                          chat_context_log audit. Verifies ownership of
+//                          the thread + user-message before writing.
+//
+// Errors that the on-device-chat dispatcher is expected to handle:
+//   "CAP_EXCEEDED:<used>|<cap>"  — daily cap reached for the user.
+//   "Thread not found"           — IDOR / stale state on the client.
+//   "User message not found"     — client called finalize without prepare.
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type PrepareOnDeviceTurnInput = {
+  threadId: string | null;
+  content: string;
+};
+
+export type PrepareOnDeviceTurnResult = {
+  threadId: string;
+  userMessageId: string;
+  systemPrompt: string;
+  history: { role: "user" | "assistant"; content: string }[];
+  contextUsed: { categories: string[]; trait_paths: string[] } | null;
+  traitSheetVersion: number | null;
+};
+
+export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: PrepareOnDeviceTurnInput): PrepareOnDeviceTurnInput => {
+    if (!d || typeof d !== "object") throw new Error("Invalid input");
+    if (typeof d.content !== "string" || d.content.trim().length === 0) {
+      throw new Error("Message content is required");
+    }
+    if (d.content.length > 8000) throw new Error("Message too long (max 8000 chars)");
+    if (d.threadId !== null && typeof d.threadId !== "string") {
+      throw new Error("Invalid threadId");
+    }
+    return { threadId: d.threadId, content: d.content.trim() };
+  })
+  .handler(async ({ data, context }): Promise<PrepareOnDeviceTurnResult> => {
+    const userId = context.userId;
+    const badge: Badge = "private";
+
+    // 1. Resolve thread + ownership check (mirrors sendChatMessage).
+    let threadId = data.threadId;
+    if (threadId) {
+      const { data: existing, error: oErr } = await supabaseAdmin
+        .from("chat_threads")
+        .select("id")
+        .eq("id", threadId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (oErr) throw oErr;
+      if (!existing) throw new Error("Thread not found");
+    } else {
+      const title = data.content.slice(0, 60).replace(/\s+/g, " ").trim() || "New chat";
+      const { data: t, error: tErr } = await supabaseAdmin
+        .from("chat_threads")
+        .insert({ user_id: userId, title })
+        .select("id")
+        .single();
+      if (tErr) throw tErr;
+      threadId = t.id;
+    }
+
+    // 2. Cap check BEFORE persisting the user row. Convert CapExceededError
+    //    into a structured error string the on-device dispatcher parses
+    //    into a typed `cap_exceeded` event.
+    const paidTier = await getPaidTier(userId);
+    try {
+      await assertCap({ userId, threadId, badge, paidTier });
+    } catch (e) {
+      if (e instanceof CapExceededError) {
+        throw new Error(`CAP_EXCEEDED:${e.used}|${e.cap}`);
+      }
+      throw e;
+    }
+
+    // 3. Persist the user message.
+    const { data: userRow, error: uErr } = await supabaseAdmin
+      .from("chat_messages")
+      .insert({
+        user_id: userId,
+        thread_id: threadId,
+        role: "user",
+        content: data.content,
+        badge,
+      })
+      .select("id")
+      .single();
+    if (uErr) throw uErr;
+
+    // 4. Load history for context.
+    const { data: history, error: hErr } = await supabaseAdmin
+      .from("chat_messages")
+      .select("role, content, created_at")
+      .eq("user_id", userId)
+      .eq("thread_id", threadId)
+      .neq("id", userRow.id)
+      .order("created_at", { ascending: false })
+      .limit(HISTORY_WINDOW - 1);
+    if (hErr) throw hErr;
+
+    const historyMessages = (history ?? [])
+      .reverse()
+      .filter((m) => m.role === "user" || m.role === "assistant")
+      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+
+    // 5. Broker at tier -1 (full personalization since data never leaves
+    //    the device). Best-effort; default to empty system prompt on failure.
+    let broker: AssembleResult = {
+      fragment: "",
+      contextUsed: { categories: [], trait_paths: [] },
+      scrubBlocked: false,
+      traitSheetVersion: null,
+    };
+    try {
+      broker = await assembleSystemPrompt({
+        userId,
+        query: data.content,
+        badge,
+        strictestTierInChain: -1,
+      });
+    } catch (e) {
+      console.warn("[prepareOnDeviceTurn] broker failed, default prompt:", e);
+    }
+
+    return {
+      threadId,
+      userMessageId: userRow.id,
+      systemPrompt:
+        broker.fragment ||
+        "You are a helpful assistant running on the user's own device. Keep replies concise and practical.",
+      history: historyMessages,
+      contextUsed:
+        broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
+      traitSheetVersion: broker.traitSheetVersion,
+    };
+  });
+
+export type FinalizeOnDeviceTurnInput = {
+  threadId: string;
+  userMessageId: string;
+  assistantText: string;
+  provider: "onDeviceApple" | "onDeviceAndroid" | "onDeviceWebLLM";
+  model: string;
+  contextUsed: { categories: string[]; trait_paths: string[] } | null;
+  traitSheetVersion: number | null;
+};
+
+export type FinalizeOnDeviceTurnResult = {
+  assistantMessageId: string;
+};
+
+const ON_DEVICE_PROVIDER_IDS = new Set([
+  "onDeviceApple",
+  "onDeviceAndroid",
+  "onDeviceWebLLM",
+]);
+
+export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: FinalizeOnDeviceTurnInput): FinalizeOnDeviceTurnInput => {
+    if (!d || typeof d !== "object") throw new Error("Invalid input");
+    if (typeof d.threadId !== "string") throw new Error("threadId required");
+    if (typeof d.userMessageId !== "string") throw new Error("userMessageId required");
+    if (typeof d.assistantText !== "string" || d.assistantText.length === 0) {
+      throw new Error("assistantText required");
+    }
+    if (d.assistantText.length > 100_000) {
+      throw new Error("assistantText too long (max 100000 chars)");
+    }
+    if (!ON_DEVICE_PROVIDER_IDS.has(d.provider)) {
+      throw new Error("Invalid on-device provider");
+    }
+    if (typeof d.model !== "string") throw new Error("model required");
+    return d;
+  })
+  .handler(async ({ data, context }): Promise<FinalizeOnDeviceTurnResult> => {
+    const userId = context.userId;
+    const badge: Badge = "private";
+
+    // Verify thread ownership AND that the user message belongs to it. This
+    // closes IDOR (a malicious client could otherwise stuff replies into
+    // another user's thread).
+    const { data: userMsg, error: umErr } = await supabaseAdmin
+      .from("chat_messages")
+      .select("id, thread_id, user_id")
+      .eq("id", data.userMessageId)
+      .eq("user_id", userId)
+      .eq("thread_id", data.threadId)
+      .maybeSingle();
+    if (umErr) throw umErr;
+    if (!userMsg) throw new Error("User message not found");
+
+    // Idempotency check (migration 20260515 — adds `in_reply_to_id`). If a
+    // prior finalize call already wrote an assistant row for this user
+    // message, return it instead of writing a duplicate. The unique partial
+    // index on `chat_messages(in_reply_to_id)` is the authoritative guard
+    // against races; this lookup is the fast path.
+    const { data: existingAssistant } = await supabaseAdmin
+      .from("chat_messages")
+      .select("id")
+      .match({ user_id: userId, thread_id: data.threadId, role: "assistant" } as never)
+      .eq("in_reply_to_id" as never, data.userMessageId as never)
+      .maybeSingle();
+    if (existingAssistant) {
+      return { assistantMessageId: existingAssistant.id };
+    }
+
+    // Persist assistant row, linked to the user message via in_reply_to_id.
+    // On unique-index violation (concurrent finalize), the catch path
+    // re-fetches and returns the winning row — preserving idempotency
+    // under races.
+    const { data: aRow, error: aErr } = await supabaseAdmin
+      .from("chat_messages")
+      .insert({
+        user_id: userId,
+        thread_id: data.threadId,
+        role: "assistant",
+        content: data.assistantText,
+        badge,
+        provider: data.provider,
+        model: data.model,
+        fallback_depth: 0,
+        context_used:
+          data.contextUsed && data.contextUsed.categories.length > 0
+            ? data.contextUsed
+            : null,
+        trait_sheet_version: data.traitSheetVersion,
+        in_reply_to_id: data.userMessageId,
+      } as never)
+      .select("id")
+      .single();
+    if (aErr) {
+      // Postgres unique_violation on the partial index = concurrent
+      // finalize won. Re-fetch and return the winner.
+      const code = (aErr as { code?: string }).code;
+      if (code === "23505") {
+        const { data: winner } = await supabaseAdmin
+          .from("chat_messages")
+          .select("id")
+          .eq("in_reply_to_id" as never, data.userMessageId as never)
+          .maybeSingle();
+        if (winner) return { assistantMessageId: winner.id };
+      }
+      throw aErr;
+    }
+
+    // Zero-cost telemetry row, linked to the assistant message via
+    // `message_id` (migration 20260515). Unique partial index on
+    // `inference_usage(message_id)` makes this idempotent: a duplicate
+    // insert on retry hits 23505 and we swallow it (one usage row per
+    // assistant message is the invariant).
+    const { error: usageErr } = await supabaseAdmin.from("inference_usage").insert({
+      user_id: userId,
+      thread_id: data.threadId,
+      badge,
+      provider_chain: [data.provider],
+      provider_used: data.provider,
+      model_used: data.model,
+      fallback_depth: 0,
+      input_tokens: null,
+      output_tokens: null,
+      cost_micro_usd: 0,
+      latency_ms: 0,
+      status: "ok",
+      error_class: null,
+      message_id: aRow.id,
+    } as never);
+    if (usageErr) {
+      const code = (usageErr as { code?: string }).code;
+      if (code !== "23505") {
+        // 23505 = duplicate (idempotent retry); anything else is a real bug.
+        console.error("[finalizeOnDeviceTurn] inference_usage insert failed:", usageErr.message);
+      }
+    }
+
+    // Broker audit row. The `contextUsed` shape was hand-crafted on the
+    // client; cast back to `ContextUsed` (categories are runtime-validated
+    // against TraitCategory by the broker schema, but the server-fn
+    // boundary erases the enum to string[]).
+    await logContextDecision({
+      userId,
+      messageId: aRow.id,
+      badge,
+      strictestTier: -1,
+      contextUsed: (data.contextUsed ?? { categories: [], trait_paths: [] }) as ContextUsed,
+      fragmentLength: 0,
+      scrubBlocked: false,
+      traitSheetVersion: data.traitSheetVersion,
+    });
+
+    await supabaseAdmin
+      .from("chat_threads")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", data.threadId)
+      .eq("user_id", userId);
+
+    return { assistantMessageId: aRow.id };
+  });

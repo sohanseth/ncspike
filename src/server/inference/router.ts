@@ -46,8 +46,13 @@ export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
   },
   private: {
     badge: "private",
-    label: "Stays on safe rails",
-    chain: ["cloudflare"],
+    // Re-labeled in Phase 2.8 — the prior "Stays on safe rails" copy was
+    // promising Cloudflare Workers AI under the word "private", which is
+    // a third-party hosted inference path. The badge now routes to a real
+    // on-device chain (Apple Foundation Models / Gemini Nano / WebLLM)
+    // selected per-device by capability detection. See docs/11.
+    label: "On your device",
+    chain: ["onDeviceApple", "onDeviceAndroid", "onDeviceWebLLM"],
     paidOnly: false,
     failClosed: true,
   },

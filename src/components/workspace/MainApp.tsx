@@ -2573,7 +2573,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   <Zap size={16} style={{color:"#ddd6fe"}}/>
                 </div>
                 <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
-                  Ask anything. Pick a badge below to choose how I think — fast, deep, or private.
+                  Ask anything. Pick a badge below to choose how I think — fast, deep, or fully on-device.
                 </p>
               </div>
             </div>
@@ -2700,7 +2700,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                     onClick={() => {
                       void import("sonner").then(({ toast }) => {
                         toast("Genius is for paid plans", {
-                          description: "Upgrade to unlock the smartest model. Free tier gets FLASH, PRO, and PRIVATE.",
+                          description: "Upgrade to unlock the smartest model. Free tier gets FLASH, PRO, and on-device PRIVATE.",
                           duration: 5000,
                         });
                       });

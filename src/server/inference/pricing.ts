@@ -23,6 +23,11 @@ export const PRICING: Record<ProviderId, Price> = {
   openai: { input: 150_000, output: 600_000 },        // GPT-4o-mini
   anthropic: { input: 1_000_000, output: 5_000_000 }, // Claude Haiku 4.5
   lovable: { input: 300_000, output: 2_500_000 },     // mirrors Gemini 2.5 Flash
+  // On-device providers: zero marginal cost (compute is the user's). The
+  // CPAUD viewer treats these as the OSS-tier share % per docs/11.
+  onDeviceApple: { input: 0, output: 0 },
+  onDeviceAndroid: { input: 0, output: 0 },
+  onDeviceWebLLM: { input: 0, output: 0 },
 };
 
 /** Compute cost in micro-USD from token counts. Either count may be undefined. */

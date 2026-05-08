@@ -74,6 +74,9 @@ export type AssembleResult = {
 // cosine ranking; the max-K cap is applied AFTER ranking + tie-break.
 
 const NEVER_AT_TIER: Record<PrivacyTier, ReadonlySet<TraitCategory>> = {
+  // T-1 — on-device. Nothing leaves the user's hardware, so no category
+  // needs to be hidden. Most permissive: full personalization.
+  [-1]: new Set(),
   0: new Set(),
   1: new Set(["household", "transient"]),
   2: new Set(["household", "transient"]),
@@ -81,6 +84,7 @@ const NEVER_AT_TIER: Record<PrivacyTier, ReadonlySet<TraitCategory>> = {
 };
 
 const MAX_K_AT_TIER: Record<PrivacyTier, number> = {
+  [-1]: TRAIT_CATEGORIES.length, // on-device: unlimited
   0: TRAIT_CATEGORIES.length, // effectively unlimited
   1: TRAIT_CATEGORIES.length,
   2: 3,

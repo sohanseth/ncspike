@@ -55,6 +55,15 @@ export type StreamChatInput = {
 export async function* streamChatMessage(
   input: StreamChatInput,
 ): AsyncGenerator<ChatStreamEvent, void, void> {
+  // PRIVATE badge runs entirely on-device — never POST to /api/chat/stream.
+  // The on-device runner emits the same ChatStreamEvent shape so the UI
+  // consumer in MainApp.tsx is unchanged. See docs/11.
+  if (input.badge === "private") {
+    const { streamOnDeviceChat } = await import("./on-device-chat");
+    yield* streamOnDeviceChat(input);
+    return;
+  }
+
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) {
