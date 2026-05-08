@@ -3061,6 +3061,9 @@ export function MainApp() {
   const [exploreOpen, setExploreOpen] = useState(false);
   const [testOpen,    setTestOpen]    = useState(false);
   const [tasks,       setTasks]       = useState<AgentTask[]>(AGENT_TASKS);
+  const [doneIds,     setDoneIds]     = useState<Set<string>>(() => new Set());
+  const resolveItem   = (id: string) => setDoneIds(s => { const n = new Set(s); n.add(id); return n; });
+  const unresolveItem = (id: string) => setDoneIds(s => { const n = new Set(s); n.delete(id); return n; });
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
