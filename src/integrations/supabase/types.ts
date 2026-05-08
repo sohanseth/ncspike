@@ -208,6 +208,7 @@ export type Database = {
           tts_model: string | null
           tts_provider: string | null
           user_id: string
+          voice_turn_latency_ms: number | null
           vtl_ms: number | null
         }
         Insert: {
@@ -234,6 +235,7 @@ export type Database = {
           tts_model?: string | null
           tts_provider?: string | null
           user_id: string
+          voice_turn_latency_ms?: number | null
           vtl_ms?: number | null
         }
         Update: {
@@ -260,6 +262,7 @@ export type Database = {
           tts_model?: string | null
           tts_provider?: string | null
           user_id?: string
+          voice_turn_latency_ms?: number | null
           vtl_ms?: number | null
         }
         Relationships: []
