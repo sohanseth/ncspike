@@ -1680,7 +1680,7 @@ function InboxRow({
           <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
           <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-90 group-hover:opacity-100 transition-opacity">
           {draftable && draft.button}
           <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
           <IconBtn icon={Check}   label="Mark done"     onClick={onMarkDone} color="green"/>
