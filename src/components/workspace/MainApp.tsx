@@ -3026,7 +3026,7 @@ export function MainApp() {
           />
 
           {/* Domain detail drawer */}
-          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)}/>}
+          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")}/>}
         </div>
       </div>
 
