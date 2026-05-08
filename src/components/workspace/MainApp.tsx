@@ -1717,10 +1717,9 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
 
-function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
+function HomeCanvas({ onDomain, onOther }: {
   onDomain:(id:DomainId)=>void;
-  onRunOvernight:(text:string)=>void;
-  onCompose:()=>void;
+  onOther:()=>void;
 }) {
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
@@ -1730,10 +1729,9 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
 
   const { items: inbox, error: inboxErr } = useInbox();
 
-  // Group live emails by domain → DomainCard items shape
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
-    (inbox ?? []).filter(i => i.category !== "ignore").forEach(i => {
+    (inbox ?? []).filter(i => i.category !== "ignore" && i.category !== "needs_review").forEach(i => {
       const arr = groups[i.domain] ?? (groups[i.domain] = []);
       arr.push({
         id: i.id,
@@ -1746,38 +1744,68 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
     return groups;
   }, [inbox]);
 
-  // Sort domains by live activity (count), fall back to static
+  const urgencyByDomain = useMemo(() => {
+    const out: Partial<Record<DomainId, UrgencyCounts>> = {};
+    (inbox ?? []).forEach(i => {
+      if (i.category === "ignore" || i.category === "needs_review") return;
+      const u = out[i.domain] ?? (out[i.domain] = { urgent: 0, today: 0, proactive: 0 });
+      if (i.category === "urgent") u.urgent += 1;
+      else if (i.category === "today") u.today += 1;
+      else if (i.category === "proactive") u.proactive += 1;
+    });
+    return out;
+  }, [inbox]);
+
+  const otherCount = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore").length,
+    [inbox]
+  );
+  const totalUrgent = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "urgent").length,
+    [inbox]
+  );
+
   const sorted = useMemo(() => {
     const arr = Object.values(DOMAINS) as DomainData[];
     return arr.slice().sort((a: DomainData, b: DomainData) => {
+      const ua = (urgencyByDomain[a.id]?.urgent ?? 0) + (urgencyByDomain[a.id]?.today ?? 0);
+      const ub = (urgencyByDomain[b.id]?.urgent ?? 0) + (urgencyByDomain[b.id]?.today ?? 0);
+      if (ua !== ub) return ub - ua;
       const ca = liveByDomain[a.id]?.length ?? -1;
       const cb = liveByDomain[b.id]?.length ?? -1;
       if (ca !== cb) return cb - ca;
       return b.activity - a.activity;
     });
-  }, [liveByDomain]);
+  }, [liveByDomain, urgencyByDomain]);
   const ids = sorted.map(d => d.id);
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
-      {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
-        <span className="flex-1 text-[13px] text-foreground/80 font-medium" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           {greet}, {firstName}
         </span>
+        {totalUrgent > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border flex-shrink-0"
+            style={{background:"rgba(248,113,113,0.16)", borderColor:"rgba(248,113,113,0.4)", color:"#fca5a5", boxShadow:"0 0 6px rgba(248,113,113,0.45)"}}>
+            <span className="w-1 h-1 rounded-full bg-rose-300"/>
+            {totalUrgent} urgent
+          </span>
+        )}
         <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
       </div>
 
-      {/* Inbox queue (live) */}
-      <InboxQueue onCompose={onCompose} items={inbox} error={inboxErr}/>
+      {inboxErr && (
+        <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-2.5">
+          <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr} · <Link to="/workspace/connections" className="text-primary/80 hover:text-primary font-mono">connect Gmail →</Link></p>
+        </div>
+      )}
 
-
-      {/* Domain bento */}
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
-          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
+          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 other"`}}>
           {([0,1,2,3,4] as const).map(i => {
             const id = ids[i] as DomainId | undefined;
             if (!id) return null;
@@ -1786,19 +1814,25 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
             return (
               <div key={id} style={{gridArea:`d${i}`}}>
                 <DomainCard domain={DOMAINS[id]} size={sizes[i]} onClick={()=>onDomain(id)}
-                  liveItems={live} liveCount={live?.length}/>
+                  liveItems={live} liveCount={live?.length} urgency={urgencyByDomain[id]}/>
               </div>
             );
           })}
-          <div style={{gridArea:"signal"}}>
-            <div className="h-full rounded-2xl border border-cyan-400/15 flex items-center gap-3 px-4 cursor-default hover:border-cyan-400/30 transition-colors"
-              style={{background:"radial-gradient(ellipse at 0% 50%,rgba(6,182,212,0.08) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
-              <TrendingUp size={12} className="text-cyan-400/70 flex-shrink-0"/>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11.5px] font-semibold text-foreground/80 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>Data sovereignty thesis</p>
-                <p className="text-[9.5px] text-cyan-400/45 truncate font-mono">15 signals · rising</p>
+          <div style={{gridArea:"other"}}>
+            <button onClick={onOther}
+              className="w-full h-full rounded-2xl border border-white/[0.07] flex items-center gap-3 px-4 cursor-pointer hover:border-white/20 hover:brightness-110 transition-all text-left"
+              style={{background:"radial-gradient(ellipse at 0% 50%,rgba(255,255,255,0.04) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
+              <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.04] border border-white/[0.06]">
+                <Inbox size={12} className="text-muted-foreground/70"/>
               </div>
-            </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11.5px] font-semibold text-foreground/80 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>Other</p>
+                <p className="text-[9.5px] text-muted-foreground/45 truncate font-mono">
+                  {otherCount === 0 ? "nothing pending" : `${otherCount} uncategorized`}
+                </p>
+              </div>
+              <ArrowRight size={11} className="text-muted-foreground/30 flex-shrink-0"/>
+            </button>
           </div>
         </div>
       </div>
