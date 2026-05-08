@@ -1756,10 +1756,11 @@ function HomeCanvas({ onDomain, onOther }: {
     return out;
   }, [inbox]);
 
-  const otherCount = useMemo(
-    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore").length,
+  const otherList = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore"),
     [inbox]
   );
+  const otherCount = otherList.length;
   const totalUrgent = useMemo(
     () => (inbox ?? []).filter(i => i.category === "urgent").length,
     [inbox]
@@ -1828,7 +1829,7 @@ function HomeCanvas({ onDomain, onOther }: {
                     urgency={urgencyByDomain[tile.id]}
                   />
                 ) : (
-                  <OtherCard size={size} count={tile.count} onClick={onOther}/>
+                  <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
                 )}
               </div>
             );
@@ -1841,14 +1842,18 @@ function HomeCanvas({ onDomain, onOther }: {
 
 // ─── Other tile (size-aware) ──────────────────────────────────────────────────
 
-function OtherCard({ size, count, onClick }: { size: "xl"|"md"|"sm"; count: number; onClick: () => void }) {
+function OtherCard({ size, count, items, onClick }: {
+  size: "xl"|"md"|"sm"; count: number; items: InboxItem[]; onClick: () => void;
+}) {
   const isXL = size === "xl";
   const isSM = size === "sm";
+  const maxItems = isXL ? 4 : size === "md" ? 2 : 1;
+  const preview = items.slice(0, maxItems);
   return (
     <button onClick={onClick}
-      className={`group w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
+      className={`group w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
       style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
-      <div className={`flex items-center justify-between ${isSM ? "" : "w-full"}`}>
+      <div className={`flex items-center justify-between flex-shrink-0 ${isSM ? "" : "w-full"}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]`}>
             <Inbox size={isXL ? 14 : 12} className="text-muted-foreground/80"/>
@@ -1862,24 +1867,41 @@ function OtherCard({ size, count, onClick }: { size: "xl"|"md"|"sm"; count: numb
           </span>
         )}
       </div>
+
       {isSM ? (
         <div className="flex-1 min-w-0">
-          <p className="text-[9.5px] text-muted-foreground/55 truncate font-mono">
-            {count === 0 ? "nothing pending" : `${count} item${count===1?"":"s"}`}
-          </p>
+          {preview[0] ? (
+            <p className="text-[11px] text-foreground/75 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{preview[0].subject}</p>
+          ) : (
+            <p className="text-[9.5px] text-muted-foreground/55 truncate font-mono">nothing pending</p>
+          )}
+          {count > 1 && (
+            <p className="text-[9px] text-muted-foreground/40 truncate font-mono">+{count - 1} more</p>
+          )}
         </div>
       ) : (
-        <div className="flex-1 min-h-0 flex flex-col justify-end">
-          <p className="text-[10.5px] text-muted-foreground/55 font-mono">
-            {count === 0 ? "Nothing uncategorized" : `${count} message${count===1?"":"s"} need a closer look`}
-          </p>
-          {isXL && count > 0 && (
-            <p className="text-[10px] text-muted-foreground/35 mt-1">Low-signal or unrouted mail collects here.</p>
+        <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden w-full">
+          {preview.length === 0 ? (
+            <p className="text-[10.5px] text-muted-foreground/55 font-mono">Nothing uncategorized</p>
+          ) : (
+            preview.map(item => (
+              <div key={item.id} className="flex items-start gap-2.5 min-w-0">
+                <span className="mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40"/>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[11.5px] text-foreground/80 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
+                  {isXL && <p className="text-[10px] text-muted-foreground/55 truncate">{item.from}</p>}
+                </div>
+              </div>
+            ))
+          )}
+          {count > preview.length && (
+            <p className="text-[9.5px] text-muted-foreground/40 font-mono mt-auto">+{count - preview.length} more</p>
           )}
         </div>
       )}
+
       {!isSM && (
-        <div className="flex items-center justify-end pt-2 border-t border-white/[0.06]">
+        <div className="flex-shrink-0 flex items-center justify-end pt-2 border-t border-white/[0.06] w-full">
           <ArrowRight size={11} className="text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors"/>
         </div>
       )}
