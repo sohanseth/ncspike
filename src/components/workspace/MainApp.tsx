@@ -2972,13 +2972,14 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
 export function MainApp() {
   const [mapView,     setMapView]     = useState<MapView|null>(null);
   const [tool,        setTool]        = useState<Tool>(null);
-  const [domain,      setDomain]      = useState<DomainId|null>(null);
+  const [domain,      setDomain]      = useState<DomainId|"other"|null>(null);
   const [voiceOpen,   setVoiceOpen]   = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [testOpen,    setTestOpen]    = useState(false);
   const [tasks,       setTasks]       = useState<AgentTask[]>(AGENT_TASKS);
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
+  const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleMap     = (v: MapView|null) => { setMapView(v); setDomain(null); setTool(null); setExploreOpen(false); };
   const handleVoice   = () => setVoiceOpen(true);
   const handleExplore = () => setExploreOpen(o=>!o);
