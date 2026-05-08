@@ -2720,30 +2720,6 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             })}
           </div>
 
-          {CONVERSE_VOICE_FLAG && (
-            <div className="pt-2 border-t border-white/[0.06]">
-              <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/40 mb-1.5">
-                Converse (Phase 2.8 preview)
-              </div>
-              {/* Pointer-events overlay closes the BUSY race without touching
-                  ConverseInput (Lovable-owned per §3). When ChatPanel is
-                  streaming, ConverseInput is non-interactive AND visually
-                  dimmed, so a user can't fire a second turn whose `text`
-                  would be cleared by ConverseInput before runChatTurn
-                  rejects with BUSY. */}
-              <div
-                className={sending ? "pointer-events-none opacity-50" : ""}
-                aria-busy={sending}
-              >
-                <Suspense fallback={<div className="h-16 rounded-lg bg-white/[0.03] animate-pulse" />}>
-                  <ConverseInput
-                    badge={AI_MODEL_TO_BADGE[model]}
-                    sendVoiceMessage={sendVoiceMessage}
-                  />
-                </Suspense>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     </div>
