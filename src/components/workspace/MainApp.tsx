@@ -2505,18 +2505,25 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     void runChatTurn(text).catch(() => { /* keyboard path can't BUSY-race itself */ });
   }, [input, sending, runChatTurn]);
 
-  // ConverseInput integration seam (Phase 2.8 Day 2 dogfooding, flag-gated).
-  // Wraps runChatTurn so a voice (or ConverseInput-typed) turn streams into the
-  // same thread as the keyboard input. Returns empty `text` because the reply
-  // already renders in the message list — ConverseInput only uses the return
-  // value to optionally play TTS audio (skipped here: text-only on web).
-  // BUSY race: ConverseInput is also visually disabled below via a
-  // pointer-events overlay while `sending`, so this catch is defense-in-depth
-  // for the rare race between state-tick and pointer-up.
-  const sendVoiceMessage = useCallback<SendVoiceMessage>(async (text) => {
+  // Unified Converse seam: voice turns stream into the same thread as the
+  // keyboard input, then auto-play the assembled assistant text via the
+  // proxied ElevenLabs endpoint. PRIVATE skips TTS (browser-speech + text-only
+  // per spec §3 V2). We return the assembled text so ConverseInput could
+  // surface it too if desired — the UI source of truth is still the message list.
+  const sendVoiceMessage = useCallback<SendVoiceMessage>(async (text, badge) => {
     try {
-      const { provider } = await runChatTurn(text);
-      return { text: "", llmProvider: provider ?? undefined };
+      const { provider, text: replyText } = await runChatTurn(text);
+      // Stop any in-flight TTS before kicking off a new one.
+      ttsAudioRef.current?.pause();
+      ttsAudioRef.current = null;
+      if (replyText && badge !== "PRIVATE") {
+        try {
+          ttsAudioRef.current = await playAssistantTts(replyText, badge);
+        } catch {
+          /* TTS is best-effort — text reply already rendered. */
+        }
+      }
+      return { text: replyText, llmProvider: provider ?? undefined };
     } catch (e) {
       if (e instanceof Error && e.message === "BUSY") {
         void import("sonner").then(({ toast }) => {
