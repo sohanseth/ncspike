@@ -151,7 +151,10 @@ function VoiceSettingsPage() {
                 : "ElevenLabs Scribe for STT, ElevenLabs Multilingual for TTS."}
             </li>
             <li>
-              <span className="font-mono text-xs text-foreground">PRIVATE</span> — Always Whisper.cpp + Piper, both running on-device.
+              <span className="font-mono text-xs text-foreground">PRIVATE</span> —{" "}
+              {capability?.nativeShell
+                ? "Whisper.cpp + Piper, both running on-device."
+                : "Browser speech recognition for STT, text-only reply (no TTS). Full on-device audio in the native app."}
             </li>
           </ul>
         </section>

@@ -20,6 +20,10 @@ const colorClass: Record<ResolvedTriple["privacyColor"], string> = {
  */
 export function StatusPill({ triple, llmFallback, className }: Props) {
   const llm = llmFallback ?? triple.llm;
+  // PRIVATE-on-web shape: browser-speech + text-only. Surface it explicitly so
+  // the user knows what they're getting (no cloud STT, no synthesized voice).
+  const isPrivateWeb =
+    triple.stt === "browser-speech-recognition" && triple.tts === "text-only";
   return (
     <div
       className={cn(
@@ -29,8 +33,14 @@ export function StatusPill({ triple, llmFallback, className }: Props) {
       )}
       aria-label={`Active providers: STT ${triple.stt}, LLM ${llm}, TTS ${triple.tts}`}
     >
+      {isPrivateWeb && (
+        <>
+          <span className="font-semibold tracking-wider">LOCAL</span>
+          <span className="opacity-50">·</span>
+        </>
+      )}
       <span aria-hidden>🎙</span>
-      <span>{triple.stt}</span>
+      <span>{isPrivateWeb ? "browser-speech" : triple.stt}</span>
       <span className="opacity-50">·</span>
       <span aria-hidden>🧠</span>
       <span>{llm}</span>
