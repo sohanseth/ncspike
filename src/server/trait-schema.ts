@@ -24,7 +24,9 @@ import { z } from "zod";
 // ─── String safety ──────────────────────────────────────────────────────────
 // Sentinels that, if found inside a trait value, would let a poisoned memory
 // hijack the assembled system prompt. List from §13 plus a few common variants.
-const INJECTION_SENTINELS = [
+// Exported so `pii-scrub.ts` can reuse the exact same list at fragment-assembly
+// time (defense in depth).
+export const INJECTION_SENTINELS = [
   /\bsystem\s*:/i,
   /\bassistant\s*:/i,
   /\buser\s*:/i,

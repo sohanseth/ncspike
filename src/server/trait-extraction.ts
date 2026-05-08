@@ -31,6 +31,7 @@ import {
   type TraitCategory,
   type TraitSheet,
 } from "@/server/trait-schema";
+import { scrub } from "@/server/pii-scrub";
 
 const MEMORY_WINDOW_DAYS = 30;
 const MAX_MEMORY_NODES = 400; // truncate input to keep prompts under the budget
@@ -208,6 +209,47 @@ async function extractCategoryPatch(
 }
 
 /**
+ * Recursively walk a category patch and collect every string value (leaf or
+ * inside arrays/objects). Used by `scrubCategoryPatch` to run defense-in-depth
+ * PII checks against extracted strings before writing them into the sheet.
+ */
+function* iterStrings(val: unknown): Generator<string> {
+  if (typeof val === "string") {
+    yield val;
+    return;
+  }
+  if (Array.isArray(val)) {
+    for (const v of val) yield* iterStrings(v);
+    return;
+  }
+  if (val && typeof val === "object") {
+    for (const v of Object.values(val as Record<string, unknown>)) yield* iterStrings(v);
+  }
+}
+
+/**
+ * Defense-in-depth scrub for an individual category patch. Even though
+ * trait-schema.ts already rejects sentinels and bans identifier keys at the
+ * Zod layer, we re-scan extracted string values with the full B5 pattern
+ * set here. If ANY string in the patch trips the scrub, we drop the whole
+ * category — partial keep is unsafe because the leaked PII might be the
+ * key signal binding the rest of the category together.
+ *
+ * Returns the scrub result so the caller can route it to extraction_failures
+ * with the right `failure_class` (`injection_pattern` for sentinel hits, or
+ * a synthesized `injection_pattern` row for any other class — extraction-time
+ * scrub hits are always logged as injection_pattern because the table's
+ * failure_class enum doesn't carry the full scrub taxonomy).
+ */
+function scrubCategoryPatch(patch: unknown): { ok: boolean; pattern?: string } {
+  for (const s of iterStrings(patch)) {
+    const r = scrub({ fragment: s });
+    if (!r.ok) return { ok: false, pattern: r.pattern_class };
+  }
+  return { ok: true };
+}
+
+/**
  * True if a category patch is "explicitly empty" — i.e. the model correctly
  * signalled "no evidence for this category" and we should skip it without
  * logging an extraction failure.
@@ -320,6 +362,15 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
         await logExtractionFailure(userId, cat, "zod_reject", issue.path.join("."));
       }
       continue; // skip this category, keep the rest
+    }
+    // Day-3 defense-in-depth: re-scan validated strings against the full B5
+    // pattern set. Catches anything that slipped past the Zod refines (e.g.
+    // an email or phone number that didn't trip the injection-sentinel list
+    // because it contained no role markers).
+    const scrubResult = scrubCategoryPatch(perCat.data);
+    if (!scrubResult.ok) {
+      await logExtractionFailure(userId, cat, "injection_pattern", scrubResult.pattern ?? null);
+      continue;
     }
     (categories as Record<string, unknown>)[cat] = perCat.data;
   }
