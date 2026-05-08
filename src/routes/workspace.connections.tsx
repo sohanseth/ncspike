@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import {
   Mail, Calendar, Loader2, CheckCircle2, AlertCircle, Plug, Inbox, Mic, RefreshCw,
   MessageSquare, Send, Phone, Video, Users, Hash, MessageCircle, AtSign, Sparkles, Check,
+  Briefcase, FileText, Github, Trello, Cloud, CreditCard, ShoppingCart, Database,
+  Headphones, Music, Bell, BookOpen, ClipboardList, Megaphone, FileSpreadsheet,
+  Figma, Youtube, Instagram, Facebook, Twitter, Globe, Zap, GitBranch, Box,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { startGoogleOAuth } from "@/lib/google-oauth.functions";
