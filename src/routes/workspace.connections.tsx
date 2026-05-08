@@ -473,6 +473,10 @@ function ConnectionsPage() {
           </section>
         )}
 
+        <MoreIntegrations />
+
+        <RequestConnection />
+
         <button
           onClick={() => navigate({ to: "/workspace" })}
           className="text-xs text-muted-foreground hover:text-foreground"
