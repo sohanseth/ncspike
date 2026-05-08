@@ -242,10 +242,10 @@ export const Route = createFileRoute("/api/chat/stream")({
           }
 
           // Build text history (vision turn does not see prior images).
-          const visionHistory = (history ?? [])
-            .reverse()
-            .filter((m) => m.role === "user" || m.role === "assistant")
-            .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
+          const visionHistory = historyMessages.filter(
+            (m): m is { role: "user" | "assistant"; content: string } =>
+              m.role === "user" || m.role === "assistant",
+          );
 
           const encoderV = new TextEncoder();
           const visionBody = new ReadableStream<Uint8Array>({
