@@ -1815,29 +1815,39 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       )}
 
       <div className="flex-shrink-0 overflow-x-auto">
-        <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
+        <motion.div layout className="min-w-[580px] min-h-[420px] grid gap-2.5"
           style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 110px",gridTemplateAreas:`"s0 s0 s1" "s0 s0 s2" "s3 s4 s5"`}}>
-          {tiles.slice(0, 6).map((tile, i) => {
-            const size = slots[i];
-            const key = tile.kind === "domain" ? tile.id : "other";
-            return (
-              <div key={key} style={{gridArea:`s${i}`}}>
-                {tile.kind === "domain" ? (
-                  <DomainCard
-                    domain={DOMAINS[tile.id]}
-                    size={size}
-                    onClick={() => onDomain(tile.id)}
-                    liveItems={liveByDomain[tile.id]}
-                    liveCount={liveByDomain[tile.id]?.length}
-                    urgency={urgencyByDomain[tile.id]}
-                  />
-                ) : (
-                  <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
-                )}
-              </div>
-            );
-          })}
-        </div>
+          <AnimatePresence initial={false}>
+            {tiles.slice(0, 6).map((tile, i) => {
+              const size = slots[i];
+              const key = tile.kind === "domain" ? tile.id : "other";
+              return (
+                <motion.div
+                  key={key}
+                  layout
+                  initial={{ opacity: 0, scale: 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }}
+                  transition={{ type: "spring", stiffness: 380, damping: 34, mass: 0.8 }}
+                  style={{gridArea:`s${i}`, minWidth: 0}}
+                >
+                  {tile.kind === "domain" ? (
+                    <DomainCard
+                      domain={DOMAINS[tile.id]}
+                      size={size}
+                      onClick={() => onDomain(tile.id)}
+                      liveItems={liveByDomain[tile.id]}
+                      liveCount={liveByDomain[tile.id]?.length}
+                      urgency={urgencyByDomain[tile.id]}
+                    />
+                  ) : (
+                    <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
+                  )}
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </motion.div>
       </div>
     </div>
   );
