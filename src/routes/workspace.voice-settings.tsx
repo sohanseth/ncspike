@@ -6,6 +6,11 @@ import {
   setPreferLocalAudio,
   syncPreferLocalAudio,
 } from "@/lib/voice-preferences";
+import {
+  probeLocalAudioCapability,
+  isLocalAudioToggleAvailable,
+  type ExtendedLocalAudioCapability,
+} from "@/lib/voice-capability";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/workspace/voice-settings")({
@@ -27,9 +32,11 @@ function VoiceSettingsPage() {
   const [preferLocal, setPreferLocal] = useState<boolean>(true);
   const [syncing, setSyncing] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [capability, setCapability] = useState<ExtendedLocalAudioCapability | null>(null);
 
   useEffect(() => {
     setPreferLocal(readPreferLocalAudio());
+    void probeLocalAudioCapability().then(setCapability);
     if (!user) return;
     void (async () => {
       setSyncing(true);
@@ -38,6 +45,8 @@ function VoiceSettingsPage() {
       setSyncing(false);
     })();
   }, [user]);
+
+  const toggleAvailable = isLocalAudioToggleAvailable(capability);
 
   if (loading || !user) {
     return (
