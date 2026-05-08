@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import type { LucideIcon } from "lucide-react";
@@ -12,7 +12,29 @@ import {
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
+import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
+// Lazy-loaded so the entire voice surface (resolver, StatusPill, SpeakingOrb)
+// is code-split out of the main bundle when the dogfood flag is off.
+const ConverseInput = lazy(() =>
+  import("@/components/workspace/ConverseInput").then((m) => ({ default: m.ConverseInput })),
+);
+import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
+
+// Phase 2.8 Day-2 dogfooding flag. Default off; flip on locally with
+// `VITE_ENABLE_CONVERSE_VOICE=true` to mount ConverseInput inside ChatPanel
+// and exercise resolver / StatusPill / settings end-to-end. Skipped on SSR.
+const CONVERSE_VOICE_FLAG: boolean =
+  typeof import.meta !== "undefined" &&
+  (import.meta as unknown as { env?: Record<string, string | undefined> }).env
+    ?.VITE_ENABLE_CONVERSE_VOICE === "true";
+
+const AI_MODEL_TO_BADGE: Record<AIModel, VoiceBadge> = {
+  flash: "FLASH",
+  pro: "PRO",
+  genius: "Genius",
+  private: "PRIVATE",
+};
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -2319,9 +2341,19 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || sending) return;
+  // Mirror `sending` into a ref so callers (ConverseInput via sendVoiceMessage)
+  // can detect a stale closure and react synchronously instead of silently
+  // early-returning. Without this, a turn fired from ConverseInput while the
+  // keyboard path is still streaming would clear ConverseInput's local text
+  // and resolve as a no-op — the input would vanish without ever being sent.
+  const sendingRef = useRef(false);
+  useEffect(() => { sendingRef.current = sending; }, [sending]);
+
+  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null }> => {
+    if (!text) return { provider: null };
+    if (sendingRef.current) {
+      throw new Error("BUSY");
+    }
     setError(null);
     setSending(true);
     // Optimistic: append user msg + an empty assistant msg that we'll fill via deltas.
@@ -2330,10 +2362,10 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
       { role: "user", text },
       { role: "assistant", text: "" },
     ]);
-    setInput("");
 
     let gotAnyDelta = false;
     let errorMsg: string | null = null;
+    let finalProvider: string | null = null;
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
       const stream = streamChatMessage({ threadId, content: text, badge: model });
@@ -2341,6 +2373,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         if (evt.kind === "init") {
           setThreadId(evt.threadId);
         } else if (evt.kind === "meta") {
+          finalProvider = evt.provider ?? finalProvider;
           setMessages(prev => {
             const next = prev.slice();
             const last = next[next.length - 1];
@@ -2363,6 +2396,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             return next;
           });
         } else if (evt.kind === "done") {
+          finalProvider = evt.provider ?? finalProvider;
           setMessages(prev => {
             const next = prev.slice();
             const last = next[next.length - 1];
@@ -2414,7 +2448,38 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
       }
       setSending(false);
     }
-  }, [input, sending, threadId, model]);
+    return { provider: finalProvider };
+  }, [threadId, model]);
+
+  const handleSend = useCallback(() => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setInput("");
+    void runChatTurn(text).catch(() => { /* keyboard path can't BUSY-race itself */ });
+  }, [input, sending, runChatTurn]);
+
+  // ConverseInput integration seam (Phase 2.8 Day 2 dogfooding, flag-gated).
+  // Wraps runChatTurn so a voice (or ConverseInput-typed) turn streams into the
+  // same thread as the keyboard input. Returns empty `text` because the reply
+  // already renders in the message list — ConverseInput only uses the return
+  // value to optionally play TTS audio (skipped here: text-only on web).
+  // BUSY race: ConverseInput is also visually disabled below via a
+  // pointer-events overlay while `sending`, so this catch is defense-in-depth
+  // for the rare race between state-tick and pointer-up.
+  const sendVoiceMessage = useCallback<SendVoiceMessage>(async (text) => {
+    try {
+      const { provider } = await runChatTurn(text);
+      return { text: "", llmProvider: provider ?? undefined };
+    } catch (e) {
+      if (e instanceof Error && e.message === "BUSY") {
+        void import("sonner").then(({ toast }) => {
+          toast("Still finishing the previous reply — try again in a moment.");
+        });
+        return { text: "" };
+      }
+      throw e;
+    }
+  }, [runChatTurn]);
 
   if(!open) return null;
 
@@ -2561,6 +2626,31 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
               );
             })}
           </div>
+
+          {CONVERSE_VOICE_FLAG && (
+            <div className="pt-2 border-t border-white/[0.06]">
+              <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/40 mb-1.5">
+                Converse (Phase 2.8 preview)
+              </div>
+              {/* Pointer-events overlay closes the BUSY race without touching
+                  ConverseInput (Lovable-owned per §3). When ChatPanel is
+                  streaming, ConverseInput is non-interactive AND visually
+                  dimmed, so a user can't fire a second turn whose `text`
+                  would be cleared by ConverseInput before runChatTurn
+                  rejects with BUSY. */}
+              <div
+                className={sending ? "pointer-events-none opacity-50" : ""}
+                aria-busy={sending}
+              >
+                <Suspense fallback={<div className="h-16 rounded-lg bg-white/[0.03] animate-pulse" />}>
+                  <ConverseInput
+                    badge={AI_MODEL_TO_BADGE[model]}
+                    sendVoiceMessage={sendVoiceMessage}
+                  />
+                </Suspense>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

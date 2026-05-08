@@ -163,6 +163,21 @@ These are flagged from the §6/§V8/§V9 revision pass. None block your Day 3 wo
 
 ---
 
+## 10c. Main-agent integration scaffold (2026-05-08)
+
+Mounted `ConverseInput` inside `ChatPanel` (MainApp.tsx) behind `VITE_ENABLE_CONVERSE_VOICE` (default off, lazy-loaded so the voice surface is code-split out of the main bundle). Wires:
+
+- Refactored `handleSend` body into `runChatTurn(text)` returning `{ provider }`. Both the keyboard input button and `sendVoiceMessage` go through it, so a voice (or ConverseInput-typed) turn streams into the same `messages` thread as keyboard input — no double-render, no second pipeline.
+- `sendVoiceMessage` returns `{ text: "", llmProvider }` so `StatusPill` updates with the live LLM provider; `audioUrl` deliberately omitted (text-only on web per V8).
+- BUSY race fix: `sendingRef` mirrors `sending`; `runChatTurn` throws `"BUSY"` if another turn is in flight; `sendVoiceMessage` catches that and shows a sonner toast instead of silently dropping the user's input. Belt-and-braces: ConverseInput is wrapped in a `pointer-events-none + opacity-50` div while `sending` is true.
+- Badge mapping: `flash→FLASH`, `pro→PRO`, `genius→Genius`, `private→PRIVATE`.
+
+**What's left for Lovable on Day 3:**
+- Wire `SpeechRecognition` (web STT) into the ConverseInput mic button. Currently the `holding` state toggles but no transcription fires. Suggest: `useEffect` watching `holding`, start/stop a `webkitSpeechRecognition` session, push interim results into `partial`, push final into `setText` then call `handleSubmit`.
+- Optional: accept a `disabled?: boolean` prop on `<ConverseInput>` so ChatPanel can stop using the pointer-events overlay hack.
+
+---
+
 ## 11. Day 2 notes (2026-05-08)
 
 **Decision: no WASM on web — defer Whisper.cpp / Piper to the Capacitor native shell (~Phase 4).**
