@@ -1,6 +1,12 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Mail, Calendar, Loader2, CheckCircle2, AlertCircle, Plug, Inbox, Mic, RefreshCw } from "lucide-react";
+import {
+  Mail, Calendar, Loader2, CheckCircle2, AlertCircle, Plug, Inbox, Mic, RefreshCw,
+  MessageSquare, Send, Phone, Video, Users, Hash, MessageCircle, AtSign, Sparkles, Check,
+  Briefcase, FileText, Github, Trello, Cloud, CreditCard, ShoppingCart, Database,
+  Headphones, Music, Bell, BookOpen, ClipboardList, Megaphone, FileSpreadsheet,
+  Figma, Youtube, Instagram, Facebook, Twitter, Globe, Zap, GitBranch, Box,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { startGoogleOAuth } from "@/lib/google-oauth.functions";
 import {
@@ -470,6 +476,10 @@ function ConnectionsPage() {
           </section>
         )}
 
+        <MoreIntegrations />
+
+        <RequestConnection />
+
         <button
           onClick={() => navigate({ to: "/workspace" })}
           className="text-xs text-muted-foreground hover:text-foreground"
@@ -478,5 +488,180 @@ function ConnectionsPage() {
         </button>
       </div>
     </div>
+  );
+}
+
+// 10 most popular tools — wired to a Connect action.
+const POPULAR_TOOLS: Array<{ id: string; label: string; blurb: string; Icon: typeof MessageSquare }> = [
+  { id: "slack", label: "Slack", Icon: Hash, blurb: "Channels, DMs, and threads." },
+  { id: "ms_teams", label: "Microsoft Teams", Icon: Users, blurb: "Chats, meetings, channels." },
+  { id: "outlook", label: "Outlook", Icon: Mail, blurb: "Email + calendar from Microsoft 365." },
+  { id: "whatsapp", label: "WhatsApp", Icon: MessageCircle, blurb: "Via Twilio Business API." },
+  { id: "telegram", label: "Telegram", Icon: Send, blurb: "Bot API for chats & channels." },
+  { id: "discord", label: "Discord", Icon: MessageSquare, blurb: "Servers, channels, DMs." },
+  { id: "zoom", label: "Zoom", Icon: Video, blurb: "Meetings, recordings, transcripts." },
+  { id: "notion", label: "Notion", Icon: BookOpen, blurb: "Pages, databases, blocks." },
+  { id: "hubspot", label: "HubSpot", Icon: Briefcase, blurb: "CRM, marketing, sales." },
+  { id: "linear", label: "Linear", Icon: ClipboardList, blurb: "Issues, projects, cycles." },
+];
+
+const CONNECTED_KEY = "nc:popular-connected";
+
+function loadConnected(): string[] {
+  if (typeof window === "undefined") return [];
+  try { return JSON.parse(localStorage.getItem(CONNECTED_KEY) ?? "[]"); } catch { return []; }
+}
+function saveConnected(list: string[]) {
+  if (typeof window !== "undefined") localStorage.setItem(CONNECTED_KEY, JSON.stringify(list));
+}
+
+
+const REQUEST_KEY = "nc:connection-requests";
+
+function loadRequests(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(REQUEST_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRequests(list: string[]) {
+  if (typeof window !== "undefined") localStorage.setItem(REQUEST_KEY, JSON.stringify(list));
+}
+
+function MoreIntegrations() {
+  const [connected, setConnected] = useState<Set<string>>(() => new Set(loadConnected()));
+
+  const onConnect = (id: string, label: string) => {
+    const next = new Set(connected);
+    next.add(id);
+    setConnected(next);
+    const list = loadConnected();
+    if (!list.includes(id)) {
+      list.push(id);
+      saveConnected(list);
+    }
+    // Stub: real OAuth flow not yet wired. Surface intent to the user.
+    if (typeof window !== "undefined") {
+      window.alert(`${label} connection coming soon — we'll route you through OAuth here.`);
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <h2 className="font-display text-xl font-semibold">More integrations</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            The most-used tools — connect any of them to bring their data into your workspace.
+          </p>
+        </div>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {POPULAR_TOOLS.map(({ id, label, blurb, Icon }) => {
+          const isConnected = connected.has(id);
+          return (
+            <article key={id} className="glass rounded-2xl p-4 flex items-start gap-3">
+              <div className="size-10 rounded-xl bg-secondary/60 ring-1 ring-border flex items-center justify-center shrink-0">
+                <Icon className="size-4 text-foreground/80" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h4 className="font-display font-semibold text-sm">{label}</h4>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{blurb}</p>
+              </div>
+              <button
+                onClick={() => onConnect(id, label)}
+                disabled={isConnected}
+                className={`shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium ring-1 transition ${
+                  isConnected
+                    ? "ring-emerald-500/30 bg-emerald-500/10 text-emerald-400 cursor-default"
+                    : "ring-primary/40 bg-primary/10 hover:bg-primary/20 text-foreground"
+                }`}
+              >
+                {isConnected ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="size-3" /> Connected
+                  </span>
+                ) : (
+                  "Connect"
+                )}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RequestConnection() {
+  const [name, setName] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const list = loadRequests();
+    const entry = reason.trim() ? `${name.trim()} — ${reason.trim()}` : name.trim();
+    list.push(entry);
+    saveRequests(list);
+    setSubmitted(true);
+    setName("");
+    setReason("");
+    setTimeout(() => setSubmitted(false), 2500);
+  };
+
+  return (
+    <section className="glass-elevated rounded-2xl p-5">
+      <div className="flex items-start gap-3">
+        <div className="size-10 rounded-xl bg-primary/15 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+          <Sparkles className="size-4 text-primary" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-display font-semibold">Don't see your tool?</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Tell us what you'd like to connect. Requests feed our roadmap.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={submit} className="mt-4 space-y-3">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Tool name (e.g. Notion, Front, Intercom)"
+          maxLength={80}
+          className="w-full bg-surface/40 ring-1 ring-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-primary"
+        />
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="What would you use it for? (optional)"
+          maxLength={300}
+          rows={3}
+          className="w-full bg-surface/40 ring-1 ring-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-primary resize-none"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {submitted ? (
+            <span className="text-xs text-emerald-400 inline-flex items-center gap-1">
+              <CheckCircle2 className="size-3.5" /> Thanks — request logged.
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Stored locally for now.</span>
+          )}
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="px-3 py-2 rounded-md text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            Submit request
+          </button>
+        </div>
+      </form>
+    </section>
   );
 }

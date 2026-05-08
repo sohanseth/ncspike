@@ -81,6 +81,12 @@ export const createChatThread = createServerFn({ method: "POST" })
 // Messages
 // ──────────────────────────────────────────────────────────────────────────────
 
+export type ChatAttachmentPayload = {
+  url: string;
+  mime: string;
+  storagePath: string;
+};
+
 export type ChatMessagePayload = {
   id: string;
   threadId: string;
@@ -91,6 +97,7 @@ export type ChatMessagePayload = {
   provider: string | null;
   model: string | null;
   fallbackDepth: number | null;
+  attachments: ChatAttachmentPayload[];
 };
 
 export const loadChatMessages = createServerFn({ method: "POST" })
@@ -105,7 +112,29 @@ export const loadChatMessages = createServerFn({ method: "POST" })
       .order("created_at", { ascending: true })
       .limit(HISTORY_WINDOW);
     if (error) throw error;
-    return (rows ?? []).map((r) => ({
+    const messages = rows ?? [];
+
+    // Fetch + sign all attachment URLs in one shot.
+    const messageIds = messages.map((m) => m.id);
+    const attachmentsByMessage = new Map<string, ChatAttachmentPayload[]>();
+    if (messageIds.length > 0) {
+      const { data: atts } = await supabaseAdmin
+        .from("chat_message_attachments")
+        .select("message_id, storage_path, mime")
+        .in("message_id", messageIds);
+      for (const a of atts ?? []) {
+        const sign = await supabaseAdmin.storage
+          .from("chat-attachments")
+          .createSignedUrl(a.storage_path, 60 * 60 * 24);
+        const url = sign.data?.signedUrl ?? "";
+        if (!url) continue;
+        const list = attachmentsByMessage.get(a.message_id) ?? [];
+        list.push({ url, mime: a.mime, storagePath: a.storage_path });
+        attachmentsByMessage.set(a.message_id, list);
+      }
+    }
+
+    return messages.map((r) => ({
       id: r.id,
       threadId: r.thread_id,
       role: r.role,
@@ -115,6 +144,7 @@ export const loadChatMessages = createServerFn({ method: "POST" })
       provider: r.provider,
       model: r.model,
       fallbackDepth: r.fallback_depth,
+      attachments: attachmentsByMessage.get(r.id) ?? [],
     }));
   });
 
@@ -323,6 +353,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       provider: r.provider,
       model: r.model,
       fallbackDepth: r.fallback_depth,
+      attachments: [],
     });
 
     return {

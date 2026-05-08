@@ -9,8 +9,16 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip,
 } from "lucide-react";
+import {
+  makePending,
+  revokePending,
+  uploadAttachments,
+  validateImage,
+  MAX_FILES_PER_MESSAGE,
+  type PendingAttachment,
+} from "@/lib/chat-attachments";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 import { ContextFooter } from "@/components/workspace/ContextFooter";
 import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
@@ -1672,7 +1680,7 @@ function InboxRow({
           <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
           <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
         </div>
-        <div className="flex items-center gap-1 flex-shrink-0 opacity-50 group-hover:opacity-100 transition-opacity">
+        <div className="flex items-center gap-1 flex-shrink-0 opacity-90 group-hover:opacity-100 transition-opacity">
           {draftable && draft.button}
           <IconBtn icon={PenLine} label="Compose reply" onClick={onCompose} color="default"/>
           <IconBtn icon={Check}   label="Mark done"     onClick={onMarkDone} color="green"/>
@@ -1737,7 +1745,7 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
       )}
       {visible.map(item => {
         const s = CAT_STYLE[item.category];
-        const draftable = (item.category === "urgent" || item.category === "today")
+        const draftable = item.category !== "ignore"
           && (status?.featureEnabled ?? true);
         return (
           <InboxRow
@@ -2112,7 +2120,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
           )}
           {visible.map(item => {
             const s = CAT_STYLE[item.category];
-            const draftable = (item.category === "urgent" || item.category === "today")
+            const draftable = item.category !== "ignore"
               && (status?.featureEnabled ?? true);
             return (
               <InboxRow
@@ -2345,6 +2353,8 @@ const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }
 type LiveChatMsg = {
   role: "user" | "assistant";
   text: string;
+  /** Local preview URLs for image attachments (user messages only). */
+  images?: string[];
   /** Routing breadcrumb shown under assistant messages. */
   meta?: { provider: string | null; model: string | null; fallbackDepth: number | null };
   /** Personalization context the broker injected for this turn (D8 Day 5). */
@@ -2353,6 +2363,46 @@ type LiveChatMsg = {
 
 function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [input, setInput] = useState("");
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [uploadingAttachments, setUploadingAttachments] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const addFiles = useCallback((files: FileList | File[]) => {
+    const arr = Array.from(files);
+    setAttachments(prev => {
+      const next = [...prev];
+      for (const f of arr) {
+        if (next.length >= MAX_FILES_PER_MESSAGE) {
+          void import("sonner").then(({ toast }) =>
+            toast.error(`Max ${MAX_FILES_PER_MESSAGE} images per message`),
+          );
+          break;
+        }
+        const err = validateImage(f);
+        if (err) {
+          void import("sonner").then(({ toast }) => toast.error(err));
+          continue;
+        }
+        next.push(makePending(f));
+      }
+      return next;
+    });
+  }, []);
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments(prev => {
+      const target = prev.find(p => p.id === id);
+      if (target) revokePending(target);
+      return prev.filter(p => p.id !== id);
+    });
+  }, []);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => () => {
+    attachments.forEach(revokePending);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [model, setModel] = useState<AIModel>("flash");
   const [messages, setMessages] = useState<LiveChatMsg[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
@@ -2392,17 +2442,37 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const sendingRef = useRef(false);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
 
-  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null; text: string }> => {
-    if (!text) return { provider: null, text: "" };
+  const runChatTurn = useCallback(async (
+    text: string,
+    pending: PendingAttachment[] = [],
+  ): Promise<{ provider: string | null; text: string }> => {
+    if (!text && pending.length === 0) return { provider: null, text: "" };
     if (sendingRef.current) {
       throw new Error("BUSY");
     }
     setError(null);
     setSending(true);
+
+    // Upload attachments first so we can include their storage paths.
+    let attachmentPaths: string[] = [];
+    const previewUrls = pending.map(p => p.previewUrl);
+    if (pending.length > 0) {
+      setUploadingAttachments(true);
+      try {
+        attachmentPaths = await uploadAttachments(pending);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Upload failed");
+        setSending(false);
+        setUploadingAttachments(false);
+        return { provider: null, text: "" };
+      }
+      setUploadingAttachments(false);
+    }
+
     // Optimistic: append user msg + an empty assistant msg that we'll fill via deltas.
     setMessages(prev => [
       ...prev,
-      { role: "user", text },
+      { role: "user", text, images: previewUrls.length ? previewUrls : undefined },
       { role: "assistant", text: "" },
     ]);
 
@@ -2412,7 +2482,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     let assistantText = "";
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
-      const stream = streamChatMessage({ threadId, content: text, badge: model });
+      const stream = streamChatMessage({ threadId, content: text, badge: model, attachments: attachmentPaths });
       for await (const evt of stream) {
         if (evt.kind === "init") {
           setThreadId(evt.threadId);
@@ -2500,10 +2570,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && attachments.length === 0) || sending) return;
+    const pending = attachments;
     setInput("");
-    void runChatTurn(text).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, sending, runChatTurn]);
+    setAttachments([]);
+    void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
+  }, [input, attachments, sending, runChatTurn]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
@@ -2541,9 +2613,22 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full max-w-[520px] max-h-[85vh] rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
+      <div className={`w-full max-w-[520px] max-h-[85vh] rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
-        onClick={e=>e.stopPropagation()}>
+        onClick={e=>e.stopPropagation()}
+        onDragOver={e => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
+        onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
+        onDrop={e => {
+          e.preventDefault();
+          setIsDragging(false);
+          const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith("image/"));
+          if (files.length) addFiles(files);
+        }}>
+        {isDragging && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/10 border-2 border-dashed border-primary/50 rounded-3xl pointer-events-none">
+            <p className="text-[13px] font-mono text-primary">Drop images to attach</p>
+          </div>
+        )}
 
         {/* Header */}
         <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-shrink-0">
@@ -2618,8 +2703,17 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   )}
                 </div>
               ) : (
-                <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 max-w-[80%]">
-                  <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                <div className="rounded-2xl rounded-tr-sm px-3.5 py-2.5 bg-primary/15 border border-primary/20 max-w-[80%] flex flex-col gap-2">
+                  {msg.images && msg.images.length > 0 && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {msg.images.map((src, k) => (
+                        <img key={k} src={src} alt="" className="rounded-lg max-h-40 object-cover w-full border border-white/10" />
+                      ))}
+                    </div>
+                  )}
+                  {msg.text && (
+                    <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -2656,18 +2750,74 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           </div>
 
           {mode === "text" ? (
-            <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
-              <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
-                onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
-                disabled={sending}
-                placeholder={sending ? "Sending…" : "Message your assistant…"}
-                className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
-                style={{fontFamily:"'DM Sans',sans-serif"}}/>
-              <button onClick={handleSend} disabled={sending || !input.trim()}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
-                <Send size={11}/>
-              </button>
+            <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {attachments.map(a => (
+                    <div key={a.id} className="relative group">
+                      <img src={a.previewUrl} alt="" className="h-12 w-12 rounded-md object-cover border border-white/15" />
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(a.id)}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+                        aria-label="Remove image"
+                      >
+                        <X size={9}/>
+                      </button>
+                    </div>
+                  ))}
+                  {uploadingAttachments && (
+                    <span className="text-[10px] font-mono text-muted-foreground/60 self-center">uploading…</span>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files) addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Attach image"
+                  title="Attach image"
+                >
+                  <Paperclip size={13}/>
+                </button>
+                <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
+                  onPaste={e => {
+                    const files: File[] = [];
+                    for (const item of Array.from(e.clipboardData.items)) {
+                      if (item.kind === "file") {
+                        const f = item.getAsFile();
+                        if (f && f.type.startsWith("image/")) files.push(f);
+                      }
+                    }
+                    if (files.length) {
+                      e.preventDefault();
+                      addFiles(files);
+                    }
+                  }}
+                  disabled={sending}
+                  placeholder={sending ? "Sending…" : attachments.length ? "Add a caption…" : "Message your assistant…"}
+                  className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
+                  style={{fontFamily:"'DM Sans',sans-serif"}}/>
+                <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
+                  <Send size={11}/>
+                </button>
+              </div>
             </div>
           ) : (
             <div
