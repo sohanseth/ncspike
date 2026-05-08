@@ -12,7 +12,7 @@
  * substring — logging it would itself leak the PII we caught).
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { INJECTION_SENTINELS } from "@/server/trait-schema";
+import { INJECTION_SENTINELS } from "@/lib/trait-schema";
 
 export type ScrubPatternClass =
   | "email"

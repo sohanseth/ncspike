@@ -12,7 +12,7 @@ import {
   scheduleReextract,
   type PersonalizationPreset,
 } from "@/lib/personalization.functions";
-import { TRAIT_CATEGORIES, type TraitCategory } from "@/server/trait-schema";
+import { TRAIT_CATEGORIES, type TraitCategory } from "@/lib/trait-schema";
 import { cn } from "@/lib/utils";
 import { Loader, Download, Trash2, RefreshCw, ShieldOff } from "lucide-react";
 

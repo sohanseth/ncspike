@@ -30,7 +30,7 @@ import {
   type SourceRef,
   type TraitCategory,
   type TraitSheet,
-} from "@/server/trait-schema";
+} from "@/lib/trait-schema";
 import { scrub } from "@/server/pii-scrub";
 
 const MEMORY_WINDOW_DAYS = 30;

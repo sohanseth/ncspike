@@ -2567,7 +2567,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   )}
                   {msg.contextUsed && msg.contextUsed.categories.length > 0 && (
                     <ContextFooter
-                      contextUsed={msg.contextUsed as { categories: import("@/server/trait-schema").TraitCategory[]; trait_paths: string[] }}
+                      contextUsed={msg.contextUsed as { categories: import("@/lib/trait-schema").TraitCategory[]; trait_paths: string[] }}
                       provider={msg.meta?.provider ?? null}
                     />
                   )}
