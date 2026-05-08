@@ -487,3 +487,167 @@ function ConnectionsPage() {
     </div>
   );
 }
+
+const POPULAR_TOOLS: Array<{ id: string; label: string; blurb: string; Icon: typeof MessageSquare }> = [
+  { id: "slack", label: "Slack", Icon: Hash, blurb: "Channels, DMs, and threads." },
+  { id: "ms_teams", label: "Microsoft Teams", Icon: Users, blurb: "Chats, meetings, channels." },
+  { id: "outlook", label: "Outlook", Icon: Mail, blurb: "Email + calendar from Microsoft 365." },
+  { id: "whatsapp", label: "WhatsApp", Icon: MessageCircle, blurb: "Via Twilio Business API." },
+  { id: "telegram", label: "Telegram", Icon: Send, blurb: "Bot API for chats & channels." },
+  { id: "discord", label: "Discord", Icon: MessageSquare, blurb: "Servers, channels, DMs." },
+  { id: "zoom", label: "Zoom", Icon: Video, blurb: "Meetings, recordings, transcripts." },
+  { id: "twilio_sms", label: "SMS (Twilio)", Icon: Phone, blurb: "Send & receive text messages." },
+  { id: "signal", label: "Signal", Icon: MessageCircle, blurb: "End-to-end encrypted messaging." },
+  { id: "messenger", label: "Messenger", Icon: MessageCircle, blurb: "Meta Business Messaging." },
+  { id: "linkedin", label: "LinkedIn", Icon: AtSign, blurb: "Messages & InMail." },
+  { id: "x_dm", label: "X (Twitter) DMs", Icon: AtSign, blurb: "Direct messages on X." },
+];
+
+const REQUEST_KEY = "nc:connection-requests";
+
+function loadRequests(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    return JSON.parse(localStorage.getItem(REQUEST_KEY) ?? "[]");
+  } catch {
+    return [];
+  }
+}
+
+function saveRequests(list: string[]) {
+  if (typeof window !== "undefined") localStorage.setItem(REQUEST_KEY, JSON.stringify(list));
+}
+
+function MoreIntegrations() {
+  const [requested, setRequested] = useState<Set<string>>(() => new Set(loadRequests()));
+
+  const onRequest = (id: string, label: string) => {
+    const next = new Set(requested);
+    next.add(id);
+    setRequested(next);
+    const list = loadRequests();
+    if (!list.includes(label)) {
+      list.push(label);
+      saveRequests(list);
+    }
+  };
+
+  return (
+    <section>
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <h2 className="font-display text-xl font-semibold">More integrations</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Popular communication tools. Request the ones you'd like next — we prioritize by demand.
+          </p>
+        </div>
+        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+          Coming soon
+        </span>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {POPULAR_TOOLS.map(({ id, label, blurb, Icon }) => {
+          const isRequested = requested.has(id);
+          return (
+            <article key={id} className="glass rounded-2xl p-4 flex items-start gap-3">
+              <div className="size-10 rounded-xl bg-secondary/60 ring-1 ring-border flex items-center justify-center shrink-0">
+                <Icon className="size-4 text-foreground/80" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="font-display font-semibold text-sm">{label}</h3>
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{blurb}</p>
+              </div>
+              <button
+                onClick={() => onRequest(id, label)}
+                disabled={isRequested}
+                className={`shrink-0 px-2.5 py-1.5 rounded-md text-[11px] font-medium ring-1 transition ${
+                  isRequested
+                    ? "ring-emerald-500/30 bg-emerald-500/10 text-emerald-400 cursor-default"
+                    : "ring-border hover:bg-secondary text-foreground"
+                }`}
+              >
+                {isRequested ? (
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="size-3" /> Requested
+                  </span>
+                ) : (
+                  "Request"
+                )}
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function RequestConnection() {
+  const [name, setName] = useState("");
+  const [reason, setReason] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const list = loadRequests();
+    const entry = reason.trim() ? `${name.trim()} — ${reason.trim()}` : name.trim();
+    list.push(entry);
+    saveRequests(list);
+    setSubmitted(true);
+    setName("");
+    setReason("");
+    setTimeout(() => setSubmitted(false), 2500);
+  };
+
+  return (
+    <section className="glass-elevated rounded-2xl p-5">
+      <div className="flex items-start gap-3">
+        <div className="size-10 rounded-xl bg-primary/15 ring-1 ring-primary/20 flex items-center justify-center shrink-0">
+          <Sparkles className="size-4 text-primary" />
+        </div>
+        <div className="flex-1">
+          <h3 className="font-display font-semibold">Don't see your tool?</h3>
+          <p className="text-sm text-muted-foreground mt-1">
+            Tell us what you'd like to connect. Requests feed our roadmap.
+          </p>
+        </div>
+      </div>
+
+      <form onSubmit={submit} className="mt-4 space-y-3">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Tool name (e.g. Notion, Front, Intercom)"
+          maxLength={80}
+          className="w-full bg-surface/40 ring-1 ring-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-primary"
+        />
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="What would you use it for? (optional)"
+          maxLength={300}
+          rows={3}
+          className="w-full bg-surface/40 ring-1 ring-border rounded-lg px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-primary resize-none"
+        />
+        <div className="flex items-center justify-between gap-2">
+          {submitted ? (
+            <span className="text-xs text-emerald-400 inline-flex items-center gap-1">
+              <CheckCircle2 className="size-3.5" /> Thanks — request logged.
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">Stored locally for now.</span>
+          )}
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="px-3 py-2 rounded-md text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+          >
+            Submit request
+          </button>
+        </div>
+      </form>
+    </section>
+  );
+}
