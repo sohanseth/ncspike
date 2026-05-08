@@ -442,27 +442,54 @@ function TopBar({
 
 // ─── Bento domain card ────────────────────────────────────────────────────────
 
-function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
+type UrgencyCounts = { urgent: number; today: number; proactive: number };
+
+function UrgencyBadges({ counts, compact }: { counts: UrgencyCounts; compact?: boolean }) {
+  const badges = [
+    { n: counts.urgent,    bg: "rgba(248,113,113,0.18)", ring: "rgba(248,113,113,0.45)", color: "#fca5a5", glow: "0 0 6px rgba(248,113,113,0.55)", label: "urgent" },
+    { n: counts.today,     bg: "rgba(251,191,36,0.16)",  ring: "rgba(251,191,36,0.4)",   color: "#fcd34d", glow: "0 0 6px rgba(251,191,36,0.45)", label: "today" },
+    { n: counts.proactive, bg: "rgba(155,109,250,0.16)", ring: "rgba(155,109,250,0.4)",  color: "#c4b5fd", glow: "0 0 6px rgba(155,109,250,0.45)", label: "proactive" },
+  ].filter(b => b.n > 0);
+  if (!badges.length) return null;
+  return (
+    <div className="flex items-center gap-1 flex-shrink-0">
+      {badges.map(b => (
+        <span key={b.label} title={`${b.n} ${b.label}`}
+          className={`inline-flex items-center gap-1 ${compact?"px-1.5 py-px":"px-2 py-0.5"} rounded-full font-mono text-[9.5px] font-semibold border`}
+          style={{background:b.bg, borderColor:b.ring, color:b.color, boxShadow:b.glow}}>
+          <span className="w-1 h-1 rounded-full" style={{background:b.color}}/>
+          {b.n}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
   domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
   liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
   liveCount?: number;
+  urgency?: UrgencyCounts;
 }) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
   const items = liveItems && liveItems.length ? liveItems : domain.items;
+  const hasUrgency = urgency && (urgency.urgent + urgency.today + urgency.proactive) > 0;
   const activity = liveCount !== undefined ? Math.min(1, liveCount / 5) : domain.activity;
   return (
-    <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group`}
+    <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group relative`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}55)`,boxShadow:`0 1px 8px ${c.glow}`}}>
             <Icon size={12} style={{color:c.icon}}/>
           </div>
-          <span className="text-[12px] font-semibold text-foreground/85" style={{fontFamily:"'DM Sans',sans-serif"}}>{domain.label}</span>
+          <span className="text-[12px] font-semibold text-foreground/85 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{domain.label}</span>
         </div>
-        {size!=="sm" && (
+        {urgency && hasUrgency ? (
+          <UrgencyBadges counts={urgency} compact={size==="sm"}/>
+        ) : size!=="sm" && (
           <div className="flex items-center gap-1.5">
             <div className="w-10 h-[2.5px] rounded-full bg-white/[0.07] overflow-hidden">
               <div className={`h-full rounded-full ${c.bar}`} style={{width:`${activity*100}%`,opacity:0.8}}/>
