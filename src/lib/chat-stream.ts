@@ -49,6 +49,8 @@ export type StreamChatInput = {
   threadId: string | null;
   content: string;
   badge: Badge;
+  /** Storage paths in the chat-attachments bucket. Optional. */
+  attachments?: string[];
   signal?: AbortSignal;
 };
 
@@ -75,6 +77,7 @@ export async function* streamChatMessage(
         threadId: input.threadId,
         content: input.content,
         badge: input.badge,
+        attachments: input.attachments ?? [],
       }),
     });
   } catch (e) {

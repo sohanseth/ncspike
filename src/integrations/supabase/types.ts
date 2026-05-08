@@ -61,6 +61,50 @@ export type Database = {
           },
         ]
       }
+      chat_message_attachments: {
+        Row: {
+          bytes: number | null
+          created_at: string
+          height: number | null
+          id: string
+          message_id: string
+          mime: string
+          storage_path: string
+          user_id: string
+          width: number | null
+        }
+        Insert: {
+          bytes?: number | null
+          created_at?: string
+          height?: number | null
+          id?: string
+          message_id: string
+          mime: string
+          storage_path: string
+          user_id: string
+          width?: number | null
+        }
+        Update: {
+          bytes?: number | null
+          created_at?: string
+          height?: number | null
+          id?: string
+          message_id?: string
+          mime?: string
+          storage_path?: string
+          user_id?: string
+          width?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_message_attachments_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           badge: string | null
