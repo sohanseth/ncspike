@@ -2392,8 +2392,8 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const sendingRef = useRef(false);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
 
-  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null }> => {
-    if (!text) return { provider: null };
+  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null; text: string }> => {
+    if (!text) return { provider: null, text: "" };
     if (sendingRef.current) {
       throw new Error("BUSY");
     }
