@@ -778,6 +778,41 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_phase2_retention: {
+        Args: never
+        Returns: {
+          auth_callback_rejections_deleted: number
+          chat_context_log_deleted: number
+          cron_run_deleted: number
+          device_tokens_deleted: number
+          extraction_failures_deleted: number
+          inference_usage_daily_deleted: number
+          inference_usage_rolled_up: number
+          pii_scrub_events_deleted: number
+          push_permission_events_deleted: number
+          research_tasks_deleted: number
+          tool_invocations_deleted: number
+        }[]
+      }
+      delete_user_data: {
+        Args: { target_user_id: string }
+        Returns: {
+          chat_context_log_deleted: number
+          chat_messages_deleted: number
+          chat_threads_deleted: number
+          extraction_failures_deleted: number
+          inference_usage_daily_deleted: number
+          inference_usage_deleted: number
+          memory_edges_deleted: number
+          memory_nodes_deleted: number
+          pii_scrub_events_deleted: number
+          user_known_names_deleted: number
+          user_provider_category_blocks_del: number
+          user_settings_deleted: number
+          user_trait_blocks_deleted: number
+          user_traits_deleted: number
+        }[]
+      }
       import_known_names: {
         Args: { p_names: string[]; p_source: string; p_user_id: string }
         Returns: {
