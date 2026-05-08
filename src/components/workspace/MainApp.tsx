@@ -3100,7 +3100,7 @@ export function MainApp() {
 
         <div className="flex-1 relative flex flex-col" style={{minHeight:"calc(100dvh - 56px)"}}>
           {/* Main canvas */}
-          {!mapView && <HomeCanvas onDomain={handleDomain} onOther={handleOther}/>}
+          {!mapView && <HomeCanvas onDomain={handleDomain} onOther={handleOther} doneIds={doneIds}/>}
           {mapView==="mindmap" && <MindMapCanvas/>}
           {mapView==="memory"  && <MemoryCanvas/>}
           {mapView==="signals" && <SignalsCanvas/>}
