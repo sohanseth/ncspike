@@ -185,6 +185,7 @@ export type Database = {
       }
       inference_usage: {
         Row: {
+          audio_micro_usd: number
           badge: string
           cost_micro_usd: number | null
           error_class: string | null
@@ -198,10 +199,19 @@ export type Database = {
           provider_used: string
           started_at: string
           status: string
+          stt_latency_ms: number | null
+          stt_model: string | null
+          stt_provider: string | null
           thread_id: string | null
+          tts_chars: number | null
+          tts_latency_ms: number | null
+          tts_model: string | null
+          tts_provider: string | null
           user_id: string
+          vtl_ms: number | null
         }
         Insert: {
+          audio_micro_usd?: number
           badge: string
           cost_micro_usd?: number | null
           error_class?: string | null
@@ -215,10 +225,19 @@ export type Database = {
           provider_used: string
           started_at?: string
           status: string
+          stt_latency_ms?: number | null
+          stt_model?: string | null
+          stt_provider?: string | null
           thread_id?: string | null
+          tts_chars?: number | null
+          tts_latency_ms?: number | null
+          tts_model?: string | null
+          tts_provider?: string | null
           user_id: string
+          vtl_ms?: number | null
         }
         Update: {
+          audio_micro_usd?: number
           badge?: string
           cost_micro_usd?: number | null
           error_class?: string | null
@@ -232,8 +251,16 @@ export type Database = {
           provider_used?: string
           started_at?: string
           status?: string
+          stt_latency_ms?: number | null
+          stt_model?: string | null
+          stt_provider?: string | null
           thread_id?: string | null
+          tts_chars?: number | null
+          tts_latency_ms?: number | null
+          tts_model?: string | null
+          tts_provider?: string | null
           user_id?: string
+          vtl_ms?: number | null
         }
         Relationships: []
       }
@@ -427,6 +454,8 @@ export type Database = {
         Row: {
           ai_mode: Database["public"]["Enums"]["ai_mode"]
           created_at: string
+          local_audio_capability: Json | null
+          prefer_local_audio: boolean
           preferred_model: string
           storage_mode: Database["public"]["Enums"]["storage_mode"]
           updated_at: string
@@ -436,6 +465,8 @@ export type Database = {
         Insert: {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
           created_at?: string
+          local_audio_capability?: Json | null
+          prefer_local_audio?: boolean
           preferred_model?: string
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
@@ -445,6 +476,8 @@ export type Database = {
         Update: {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
           created_at?: string
+          local_audio_capability?: Json | null
+          prefer_local_audio?: boolean
           preferred_model?: string
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string

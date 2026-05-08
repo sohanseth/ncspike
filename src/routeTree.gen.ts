@@ -14,6 +14,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
+import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
@@ -44,6 +45,11 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   path: '/workspace/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
+  id: '/workspace/usage',
+  path: '/workspace/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
   id: '/workspace/drafts',
   path: '/workspace/drafts',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace': typeof WorkspaceIndexRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/usage'
     | '/workspace/'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/usage'
     | '/workspace'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/usage'
     | '/workspace/'
     | '/api/public/whatsapp'
     | '/api/public/google/callback'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
+  WorkspaceUsageRoute: typeof WorkspaceUsageRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
@@ -184,6 +197,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/usage': {
+      id: '/workspace/usage'
+      path: '/workspace/usage'
+      fullPath: '/workspace/usage'
+      preLoaderRoute: typeof WorkspaceUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/drafts': {
       id: '/workspace/drafts'
       path: '/workspace/drafts'
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
+  WorkspaceUsageRoute: WorkspaceUsageRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
