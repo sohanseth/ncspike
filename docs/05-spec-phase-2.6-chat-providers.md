@@ -363,7 +363,7 @@ Buffer of ~half a day on Day 4 because adapter quirks always eat more time than 
 | --- | --- | --- |
 | **G1** | All 4 new API keys (`GROQ_API_KEY`, `GOOGLE_AI_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) provisioned and added to Replit Secrets before Day 1? | Block Day 1 — no fakes, no missing keys. |
 | **G2** | Free-tier daily caps as locked in C3 (20/10/0/20)? Or different starting numbers? | Ship the C3 numbers; revisit after 14 days of CPAUD data. |
-| **G3** | "GPT-5" badge label — keep verbatim, or rename to "Smart" / "Genius" / "Advanced"? | Keep "GPT-5" (matches the existing UI string). Rename only on user feedback. |
+| **G3** | "GPT-5" badge label — keep verbatim, or rename to "Smart" / "Genius" / "Advanced"? | **LOCKED 2026-05-08: rename to "Genius".** Vendor model names age badly; intent labels age well. The other three badges (Fast / Pro / Private) are intent labels — Genius matches the pattern. |
 | **G4** | Paid-tier flag wiring — admin-set boolean only in 2.6, with no Stripe integration? Or stub a `subscription_tier` enum for Stripe later? | Boolean-only in 2.6. Enum migration is a one-line change later. |
 | **G5** | History window — 20 messages, or also a token-budget cap (e.g. 4000 tokens)? | Message-count only in 2.6. Token cap is D8 once the broker exists. |
 | **G6** | PRIVATE badge fail-closed semantics — confirm we'd rather show an error than silently route to a non-private provider? | Fail-closed (per C4). Silent fallback would invalidate the badge's whole meaning. |

@@ -26,7 +26,7 @@ type MemoryCategory = "People" | "Projects" | "Preferences" | "Deadlines" | "Wri
 type Confidence = "high" | "medium" | "low";
 type ComposeChannel = "Email" | "Slack" | "WhatsApp" | "Doc" | "LinkedIn";
 type ComposeTone    = "Professional" | "Warm" | "Concise" | "Persuasive" | "Casual";
-type AIModel        = "flash" | "pro" | "gpt5" | "private";
+type AIModel        = "flash" | "pro" | "genius" | "private";
 
 interface DomainItem { id: number; text: string; meta: string; urgent: boolean; progress: number; }
 interface DomainData {
@@ -2294,7 +2294,7 @@ const CHAT_MSGS = [
 const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }[] = [
   { id:"flash",   label:"FLASH",   icon:Zap,          color:"text-primary bg-primary/15 border-primary/30" },
   { id:"pro",     label:"PRO",     icon:Brain,         color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
-  { id:"gpt5",    label:"GPT-5",   icon:TrendingUp,    color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
+  { id:"genius",  label:"Genius",  icon:TrendingUp,    color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
   { id:"private", label:"PRIVATE", icon:Shield,        color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
 ];
 
