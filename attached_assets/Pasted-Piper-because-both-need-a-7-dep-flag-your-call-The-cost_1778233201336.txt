@@ -1,0 +1,20 @@
+Piper because both need a §7 dep flag — your call:
+
+The cost of real on-device audio:
+
+Asset	Size shipped to user	Hosted where?
+onnxruntime-web (runtime for both)	~12 MB gz, ~30 MB raw	npm dep
+Whisper.cpp tiny.en q5_1 (STT model)	~31 MB	needs hosting
+Piper en-US-amy-low ONNX (TTS model)	~30 MB	needs hosting
+Piper espeak-ng phonemizer WASM	~5 MB	needs hosting
+Total first-PRIVATE-turn cold cost	~75–100 MB	—
+The handoff §7 says flag any dep >2 MB before installing. onnxruntime-web is ~15× that and can't be code-split out — once it's in the bundle graph, even prefer_local_audio = false users pay the parse cost on the worker. The model files are a separate problem: they need a CDN or public/wasm/ (which means the deploy bundle gains 65 MB and every preview deploy ships them).
+
+Three viable paths:
+
+Ship it now — install onnxruntime-web, host models in public/wasm/, accept ~70 MB added to the project repo and a 12 MB lazy chunk. Honest local-first story, real Day 2.
+Defer to Phase 2.9 / Capacitor shell — keep the adapter stubs returning empty, and route PRIVATE through browser-speech-recognition (already real) + a graceful "TTS unavailable in PRIVATE on web, install the iOS/Android app" message. Local-first promise becomes "works on native, scoped Q&A on web." Matches your earlier critique.
+Models on a CDN, runtime in a worker — install onnxruntime-web, but lazy-fetch models from a public CDN (e.g. HuggingFace) on first PRIVATE turn instead of bundling. Repo stays small, but you're now trusting HF's uptime + CORS + no-rug-pull.
+My recommendation: option 2. The mem note already says "Phase 4 = Capacitor native shell" and the spec calls Local "scoped Q&A only until WebLLM 7B+ is realistic on phones." Shipping 75 MB of WASM to the web bundle for a tier the spec already says is a 12-month bet contradicts both. Option 2 keeps Day 2's real deliverables (browser-speech, capability probe, V9 toggle gating) and pushes the heavyweight WASM to the native shell where it belongs.
+
+Which path?
