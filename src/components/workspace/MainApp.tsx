@@ -9,8 +9,16 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, Image as ImageIcon,
 } from "lucide-react";
+import {
+  makePending,
+  revokePending,
+  uploadAttachments,
+  validateImage,
+  MAX_FILES_PER_MESSAGE,
+  type PendingAttachment,
+} from "@/lib/chat-attachments";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 import { ContextFooter } from "@/components/workspace/ContextFooter";
 import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
