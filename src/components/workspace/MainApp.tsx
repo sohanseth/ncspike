@@ -1875,8 +1875,17 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
   const preview = items.slice(0, maxItems);
   return (
     <button onClick={onClick}
-      className={`group w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
+      className={`group relative w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
       style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
+      {onTogglePin && (
+        <span
+          role="button"
+          onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
+          title={pinned ? "Unpin" : "Pin to top"}
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
+        </span>
+      )}
       <div className={`flex items-center justify-between flex-shrink-0 ${isSM ? "" : "w-full"}`}>
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]`}>
