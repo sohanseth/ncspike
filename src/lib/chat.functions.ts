@@ -20,7 +20,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runChain, CapExceededError, ChainExhaustedError } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
 import { resolveBadgeForUser } from "@/server/personalization-routing";
-import { strictestTierInChain } from "@/server/inference/tiers";
+import { strictestTierInChain } from "@/lib/provider-tiers";
 import type { InferenceMessage } from "@/server/inference";
 import {
   assembleSystemPrompt,
