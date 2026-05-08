@@ -26,6 +26,7 @@ import {
   type ChainStreamEvent,
 } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
+import { resolveBadgeForUser } from "@/server/personalization-routing";
 import type { InferenceMessage } from "@/server/inference";
 import { strictestTierInChain, type ProviderId } from "@/server/inference/tiers";
 import {
@@ -140,6 +141,15 @@ export const Route = createFileRoute("/api/chat/stream")({
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
+        // D8 Day 5 + B10/B11: honour the user's PRIVATE-only routing mode
+        // (set by the Strict preset) BEFORE persisting anything badge-tagged.
+        // When on, every badge collapses to 'private' so the chain only
+        // reaches T0 — even if the UI sent FLASH/PRO/GENIUS. Both the broker
+        // tier and the runtime chain see the coerced badge so they agree on
+        // what the strictest tier is, and the persisted audit trail records
+        // what actually ran rather than what the UI clicked.
+        const { badge: effectiveBadge } = await resolveBadgeForUser(userId, v.badge);
+
         // Persist user message immediately so it survives chain failures.
         const { data: userRow, error: uErr } = await supabaseAdmin
           .from("chat_messages")
@@ -148,18 +158,14 @@ export const Route = createFileRoute("/api/chat/stream")({
             thread_id: threadId,
             role: "user",
             content: v.content,
-            badge: v.badge,
+            badge: effectiveBadge,
           })
           .select("id")
           .single();
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
 
         const paidTier = await getPaidTier(userId);
-
-        // D8 step 5: assemble personalization fragment before opening the
-        // stream. Broker is best-effort — any failure proceeds with the
-        // chain runner's DEFAULT_SYSTEM_PROMPT.
-        const cfg = chainFor(v.badge);
+        const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
         let broker: AssembleResult = {
           fragment: "",
@@ -171,7 +177,7 @@ export const Route = createFileRoute("/api/chat/stream")({
           broker = await assembleSystemPrompt({
             userId,
             query: v.content,
-            badge: v.badge,
+            badge: effectiveBadge,
             strictestTierInChain: tier,
           });
         } catch (e) {
@@ -246,7 +252,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                     thread_id: threadId,
                     role: "assistant",
                     content: `${assistantText} [interrupted]`,
-                    badge: v.badge,
+                    badge: effectiveBadge,
                     provider: lastProvider,
                     model: lastModel || null,
                     fallback_depth: lastFallbackDepth,
@@ -260,7 +266,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                   await logContextDecision({
                     userId,
                     messageId: abortRow.id,
-                    badge: v.badge,
+                    badge: effectiveBadge,
                     strictestTier: tier,
                     contextUsed: broker.contextUsed,
                     fragmentLength: broker.fragment.length,
@@ -273,7 +279,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                   .insert({
                     user_id: userId,
                     thread_id: threadId,
-                    badge: v.badge,
+                    badge: effectiveBadge,
                     provider_chain: [lastProvider],
                     provider_used: lastProvider,
                     model_used: lastModel || lastProvider,
@@ -294,7 +300,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                 {
                   userId,
                   threadId,
-                  badge: v.badge,
+                  badge: effectiveBadge,
                   messages: [...historyMessages, { role: "user", content: v.content }],
                   paidTier,
                   systemPrompt: broker.fragment || undefined,
@@ -350,7 +356,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                   thread_id: threadId,
                   role: "assistant",
                   content: assistantText,
-                  badge: v.badge,
+                  badge: effectiveBadge,
                   provider: finalEvt.provider,
                   model: finalEvt.model,
                   fallback_depth: finalEvt.fallbackDepth,
@@ -367,7 +373,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                 await logContextDecision({
                   userId,
                   messageId: aRow.id,
-                  badge: v.badge,
+                  badge: effectiveBadge,
                   strictestTier: tier,
                   contextUsed: broker.contextUsed,
                   fragmentLength: broker.fragment.length,
@@ -389,6 +395,13 @@ export const Route = createFileRoute("/api/chat/stream")({
                 fallbackDepth: finalEvt.fallbackDepth,
                 inputTokens: finalEvt.inputTokens ?? null,
                 outputTokens: finalEvt.outputTokens ?? null,
+                // D8 Day 5: ContextFooter needs the same payload that landed
+                // on chat_messages.context_used. Sent here (rather than via a
+                // round-trip query) so the UI can render the footer the
+                // moment streaming completes, without an extra fetch.
+                contextUsed:
+                  broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
+                traitSheetVersion: broker.traitSheetVersion,
               });
               controller.close();
             } catch (e) {

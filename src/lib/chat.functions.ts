@@ -19,6 +19,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runChain, CapExceededError, ChainExhaustedError } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
+import { resolveBadgeForUser } from "@/server/personalization-routing";
 import { strictestTierInChain } from "@/server/inference/tiers";
 import type { InferenceMessage } from "@/server/inference";
 import {
@@ -201,6 +202,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       .filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
+    // 3a. PRIVATE-only mode (B10/B11 — Strict preset). Resolve effective
+    //     badge BEFORE any badge-tagged persistence so the audit trail
+    //     reflects what actually ran, not what the UI clicked.
+    const { badge: effectiveBadge } = await resolveBadgeForUser(userId, data.badge);
+
     // 3. Persist the user message immediately so it survives chain failures.
     const { data: userRow, error: uErr } = await supabaseAdmin
       .from("chat_messages")
@@ -209,16 +215,16 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         thread_id: threadId,
         role: "user",
         content: data.content,
-        badge: data.badge,
+        badge: effectiveBadge,
       })
       .select("id, thread_id, role, content, created_at, badge, provider, model, fallback_depth")
       .single();
     if (uErr) throw uErr;
 
-    // 4. Resolve chain + assemble personalization fragment (D8 step 5).
-    //    Broker is best-effort — any failure falls back to the chain runner's
+    // 4. Resolve chain + assemble personalization fragment (D8 step 5). Broker
+    //    is best-effort — any failure falls back to the chain runner's
     //    DEFAULT_SYSTEM_PROMPT so chat never breaks on a broker bug.
-    const cfg = chainFor(data.badge);
+    const cfg = chainFor(effectiveBadge);
     const tier = strictestTierInChain(cfg.chain);
     let broker: AssembleResult = {
       fragment: "",
@@ -230,7 +236,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       broker = await assembleSystemPrompt({
         userId,
         query: data.content,
-        badge: data.badge,
+        badge: effectiveBadge,
         strictestTierInChain: tier,
       });
     } catch (e) {
@@ -243,7 +249,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     const result = await runChain({
       userId,
       threadId,
-      badge: data.badge,
+      badge: effectiveBadge,
       messages: [...historyMessages, { role: "user", content: data.content }],
       paidTier,
       systemPrompt: broker.fragment || undefined,
@@ -257,7 +263,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         thread_id: threadId,
         role: "assistant",
         content: result.text,
-        badge: data.badge,
+        badge: effectiveBadge,
         provider: result.provider,
         model: result.model,
         fallback_depth: result.fallbackDepth,
@@ -273,7 +279,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     await logContextDecision({
       userId,
       messageId: aRow.id,
-      badge: data.badge,
+      badge: effectiveBadge,
       strictestTier: tier,
       contextUsed: broker.contextUsed,
       fragmentLength: broker.fragment.length,

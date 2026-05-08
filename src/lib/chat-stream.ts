@@ -31,6 +31,9 @@ export type ChatStreamEvent =
       fallbackDepth: number;
       inputTokens: number | null;
       outputTokens: number | null;
+      /** Personalization context the broker injected for this turn (D8). */
+      contextUsed: { categories: string[]; trait_paths: string[] } | null;
+      traitSheetVersion: number | null;
     }
   | {
       kind: "error";
@@ -154,7 +157,15 @@ function parseSseBlock(block: string): ChatStreamEvent | null {
       };
     case "delta":
       return { kind: "delta", text: String(data.text ?? "") };
-    case "done":
+    case "done": {
+      const cu = data.contextUsed as { categories?: unknown; trait_paths?: unknown } | null;
+      const contextUsed =
+        cu && Array.isArray(cu.categories) && Array.isArray(cu.trait_paths)
+          ? {
+              categories: cu.categories.filter((c): c is string => typeof c === "string"),
+              trait_paths: cu.trait_paths.filter((p): p is string => typeof p === "string"),
+            }
+          : null;
       return {
         kind: "done",
         messageId: data.messageId ? String(data.messageId) : null,
@@ -163,7 +174,11 @@ function parseSseBlock(block: string): ChatStreamEvent | null {
         fallbackDepth: Number(data.fallbackDepth ?? 0),
         inputTokens: data.inputTokens === null ? null : Number(data.inputTokens),
         outputTokens: data.outputTokens === null ? null : Number(data.outputTokens),
+        contextUsed,
+        traitSheetVersion:
+          data.traitSheetVersion == null ? null : Number(data.traitSheetVersion),
       };
+    }
     case "error": {
       const validTypes = ["cap_exceeded", "chain_exhausted", "validation", "internal"] as const;
       type ErrType = (typeof validTypes)[number];

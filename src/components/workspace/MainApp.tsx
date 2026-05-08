@@ -12,6 +12,7 @@ import {
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
+import { ContextFooter } from "@/components/workspace/ContextFooter";
 import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
 // Lazy-loaded so the entire voice surface (resolver, StatusPill, SpeakingOrb)
 // is code-split out of the main bundle when the dogfood flag is off.
@@ -446,6 +447,14 @@ function TopBar({
         </button>
 
         <div className="w-px h-5 bg-border mx-1"/>
+
+        {/* Personalization (Phase 2.7 D8 — settings entry for the trait broker) */}
+        <Link to="/workspace/personalization" title="Personalization settings"
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          <Shield size={13}/>
+          <span className="hidden sm:block">Personalization</span>
+        </Link>
 
         {/* Avatar */}
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
@@ -2318,6 +2327,8 @@ type LiveChatMsg = {
   text: string;
   /** Routing breadcrumb shown under assistant messages. */
   meta?: { provider: string | null; model: string | null; fallbackDepth: number | null };
+  /** Personalization context the broker injected for this turn (D8 Day 5). */
+  contextUsed?: { categories: string[]; trait_paths: string[] } | null;
 };
 
 function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
@@ -2408,6 +2419,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   model: evt.model,
                   fallbackDepth: evt.fallbackDepth,
                 },
+                contextUsed: evt.contextUsed,
               };
             }
             return next;
@@ -2552,6 +2564,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                         {msg.meta.fallbackDepth && msg.meta.fallbackDepth > 0 ? ` · fallback ${msg.meta.fallbackDepth}` : ""}
                       </span>
                     </div>
+                  )}
+                  {msg.contextUsed && msg.contextUsed.categories.length > 0 && (
+                    <ContextFooter
+                      contextUsed={msg.contextUsed as { categories: import("@/server/trait-schema").TraitCategory[]; trait_paths: string[] }}
+                      provider={msg.meta?.provider ?? null}
+                    />
                   )}
                 </div>
               ) : (

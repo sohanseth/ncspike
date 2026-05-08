@@ -16,6 +16,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
 import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
+import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
@@ -59,6 +60,12 @@ const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
   path: '/workspace/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspacePersonalizationRoute =
+  WorkspacePersonalizationRouteImport.update({
+    id: '/workspace/personalization',
+    path: '/workspace/personalization',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
   id: '/workspace/drafts',
   path: '/workspace/drafts',
@@ -102,6 +109,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
@@ -118,6 +126,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace': typeof WorkspaceIndexRoute
@@ -135,6 +144,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
   '/workspace/voice-settings': typeof WorkspaceVoiceSettingsRoute
   '/workspace/': typeof WorkspaceIndexRoute
@@ -153,6 +163,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/personalization'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace/'
@@ -169,6 +180,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/personalization'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace'
@@ -185,6 +197,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/personalization'
     | '/workspace/usage'
     | '/workspace/voice-settings'
     | '/workspace/'
@@ -202,6 +215,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
+  WorkspacePersonalizationRoute: typeof WorkspacePersonalizationRoute
   WorkspaceUsageRoute: typeof WorkspaceUsageRoute
   WorkspaceVoiceSettingsRoute: typeof WorkspaceVoiceSettingsRoute
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
@@ -263,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceUsageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/personalization': {
+      id: '/workspace/personalization'
+      path: '/workspace/personalization'
+      fullPath: '/workspace/personalization'
+      preLoaderRoute: typeof WorkspacePersonalizationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/drafts': {
       id: '/workspace/drafts'
       path: '/workspace/drafts'
@@ -322,6 +343,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
+  WorkspacePersonalizationRoute: WorkspacePersonalizationRoute,
   WorkspaceUsageRoute: WorkspaceUsageRoute,
   WorkspaceVoiceSettingsRoute: WorkspaceVoiceSettingsRoute,
   WorkspaceIndexRoute: WorkspaceIndexRoute,
