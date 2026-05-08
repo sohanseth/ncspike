@@ -275,11 +275,11 @@ If any gate is unmet at end of day 1, week 1 starts with a 24-hour countdown to 
 
 ## 10. Open questions
 
-1. **TestFlight / Play access (was G1 + G2; partially resolved 2026-05-07):**
+1. **TestFlight / Play access (was G1 + G2; resolved 2026-05-07):**
    - **G1 — Apple Developer account: ✓ Provisioned.** iOS signing + TestFlight unblocked.
-   - **G2 — Google Play developer account: ✗ Not yet provisioned.** $25 one-time. Two paths: (a) provision now in week 1 (~1 day for Google's identity verification) and ship both platforms per plan, or (b) defer Android Play Internal Testing to a week-4 trailing follow-up and ship iOS-only at end of week 3. **Decision still needed.**
+   - **G2 — Google Play developer account: ⏳ To be provisioned in parallel with week 1 build.** $25 one-time. Sneha kicks off Google's identity verification on day 1; not on the critical path for week 1 code (debug APK builds work without Play access).
 2. **App icon / splash screen:** placeholder NC mark for V1. Real brand pass deferred to a separate design task before TestFlight goes wider than 5 testers.
-3. **AASA / Digital Asset Links hostname (was G3; partially resolved 2026-05-07):** Sneha owns `neuralconnexions.com` and `neuralconnexions.ai`. Both can host the `.well-known/` files. **Still need to pick:** (a) apex on `neuralconnexions.com/.well-known/*` (simplest, but may conflict if a marketing site lives at the apex), (b) subdomain like `app.neuralconnexions.com` (cleaner separation, requires a DNS record + a static-file host), or (c) use `neuralconnexions.ai` instead. The bundle's Universal-Link domain entitlement will reference whatever we pick and is annoying to change post-install, so this is a single one-shot decision. **Decision needed by start of week 1.**
+3. **AASA / Digital Asset Links hostname (was G3; resolved 2026-05-07):** **`app.neuralconnexions.com`** hosted via Cloudflare Pages. Static `.well-known/apple-app-site-association` and `.well-known/assetlinks.json` files committed to the NC repo and deployed to that subdomain. Reasoning: clean separation from any future marketing apex on `neuralconnexions.com`; same Cloudflare dashboard already in use for Workers; trivial to rotate file contents without redeploy of the app itself. Bundle ID stays `com.neuralconnexions.app`.
 4. **Quiet hours for push:** out of scope for Phase 2.5 (per-user preference of three on/off toggles is enough for V1). Quiet hours is a Phase 3 polish item once we see actual push frequency in the wild.
 5. **Sentry / Crashlytics on native:** out of scope for 2.5; rely on Diagnostics screen + user-reported screenshots in beta. Revisit after OCSR data.
 6. **PWA path deprecation:** explicitly *not* deprecated (per N6). Revisit only if both stores approve and we see ≥80% of beta users on native after 30 days.

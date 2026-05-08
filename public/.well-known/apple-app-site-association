@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": ["TEAMID.com.neuralconnexions.app"],
+        "components": [
+          { "/": "/auth/callback", "comment": "OAuth + magic-link callback" },
+          { "/": "/draft/*",       "comment": "Open a specific draft" },
+          { "/": "/shared",        "comment": "Phase 3 share-extension landing" },
+          { "/": "/workspace",     "comment": "Workspace home from marketing" }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": ["TEAMID.com.neuralconnexions.app"]
+  }
+}
