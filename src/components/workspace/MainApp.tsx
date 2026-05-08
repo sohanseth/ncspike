@@ -2120,7 +2120,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
           )}
           {visible.map(item => {
             const s = CAT_STYLE[item.category];
-            const draftable = (item.category === "urgent" || item.category === "today")
+            const draftable = item.category !== "ignore"
               && (status?.featureEnabled ?? true);
             return (
               <InboxRow
