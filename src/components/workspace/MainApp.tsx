@@ -9,7 +9,7 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox,
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft,
 } from "lucide-react";
 import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 
@@ -442,27 +442,54 @@ function TopBar({
 
 // ─── Bento domain card ────────────────────────────────────────────────────────
 
-function DomainCard({ domain, size, onClick, liveItems, liveCount }: {
+type UrgencyCounts = { urgent: number; today: number; proactive: number };
+
+function UrgencyBadges({ counts, compact }: { counts: UrgencyCounts; compact?: boolean }) {
+  const badges = [
+    { n: counts.urgent,    bg: "rgba(248,113,113,0.18)", ring: "rgba(248,113,113,0.45)", color: "#fca5a5", glow: "0 0 6px rgba(248,113,113,0.55)", label: "urgent" },
+    { n: counts.today,     bg: "rgba(251,191,36,0.16)",  ring: "rgba(251,191,36,0.4)",   color: "#fcd34d", glow: "0 0 6px rgba(251,191,36,0.45)", label: "today" },
+    { n: counts.proactive, bg: "rgba(155,109,250,0.16)", ring: "rgba(155,109,250,0.4)",  color: "#c4b5fd", glow: "0 0 6px rgba(155,109,250,0.45)", label: "proactive" },
+  ].filter(b => b.n > 0);
+  if (!badges.length) return null;
+  return (
+    <div className="flex items-center gap-1 flex-shrink-0">
+      {badges.map(b => (
+        <span key={b.label} title={`${b.n} ${b.label}`}
+          className={`inline-flex items-center gap-1 ${compact?"px-1.5 py-px":"px-2 py-0.5"} rounded-full font-mono text-[9.5px] font-semibold border`}
+          style={{background:b.bg, borderColor:b.ring, color:b.color, boxShadow:b.glow}}>
+          <span className="w-1 h-1 rounded-full" style={{background:b.color}}/>
+          {b.n}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency }: {
   domain:DomainData; size:"xl"|"lg"|"md"|"sm"; onClick:()=>void;
   liveItems?: Array<{ id:string|number; text:string; meta:string; urgent:boolean; progress:number }>;
   liveCount?: number;
+  urgency?: UrgencyCounts;
 }) {
   const c=C[domain.id]; const { Icon }=domain;
   const maxItems = size==="xl"?4:size==="lg"?3:size==="md"?2:1;
   const items = liveItems && liveItems.length ? liveItems : domain.items;
+  const hasUrgency = urgency && (urgency.urgent + urgency.today + urgency.proactive) > 0;
   const activity = liveCount !== undefined ? Math.min(1, liveCount / 5) : domain.activity;
   return (
-    <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group`}
+    <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group relative`}
       style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
-      <div className="flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2.5">
+      <div className="flex items-center justify-between flex-shrink-0 gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}55)`,boxShadow:`0 1px 8px ${c.glow}`}}>
             <Icon size={12} style={{color:c.icon}}/>
           </div>
-          <span className="text-[12px] font-semibold text-foreground/85" style={{fontFamily:"'DM Sans',sans-serif"}}>{domain.label}</span>
+          <span className="text-[12px] font-semibold text-foreground/85 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{domain.label}</span>
         </div>
-        {size!=="sm" && (
+        {urgency && hasUrgency ? (
+          <UrgencyBadges counts={urgency} compact={size==="sm"}/>
+        ) : size!=="sm" && (
           <div className="flex items-center gap-1.5">
             <div className="w-10 h-[2.5px] rounded-full bg-white/[0.07] overflow-hidden">
               <div className={`h-full rounded-full ${c.bar}`} style={{width:`${activity*100}%`,opacity:0.8}}/>
@@ -1690,10 +1717,9 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
 
-function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
+function HomeCanvas({ onDomain, onOther }: {
   onDomain:(id:DomainId)=>void;
-  onRunOvernight:(text:string)=>void;
-  onCompose:()=>void;
+  onOther:()=>void;
 }) {
   const { user } = useAuth();
   const firstName = (user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email?.split("@")[0] || "there").split(" ")[0];
@@ -1703,10 +1729,9 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
 
   const { items: inbox, error: inboxErr } = useInbox();
 
-  // Group live emails by domain → DomainCard items shape
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
-    (inbox ?? []).filter(i => i.category !== "ignore").forEach(i => {
+    (inbox ?? []).filter(i => i.category !== "ignore" && i.category !== "needs_review").forEach(i => {
       const arr = groups[i.domain] ?? (groups[i.domain] = []);
       arr.push({
         id: i.id,
@@ -1719,38 +1744,68 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
     return groups;
   }, [inbox]);
 
-  // Sort domains by live activity (count), fall back to static
+  const urgencyByDomain = useMemo(() => {
+    const out: Partial<Record<DomainId, UrgencyCounts>> = {};
+    (inbox ?? []).forEach(i => {
+      if (i.category === "ignore" || i.category === "needs_review") return;
+      const u = out[i.domain] ?? (out[i.domain] = { urgent: 0, today: 0, proactive: 0 });
+      if (i.category === "urgent") u.urgent += 1;
+      else if (i.category === "today") u.today += 1;
+      else if (i.category === "proactive") u.proactive += 1;
+    });
+    return out;
+  }, [inbox]);
+
+  const otherCount = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore").length,
+    [inbox]
+  );
+  const totalUrgent = useMemo(
+    () => (inbox ?? []).filter(i => i.category === "urgent").length,
+    [inbox]
+  );
+
   const sorted = useMemo(() => {
     const arr = Object.values(DOMAINS) as DomainData[];
     return arr.slice().sort((a: DomainData, b: DomainData) => {
+      const ua = (urgencyByDomain[a.id]?.urgent ?? 0) + (urgencyByDomain[a.id]?.today ?? 0);
+      const ub = (urgencyByDomain[b.id]?.urgent ?? 0) + (urgencyByDomain[b.id]?.today ?? 0);
+      if (ua !== ub) return ub - ua;
       const ca = liveByDomain[a.id]?.length ?? -1;
       const cb = liveByDomain[b.id]?.length ?? -1;
       if (ca !== cb) return cb - ca;
       return b.activity - a.activity;
     });
-  }, [liveByDomain]);
+  }, [liveByDomain, urgencyByDomain]);
   const ids = sorted.map(d => d.id);
 
   return (
     <div className="flex flex-col p-3 lg:p-4 gap-3">
-      {/* Greeting bar */}
       <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
-        <span className="flex-1 text-[13px] text-foreground/80 font-medium" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
           {greet}, {firstName}
         </span>
+        {totalUrgent > 0 && (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border flex-shrink-0"
+            style={{background:"rgba(248,113,113,0.16)", borderColor:"rgba(248,113,113,0.4)", color:"#fca5a5", boxShadow:"0 0 6px rgba(248,113,113,0.45)"}}>
+            <span className="w-1 h-1 rounded-full bg-rose-300"/>
+            {totalUrgent} urgent
+          </span>
+        )}
         <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
       </div>
 
-      {/* Inbox queue (live) */}
-      <InboxQueue onCompose={onCompose} items={inbox} error={inboxErr}/>
+      {inboxErr && (
+        <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-2.5">
+          <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr} · <Link to="/workspace/connections" className="text-primary/80 hover:text-primary font-mono">connect Gmail →</Link></p>
+        </div>
+      )}
 
-
-      {/* Domain bento */}
       <div className="flex-shrink-0 overflow-x-auto">
         <div className="min-w-[580px] min-h-[420px] grid gap-2.5"
-          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 signal"`}}>
+          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 80px",gridTemplateAreas:`"d0 d0 d1" "d0 d0 d2" "d3 d4 other"`}}>
           {([0,1,2,3,4] as const).map(i => {
             const id = ids[i] as DomainId | undefined;
             if (!id) return null;
@@ -1759,19 +1814,25 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
             return (
               <div key={id} style={{gridArea:`d${i}`}}>
                 <DomainCard domain={DOMAINS[id]} size={sizes[i]} onClick={()=>onDomain(id)}
-                  liveItems={live} liveCount={live?.length}/>
+                  liveItems={live} liveCount={live?.length} urgency={urgencyByDomain[id]}/>
               </div>
             );
           })}
-          <div style={{gridArea:"signal"}}>
-            <div className="h-full rounded-2xl border border-cyan-400/15 flex items-center gap-3 px-4 cursor-default hover:border-cyan-400/30 transition-colors"
-              style={{background:"radial-gradient(ellipse at 0% 50%,rgba(6,182,212,0.08) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
-              <TrendingUp size={12} className="text-cyan-400/70 flex-shrink-0"/>
-              <div className="flex-1 min-w-0">
-                <p className="text-[11.5px] font-semibold text-foreground/80 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>Data sovereignty thesis</p>
-                <p className="text-[9.5px] text-cyan-400/45 truncate font-mono">15 signals · rising</p>
+          <div style={{gridArea:"other"}}>
+            <button onClick={onOther}
+              className="w-full h-full rounded-2xl border border-white/[0.07] flex items-center gap-3 px-4 cursor-pointer hover:border-white/20 hover:brightness-110 transition-all text-left"
+              style={{background:"radial-gradient(ellipse at 0% 50%,rgba(255,255,255,0.04) 0%,transparent 65%),rgba(30,25,52,0.5)"}}>
+              <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.04] border border-white/[0.06]">
+                <Inbox size={12} className="text-muted-foreground/70"/>
               </div>
-            </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[11.5px] font-semibold text-foreground/80 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>Other</p>
+                <p className="text-[9.5px] text-muted-foreground/45 truncate font-mono">
+                  {otherCount === 0 ? "nothing pending" : `${otherCount} uncategorized`}
+                </p>
+              </div>
+              <ArrowRight size={11} className="text-muted-foreground/30 flex-shrink-0"/>
+            </button>
           </div>
         </div>
       </div>
@@ -1779,59 +1840,147 @@ function HomeCanvas({ onDomain, onRunOvernight, onCompose }: {
   );
 }
 
-// ─── Domain detail drawer ─────────────────────────────────────────────────────
+// ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose }: { domainId:DomainId; onClose:()=>void }) {
-  const domain=DOMAINS[domainId]; const c=C[domainId]; const { Icon }=domain;
-  const [done, setDone] = useState<number[]>([]);
+function DomainDetail({ domainId, onClose, onCompose }: {
+  domainId: DomainId | "other";
+  onClose: () => void;
+  onCompose: () => void;
+}) {
+  const isOther = domainId === "other";
+  const domain = isOther ? null : DOMAINS[domainId];
+  const c = isOther ? null : C[domainId];
+  const Icon = domain?.Icon;
+
+  const { items: inbox, error: inboxErr } = useInbox();
+  const { status, refresh } = useVoiceDraftsStatus();
+  const [done, setDone] = useState<string[]>([]);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
+  const requestConsent = async (): Promise<boolean> => {
+    setConsentOpen(true);
+    return new Promise<boolean>((resolve) => { consentResolverRef.current = resolve; });
+  };
+  const closeConsent = (accepted: boolean) => {
+    setConsentOpen(false);
+    consentResolverRef.current?.(accepted);
+    consentResolverRef.current = null;
+  };
+
+  const items = useMemo(() => {
+    if (!inbox) return [];
+    if (isOther) return inbox.filter(i => i.category === "needs_review" || i.category === "ignore");
+    return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
+  }, [inbox, isOther, domainId]);
+
+  const visible = items.filter(i => !done.includes(i.id));
+  const fallbackC = C.professional;
+  const cardC = c ?? fallbackC;
+
   return (
-    <div className="absolute inset-0 z-20 flex items-stretch justify-end">
-      <div className="w-full max-w-[400px] h-full flex flex-col border-l border-border"
-        style={{background:"rgba(18,15,30,0.97)",backdropFilter:"blur(20px)"}}>
-        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border flex-shrink-0">
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{background:`linear-gradient(135deg,${c.tile}dd,${c.tile}66)`,boxShadow:`0 1px 10px ${c.glow}`}}>
-            <Icon size={13} style={{color:c.icon}}/>
+    <div className="fixed inset-0 z-40 flex flex-col" style={{background:"rgba(14,11,26,0.98)",backdropFilter:"blur(24px)"}}>
+      {/* Header with prominent back button */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-white/[0.08] bg-background/70 backdrop-blur-md"
+        style={{paddingTop:"max(env(safe-area-inset-top), 0.75rem)"}}>
+        <button onClick={onClose}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] text-foreground/85 hover:bg-white/[0.07] hover:border-white/20 transition-all flex-shrink-0">
+          <ArrowLeft size={14}/>
+          <span className="text-[12px] font-medium" style={{fontFamily:"'DM Sans',sans-serif"}}>Back</span>
+        </button>
+        {isOther ? (
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]">
+            <Inbox size={13} className="text-muted-foreground/80"/>
           </div>
-          <span className="text-[14px] font-semibold flex-1 text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>{domain.label}</span>
-          <span className="text-[9px] font-mono px-2 py-px rounded-full border" style={{color:c.hex,borderColor:`${c.hex}40`,background:`${c.hex}14`}}>{domain.weekLabel}</span>
-          <button onClick={onClose} className="ml-1 text-muted-foreground hover:text-foreground transition-colors"><X size={14}/></button>
+        ) : (
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
+            style={{background:`linear-gradient(135deg,${cardC.tile}dd,${cardC.tile}66)`,boxShadow:`0 1px 10px ${cardC.glow}`}}>
+            {Icon && <Icon size={13} style={{color:cardC.icon}}/>}
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <p className="text-[14px] font-semibold text-foreground truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+            {isOther ? "Other" : domain!.label}
+          </p>
+          <p className="text-[10px] font-mono text-muted-foreground/50">
+            {visible.length} {visible.length === 1 ? "item" : "items"}
+          </p>
         </div>
-        <div className="flex-1 overflow-y-auto p-5 flex flex-col gap-2 scrollbar-none">
-          <Mono className="block mb-1">This week</Mono>
-          {domain.items.filter(i=>!done.includes(i.id)).map(item=>(
-            <div key={item.id} className={`group flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-all ${item.urgent?"border-red-400/20 bg-red-400/[0.04]":"border-white/[0.07] bg-white/[0.02] hover:border-white/15"}`}>
-              <span className={`mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.urgent?"bg-red-400 shadow-[0_0_4px_rgba(248,113,113,0.7)]":c.dot}`}/>
-              <div className="flex-1 min-w-0">
-                <p className="text-[12.5px] text-foreground/85 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.text}</p>
-                <p className="text-[10.5px] text-muted-foreground/70 mt-0.5">{item.meta}</p>
-              </div>
-              {item.progress>0 && <Ring progress={item.progress} color={c.light}/>}
-              <button onClick={()=>setDone(d=>[...d,item.id])} className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-emerald-400 flex-shrink-0">
-                <Check size={12}/>
-              </button>
+      </div>
+
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4 scrollbar-none">
+        <div className="max-w-2xl mx-auto flex flex-col gap-2">
+          {inboxErr && (
+            <div className="rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-3">
+              <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr}</p>
             </div>
-          ))}
-          {domain.connectionNote && (
-            <div className="mt-2 rounded-xl border border-cyan-400/20 px-4 py-3"
+          )}
+          {!inbox && !inboxErr && (
+            <div className="rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading…</div>
+          )}
+          {inbox && visible.length === 0 && (
+            <div className="rounded-2xl border border-white/[0.06] px-4 py-6 flex flex-col items-center gap-2 text-center">
+              <Check size={16} className="text-emerald-400"/>
+              <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                {isOther ? "Nothing uncategorized" : "Nothing pending here"}
+              </p>
+            </div>
+          )}
+          {visible.map(item => {
+            const s = CAT_STYLE[item.category];
+            const draftable = (item.category === "urgent" || item.category === "today")
+              && (status?.featureEnabled ?? true);
+            return (
+              <InboxRow
+                key={item.id}
+                item={item}
+                c={cardC}
+                s={s}
+                consented={status?.consented ?? false}
+                onRequestConsent={requestConsent}
+                onCompose={onCompose}
+                onMarkDone={() => {
+                  setDone(d => [...d, item.id]);
+                  import("@/lib/gmail.functions").then(({ markInboxItemDone }) =>
+                    markInboxItemDone({ data: { id: item.id, action: "done" } })
+                  ).catch((e) => {
+                    console.error("markInboxItemDone failed:", e);
+                    setDone(d => d.filter(x => x !== item.id));
+                  });
+                }}
+                draftable={draftable}
+              />
+            );
+          })}
+
+          {!isOther && domain?.connectionNote && (
+            <div className="mt-3 rounded-xl border border-cyan-400/20 px-4 py-3"
               style={{background:"radial-gradient(ellipse at 0% 0%,rgba(6,182,212,0.08) 0%,transparent 65%)"}}>
               <div className="flex items-center gap-1.5 mb-1"><TrendingUp size={10} className="text-cyan-400"/><Mono className="!text-cyan-400/60">Cross-domain</Mono></div>
               <p className="text-[11.5px] text-foreground/65 leading-snug">{domain.connectionNote}</p>
             </div>
           )}
-          <div className="mt-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
-            <Mono className="block mb-2">Sources</Mono>
-            <div className="flex flex-wrap gap-1.5">
-              {domain.sources.map(s=>(
-                <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-white/[0.03] border border-white/[0.06]">
-                  <span className="w-1 h-1 rounded-full bg-emerald-400/80"/>
-                  {s}
-                </span>
-              ))}
+          {!isOther && domain && (
+            <div className="mt-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+              <Mono className="block mb-2">Sources</Mono>
+              <div className="flex flex-wrap gap-1.5">
+                {domain.sources.map(s=>(
+                  <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-white/[0.03] border border-white/[0.06]">
+                    <span className="w-1 h-1 rounded-full bg-emerald-400/80"/>
+                    {s}
+                  </span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
+
+      <ConsentModal
+        open={consentOpen}
+        onClose={() => closeConsent(false)}
+        onAccepted={() => { void refresh(); closeConsent(true); }}
+      />
     </div>
   );
 }
@@ -2823,13 +2972,14 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
 export function MainApp() {
   const [mapView,     setMapView]     = useState<MapView|null>(null);
   const [tool,        setTool]        = useState<Tool>(null);
-  const [domain,      setDomain]      = useState<DomainId|null>(null);
+  const [domain,      setDomain]      = useState<DomainId|"other"|null>(null);
   const [voiceOpen,   setVoiceOpen]   = useState(false);
   const [exploreOpen, setExploreOpen] = useState(false);
   const [testOpen,    setTestOpen]    = useState(false);
   const [tasks,       setTasks]       = useState<AgentTask[]>(AGENT_TASKS);
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
+  const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleMap     = (v: MapView|null) => { setMapView(v); setDomain(null); setTool(null); setExploreOpen(false); };
   const handleVoice   = () => setVoiceOpen(true);
   const handleExplore = () => setExploreOpen(o=>!o);
@@ -2863,7 +3013,7 @@ export function MainApp() {
 
         <div className="flex-1 relative flex flex-col" style={{minHeight:"calc(100dvh - 56px)"}}>
           {/* Main canvas */}
-          {!mapView && <HomeCanvas onDomain={handleDomain} onRunOvernight={handleSubmitTask} onCompose={()=>setTool("compose")}/>}
+          {!mapView && <HomeCanvas onDomain={handleDomain} onOther={handleOther}/>}
           {mapView==="mindmap" && <MindMapCanvas/>}
           {mapView==="memory"  && <MemoryCanvas/>}
           {mapView==="signals" && <SignalsCanvas/>}
@@ -2876,7 +3026,7 @@ export function MainApp() {
           />
 
           {/* Domain detail drawer */}
-          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)}/>}
+          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")}/>}
         </div>
       </div>
 
