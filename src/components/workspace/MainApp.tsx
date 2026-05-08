@@ -1829,7 +1829,7 @@ function HomeCanvas({ onDomain, onOther }: {
                     urgency={urgencyByDomain[tile.id]}
                   />
                 ) : (
-                  <OtherCard size={size} count={tile.count} onClick={onOther}/>
+                  <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
                 )}
               </div>
             );
