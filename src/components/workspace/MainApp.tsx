@@ -15,20 +15,40 @@ import { BriefingsButton } from "@/components/workspace/BriefingsButton";
 import { ContextFooter } from "@/components/workspace/ContextFooter";
 import type { SendVoiceMessage } from "@/components/workspace/ConverseInput";
 // Lazy-loaded so the entire voice surface (resolver, StatusPill, SpeakingOrb)
-// is code-split out of the main bundle when the dogfood flag is off.
+// is code-split out of the main bundle until the user opens Chat.
 const ConverseInput = lazy(() =>
   import("@/components/workspace/ConverseInput").then((m) => ({ default: m.ConverseInput })),
 );
+import { StatusPill } from "@/components/workspace/StatusPill";
+import { buildTriple } from "@/lib/voice-resolver";
+import { readPreferLocalAudio } from "@/lib/voice-preferences";
+import { supabase } from "@/integrations/supabase/client";
 import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
 
-// Phase 2.8 Day-2 dogfooding flag. Default off; flip on locally with
-// `VITE_ENABLE_CONVERSE_VOICE=true` to mount ConverseInput inside ChatPanel
-// and exercise resolver / StatusPill / settings end-to-end. Skipped on SSR.
-const CONVERSE_VOICE_FLAG: boolean =
-  typeof import.meta !== "undefined" &&
-  (import.meta as unknown as { env?: Record<string, string | undefined> }).env
-    ?.VITE_ENABLE_CONVERSE_VOICE === "true";
+// Default ElevenLabs voice for the unified Converse surface (matches the
+// server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
+const DEFAULT_TTS_VOICE = "JBFqnCBsd6RMkjVDRZzb";
+
+/** Play assistant text via the proxied ElevenLabs endpoint. PRIVATE badge skips. */
+async function playAssistantTts(text: string, badge: VoiceBadge): Promise<HTMLAudioElement | null> {
+  if (badge === "PRIVATE" || !text.trim()) return null;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return null;
+  const res = await fetch("/api/tts/elevenlabs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ text: text.slice(0, 5000), voiceId: DEFAULT_TTS_VOICE }),
+  });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+  audio.onended = () => URL.revokeObjectURL(url);
+  void audio.play().catch(() => URL.revokeObjectURL(url));
+  return audio;
+}
 
 const AI_MODEL_TO_BADGE: Record<AIModel, VoiceBadge> = {
   flash: "FLASH",
