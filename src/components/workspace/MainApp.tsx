@@ -2442,17 +2442,37 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const sendingRef = useRef(false);
   useEffect(() => { sendingRef.current = sending; }, [sending]);
 
-  const runChatTurn = useCallback(async (text: string): Promise<{ provider: string | null; text: string }> => {
-    if (!text) return { provider: null, text: "" };
+  const runChatTurn = useCallback(async (
+    text: string,
+    pending: PendingAttachment[] = [],
+  ): Promise<{ provider: string | null; text: string }> => {
+    if (!text && pending.length === 0) return { provider: null, text: "" };
     if (sendingRef.current) {
       throw new Error("BUSY");
     }
     setError(null);
     setSending(true);
+
+    // Upload attachments first so we can include their storage paths.
+    let attachmentPaths: string[] = [];
+    const previewUrls = pending.map(p => p.previewUrl);
+    if (pending.length > 0) {
+      setUploadingAttachments(true);
+      try {
+        attachmentPaths = await uploadAttachments(pending);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Upload failed");
+        setSending(false);
+        setUploadingAttachments(false);
+        return { provider: null, text: "" };
+      }
+      setUploadingAttachments(false);
+    }
+
     // Optimistic: append user msg + an empty assistant msg that we'll fill via deltas.
     setMessages(prev => [
       ...prev,
-      { role: "user", text },
+      { role: "user", text, images: previewUrls.length ? previewUrls : undefined },
       { role: "assistant", text: "" },
     ]);
 
@@ -2462,7 +2482,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     let assistantText = "";
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
-      const stream = streamChatMessage({ threadId, content: text, badge: model });
+      const stream = streamChatMessage({ threadId, content: text, badge: model, attachments: attachmentPaths });
       for await (const evt of stream) {
         if (evt.kind === "init") {
           setThreadId(evt.threadId);
