@@ -2570,10 +2570,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
 
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && attachments.length === 0) || sending) return;
+    const pending = attachments;
     setInput("");
-    void runChatTurn(text).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, sending, runChatTurn]);
+    setAttachments([]);
+    void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
+  }, [input, attachments, sending, runChatTurn]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
