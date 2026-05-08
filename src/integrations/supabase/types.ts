@@ -14,10 +14,58 @@ export type Database = {
   }
   public: {
     Tables: {
+      chat_context_log: {
+        Row: {
+          badge: string
+          categories_used: string[]
+          created_at: string
+          fragment_length: number
+          id: string
+          message_id: string
+          scrub_blocked: boolean
+          strictest_tier: number
+          trait_sheet_version: number | null
+          user_id: string
+        }
+        Insert: {
+          badge: string
+          categories_used?: string[]
+          created_at?: string
+          fragment_length?: number
+          id?: string
+          message_id: string
+          scrub_blocked?: boolean
+          strictest_tier: number
+          trait_sheet_version?: number | null
+          user_id: string
+        }
+        Update: {
+          badge?: string
+          categories_used?: string[]
+          created_at?: string
+          fragment_length?: number
+          id?: string
+          message_id?: string
+          scrub_blocked?: boolean
+          strictest_tier?: number
+          trait_sheet_version?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chat_context_log_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       chat_messages: {
         Row: {
           badge: string | null
           content: string
+          context_used: Json | null
           created_at: string
           fallback_depth: number | null
           id: string
@@ -26,11 +74,13 @@ export type Database = {
           provider: string | null
           role: Database["public"]["Enums"]["message_role"]
           thread_id: string
+          trait_sheet_version: number | null
           user_id: string
         }
         Insert: {
           badge?: string | null
           content: string
+          context_used?: Json | null
           created_at?: string
           fallback_depth?: number | null
           id?: string
@@ -39,11 +89,13 @@ export type Database = {
           provider?: string | null
           role: Database["public"]["Enums"]["message_role"]
           thread_id: string
+          trait_sheet_version?: number | null
           user_id: string
         }
         Update: {
           badge?: string | null
           content?: string
+          context_used?: Json | null
           created_at?: string
           fallback_depth?: number | null
           id?: string
@@ -52,6 +104,7 @@ export type Database = {
           provider?: string | null
           role?: Database["public"]["Enums"]["message_role"]
           thread_id?: string
+          trait_sheet_version?: number | null
           user_id?: string
         }
         Relationships: [
@@ -182,6 +235,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      extraction_failures: {
+        Row: {
+          category: string | null
+          failure_class: string
+          field_path: string | null
+          id: string
+          occurred_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string | null
+          failure_class: string
+          field_path?: string | null
+          id?: string
+          occurred_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string | null
+          failure_class?: string
+          field_path?: string | null
+          id?: string
+          occurred_at?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       inference_usage: {
         Row: {
@@ -348,6 +428,36 @@ export type Database = {
         }
         Relationships: []
       }
+      pii_scrub_events: {
+        Row: {
+          badge: string | null
+          category: string | null
+          id: string
+          occurred_at: string
+          pattern_class: string
+          provider_tier: number | null
+          user_id: string
+        }
+        Insert: {
+          badge?: string | null
+          category?: string | null
+          id?: string
+          occurred_at?: string
+          pattern_class: string
+          provider_tier?: number | null
+          user_id: string
+        }
+        Update: {
+          badge?: string | null
+          category?: string | null
+          id?: string
+          occurred_at?: string
+          pattern_class?: string
+          provider_tier?: number | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -453,6 +563,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_known_names: {
+        Row: {
+          added_at: string
+          name: string
+          source: string
+          user_id: string
+        }
+        Insert: {
+          added_at?: string
+          name: string
+          source: string
+          user_id: string
+        }
+        Update: {
+          added_at?: string
+          name?: string
+          source?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_provider_category_blocks: {
         Row: {
           category: string
@@ -482,8 +613,11 @@ export type Database = {
           ai_mode: Database["public"]["Enums"]["ai_mode"]
           created_at: string
           local_audio_capability: Json | null
+          oss_only_mode: boolean
+          personalization_v1_enabled: boolean
           prefer_local_audio: boolean
           preferred_model: string
+          private_only_mode: boolean
           storage_mode: Database["public"]["Enums"]["storage_mode"]
           updated_at: string
           user_id: string
@@ -493,8 +627,11 @@ export type Database = {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
           created_at?: string
           local_audio_capability?: Json | null
+          oss_only_mode?: boolean
+          personalization_v1_enabled?: boolean
           prefer_local_audio?: boolean
           preferred_model?: string
+          private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
           user_id: string
@@ -504,8 +641,11 @@ export type Database = {
           ai_mode?: Database["public"]["Enums"]["ai_mode"]
           created_at?: string
           local_audio_capability?: Json | null
+          oss_only_mode?: boolean
+          personalization_v1_enabled?: boolean
           prefer_local_audio?: boolean
           preferred_model?: string
+          private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
           user_id?: string
@@ -638,6 +778,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      import_known_names: {
+        Args: { p_names: string[]; p_source: string; p_user_id: string }
+        Returns: {
+          capped: boolean
+          inserted: number
+        }[]
+      }
       mark_memory_node_resolved: {
         Args: { p_action: string; p_node_id: string; p_user_id: string }
         Returns: undefined
