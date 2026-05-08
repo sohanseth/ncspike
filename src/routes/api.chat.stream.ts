@@ -169,13 +169,16 @@ export const Route = createFileRoute("/api/chat/stream")({
         const { badge: effectiveBadge } = await resolveBadgeForUser(userId, v.badge);
 
         // Persist user message immediately so it survives chain failures.
+        // For pure-image turns (no text) save a placeholder so the NOT NULL
+        // content constraint holds; the UI renders thumbnails regardless.
+        const persistedUserContent = v.content || (v.attachments.length > 0 ? "[image]" : v.content);
         const { data: userRow, error: uErr } = await supabaseAdmin
           .from("chat_messages")
           .insert({
             user_id: userId,
             thread_id: threadId,
             role: "user",
-            content: v.content,
+            content: persistedUserContent,
             badge: effectiveBadge,
           })
           .select("id")
