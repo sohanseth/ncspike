@@ -21,7 +21,7 @@ import { getProvider, InferenceError, type InferenceMessage } from "./index";
 import type { InferenceChunk } from "./types";
 import { capFor, chainFor, type Badge } from "./router";
 import { costMicroUsd } from "./pricing";
-import type { ProviderId } from "./tiers";
+import type { ProviderId } from "@/lib/provider-tiers";
 
 export class CapExceededError extends Error {
   public readonly badge: Badge;

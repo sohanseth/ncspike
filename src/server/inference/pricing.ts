@@ -7,7 +7,7 @@
  * `cost_micro_usd` accumulates as bigint in inference_usage; float drift on
  * sum() over many rows would be real otherwise.
  */
-import type { ProviderId } from "./tiers";
+import type { ProviderId } from "@/lib/provider-tiers";
 
 export type Price = {
   /** micro-USD per 1M input tokens */

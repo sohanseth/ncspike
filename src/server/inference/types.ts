@@ -6,7 +6,7 @@
  * Day 1 of D7 ships only `generate()` (non-streaming). `generateStream()`
  * is added on Day 3 alongside the SSE wiring.
  */
-import type { PrivacyTier, ProviderId } from "./tiers";
+import type { PrivacyTier, ProviderId } from "@/lib/provider-tiers";
 
 export type InferenceMessage = {
   role: "system" | "user" | "assistant";

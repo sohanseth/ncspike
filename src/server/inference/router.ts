@@ -5,7 +5,7 @@
  * Each chain has a primary + fallbacks. The PRIVATE chain has length 1
  * (fail-closed, no silent fallback to a non-private provider — see §C4).
  */
-import type { ProviderId } from "./tiers";
+import type { ProviderId } from "@/lib/provider-tiers";
 
 export type Badge = "flash" | "pro" | "genius" | "private";
 
