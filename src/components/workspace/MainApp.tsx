@@ -1869,9 +1869,18 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
                       liveItems={liveByDomain[tile.id]}
                       liveCount={liveByDomain[tile.id]?.length}
                       urgency={urgencyByDomain[tile.id]}
+                      pinned={pinnedKey === tile.id}
+                      onTogglePin={() => togglePin(tile.id)}
                     />
                   ) : (
-                    <OtherCard size={size} count={tile.count} items={otherList} onClick={onOther}/>
+                    <OtherCard
+                      size={size}
+                      count={tile.count}
+                      items={otherList}
+                      onClick={onOther}
+                      pinned={pinnedKey === "other"}
+                      onTogglePin={() => togglePin("other")}
+                    />
                   )}
                 </motion.div>
               );
