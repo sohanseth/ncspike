@@ -491,19 +491,106 @@ function ConnectionsPage() {
   );
 }
 
-const POPULAR_TOOLS: Array<{ id: string; label: string; blurb: string; Icon: typeof MessageSquare }> = [
-  { id: "slack", label: "Slack", Icon: Hash, blurb: "Channels, DMs, and threads." },
-  { id: "ms_teams", label: "Microsoft Teams", Icon: Users, blurb: "Chats, meetings, channels." },
-  { id: "outlook", label: "Outlook", Icon: Mail, blurb: "Email + calendar from Microsoft 365." },
-  { id: "whatsapp", label: "WhatsApp", Icon: MessageCircle, blurb: "Via Twilio Business API." },
-  { id: "telegram", label: "Telegram", Icon: Send, blurb: "Bot API for chats & channels." },
-  { id: "discord", label: "Discord", Icon: MessageSquare, blurb: "Servers, channels, DMs." },
-  { id: "zoom", label: "Zoom", Icon: Video, blurb: "Meetings, recordings, transcripts." },
-  { id: "twilio_sms", label: "SMS (Twilio)", Icon: Phone, blurb: "Send & receive text messages." },
-  { id: "signal", label: "Signal", Icon: MessageCircle, blurb: "End-to-end encrypted messaging." },
-  { id: "messenger", label: "Messenger", Icon: MessageCircle, blurb: "Meta Business Messaging." },
-  { id: "linkedin", label: "LinkedIn", Icon: AtSign, blurb: "Messages & InMail." },
-  { id: "x_dm", label: "X (Twitter) DMs", Icon: AtSign, blurb: "Direct messages on X." },
+const POPULAR_TOOLS: Array<{ id: string; label: string; blurb: string; category: string; Icon: typeof MessageSquare }> = [
+  // Communication & messaging
+  { id: "slack", label: "Slack", category: "Communication", Icon: Hash, blurb: "Channels, DMs, and threads." },
+  { id: "ms_teams", label: "Microsoft Teams", category: "Communication", Icon: Users, blurb: "Chats, meetings, channels." },
+  { id: "outlook", label: "Outlook", category: "Communication", Icon: Mail, blurb: "Email + calendar from Microsoft 365." },
+  { id: "whatsapp", label: "WhatsApp", category: "Communication", Icon: MessageCircle, blurb: "Via Twilio Business API." },
+  { id: "telegram", label: "Telegram", category: "Communication", Icon: Send, blurb: "Bot API for chats & channels." },
+  { id: "discord", label: "Discord", category: "Communication", Icon: MessageSquare, blurb: "Servers, channels, DMs." },
+  { id: "zoom", label: "Zoom", category: "Communication", Icon: Video, blurb: "Meetings, recordings, transcripts." },
+  { id: "twilio_sms", label: "SMS (Twilio)", category: "Communication", Icon: Phone, blurb: "Send & receive text messages." },
+  { id: "signal", label: "Signal", category: "Communication", Icon: MessageCircle, blurb: "End-to-end encrypted messaging." },
+  { id: "messenger", label: "Messenger", category: "Communication", Icon: MessageCircle, blurb: "Meta Business Messaging." },
+  { id: "linkedin", label: "LinkedIn", category: "Communication", Icon: AtSign, blurb: "Messages & InMail." },
+  { id: "x_dm", label: "X (Twitter) DMs", category: "Communication", Icon: AtSign, blurb: "Direct messages on X." },
+
+  // Productivity & docs
+  { id: "notion", label: "Notion", category: "Productivity", Icon: BookOpen, blurb: "Pages, databases, blocks." },
+  { id: "google_drive", label: "Google Drive", category: "Productivity", Icon: Cloud, blurb: "Files, folders, sharing." },
+  { id: "google_docs", label: "Google Docs", category: "Productivity", Icon: FileText, blurb: "Create & edit docs." },
+  { id: "google_sheets", label: "Google Sheets", category: "Productivity", Icon: FileSpreadsheet, blurb: "Read & write spreadsheets." },
+  { id: "ms_onedrive", label: "OneDrive", category: "Productivity", Icon: Cloud, blurb: "Microsoft cloud files." },
+  { id: "ms_excel", label: "Excel", category: "Productivity", Icon: FileSpreadsheet, blurb: "Workbooks & sheets." },
+  { id: "ms_word", label: "Word", category: "Productivity", Icon: FileText, blurb: "Documents on Microsoft 365." },
+  { id: "dropbox", label: "Dropbox", category: "Productivity", Icon: Box, blurb: "File storage & sharing." },
+  { id: "evernote", label: "Evernote", category: "Productivity", Icon: BookOpen, blurb: "Notes & web clips." },
+  { id: "airtable", label: "Airtable", category: "Productivity", Icon: Database, blurb: "Spreadsheet-database hybrid." },
+
+  // Calendar & scheduling
+  { id: "calendly", label: "Calendly", category: "Calendar", Icon: Calendar, blurb: "Scheduling links & invitees." },
+  { id: "cal_com", label: "Cal.com", category: "Calendar", Icon: Calendar, blurb: "Open-source scheduling." },
+  { id: "ms_calendar", label: "Outlook Calendar", category: "Calendar", Icon: Calendar, blurb: "Microsoft 365 calendar." },
+
+  // Project mgmt & dev
+  { id: "linear", label: "Linear", category: "Project mgmt", Icon: ClipboardList, blurb: "Issues, projects, cycles." },
+  { id: "jira", label: "Jira", category: "Project mgmt", Icon: ClipboardList, blurb: "Atlassian issue tracking." },
+  { id: "asana", label: "Asana", category: "Project mgmt", Icon: ClipboardList, blurb: "Tasks, projects, portfolios." },
+  { id: "trello", label: "Trello", category: "Project mgmt", Icon: Trello, blurb: "Boards, lists, cards." },
+  { id: "clickup", label: "ClickUp", category: "Project mgmt", Icon: ClipboardList, blurb: "Docs, tasks, goals." },
+  { id: "monday", label: "Monday.com", category: "Project mgmt", Icon: ClipboardList, blurb: "Work OS for teams." },
+  { id: "github", label: "GitHub", category: "Developer", Icon: Github, blurb: "Repos, issues, PRs." },
+  { id: "gitlab", label: "GitLab", category: "Developer", Icon: GitBranch, blurb: "Repos, MRs, CI/CD." },
+  { id: "bitbucket", label: "Bitbucket", category: "Developer", Icon: GitBranch, blurb: "Atlassian git hosting." },
+  { id: "vercel", label: "Vercel", category: "Developer", Icon: Zap, blurb: "Deployments & projects." },
+
+  // CRM & sales
+  { id: "salesforce", label: "Salesforce", category: "CRM", Icon: Briefcase, blurb: "Leads, contacts, opps." },
+  { id: "hubspot", label: "HubSpot", category: "CRM", Icon: Briefcase, blurb: "Marketing, sales, service." },
+  { id: "pipedrive", label: "Pipedrive", category: "CRM", Icon: Briefcase, blurb: "Sales pipeline mgmt." },
+  { id: "attio", label: "Attio", category: "CRM", Icon: Briefcase, blurb: "Modern relational CRM." },
+  { id: "zoho_crm", label: "Zoho CRM", category: "CRM", Icon: Briefcase, blurb: "Customer relationship suite." },
+
+  // Marketing & email
+  { id: "mailchimp", label: "Mailchimp", category: "Marketing", Icon: Megaphone, blurb: "Email campaigns & lists." },
+  { id: "sendgrid", label: "SendGrid", category: "Marketing", Icon: Mail, blurb: "Transactional email API." },
+  { id: "resend", label: "Resend", category: "Marketing", Icon: Mail, blurb: "Email for developers." },
+  { id: "klaviyo", label: "Klaviyo", category: "Marketing", Icon: Megaphone, blurb: "Ecommerce email & SMS." },
+  { id: "brevo", label: "Brevo", category: "Marketing", Icon: Mail, blurb: "Email, SMS, CRM." },
+
+  // Support
+  { id: "zendesk", label: "Zendesk", category: "Support", Icon: Headphones, blurb: "Tickets & help center." },
+  { id: "intercom", label: "Intercom", category: "Support", Icon: MessageSquare, blurb: "Customer messaging." },
+  { id: "freshdesk", label: "Freshdesk", category: "Support", Icon: Headphones, blurb: "Helpdesk & ticketing." },
+
+  // Payments & commerce
+  { id: "stripe", label: "Stripe", category: "Payments", Icon: CreditCard, blurb: "Payments, billing, invoices." },
+  { id: "paypal", label: "PayPal", category: "Payments", Icon: CreditCard, blurb: "Payments & payouts." },
+  { id: "square", label: "Square", category: "Payments", Icon: CreditCard, blurb: "POS & online payments." },
+  { id: "shopify", label: "Shopify", category: "Commerce", Icon: ShoppingCart, blurb: "Stores, orders, products." },
+  { id: "woocommerce", label: "WooCommerce", category: "Commerce", Icon: ShoppingCart, blurb: "WordPress commerce." },
+  { id: "quickbooks", label: "QuickBooks", category: "Finance", Icon: FileSpreadsheet, blurb: "Accounting & invoicing." },
+  { id: "xero", label: "Xero", category: "Finance", Icon: FileSpreadsheet, blurb: "Cloud accounting." },
+
+  // Storage & data
+  { id: "aws_s3", label: "AWS S3", category: "Storage", Icon: Cloud, blurb: "Object storage buckets." },
+  { id: "snowflake", label: "Snowflake", category: "Data", Icon: Database, blurb: "Cloud data warehouse." },
+  { id: "bigquery", label: "BigQuery", category: "Data", Icon: Database, blurb: "Google data warehouse." },
+
+  // Meetings & content
+  { id: "google_meet", label: "Google Meet", category: "Meetings", Icon: Video, blurb: "Video meetings." },
+  { id: "fireflies", label: "Fireflies", category: "Meetings", Icon: Mic, blurb: "Meeting transcripts & notes." },
+  { id: "granola", label: "Granola", category: "Meetings", Icon: Mic, blurb: "AI meeting notes." },
+  { id: "otter", label: "Otter.ai", category: "Meetings", Icon: Mic, blurb: "Live transcription." },
+  { id: "loom", label: "Loom", category: "Meetings", Icon: Video, blurb: "Async video messages." },
+
+  // Design
+  { id: "figma", label: "Figma", category: "Design", Icon: Figma, blurb: "Files, comments, variables." },
+
+  // Social & content
+  { id: "youtube", label: "YouTube", category: "Social", Icon: Youtube, blurb: "Videos, channels, analytics." },
+  { id: "instagram", label: "Instagram", category: "Social", Icon: Instagram, blurb: "Graph API for posts & DMs." },
+  { id: "facebook", label: "Facebook Pages", category: "Social", Icon: Facebook, blurb: "Pages & messaging." },
+  { id: "x_api", label: "X API", category: "Social", Icon: Twitter, blurb: "Tweets, timelines, mentions." },
+  { id: "tiktok", label: "TikTok", category: "Social", Icon: Music, blurb: "Business & content API." },
+  { id: "reddit", label: "Reddit", category: "Social", Icon: Globe, blurb: "Posts, comments, DMs." },
+
+  // Automation
+  { id: "zapier", label: "Zapier", category: "Automation", Icon: Zap, blurb: "Connect 6000+ apps." },
+  { id: "make", label: "Make", category: "Automation", Icon: Zap, blurb: "Visual automation flows." },
+  { id: "n8n", label: "n8n", category: "Automation", Icon: Zap, blurb: "Open-source workflows." },
+  { id: "ifttt", label: "IFTTT", category: "Automation", Icon: Bell, blurb: "Applets across services." },
 ];
 
 const REQUEST_KEY = "nc:connection-requests";
