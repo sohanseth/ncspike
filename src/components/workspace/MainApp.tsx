@@ -2750,18 +2750,74 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           </div>
 
           {mode === "text" ? (
-            <div className="flex items-center gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
-              <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
-                onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
-                disabled={sending}
-                placeholder={sending ? "Sending…" : "Message your assistant…"}
-                className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
-                style={{fontFamily:"'DM Sans',sans-serif"}}/>
-              <button onClick={handleSend} disabled={sending || !input.trim()}
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
-                <Send size={11}/>
-              </button>
+            <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {attachments.map(a => (
+                    <div key={a.id} className="relative group">
+                      <img src={a.previewUrl} alt="" className="h-12 w-12 rounded-md object-cover border border-white/15" />
+                      <button
+                        type="button"
+                        onClick={() => removeAttachment(a.id)}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+                        aria-label="Remove image"
+                      >
+                        <X size={9}/>
+                      </button>
+                    </div>
+                  ))}
+                  {uploadingAttachments && (
+                    <span className="text-[10px] font-mono text-muted-foreground/60 self-center">uploading…</span>
+                  )}
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files) addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  aria-label="Attach image"
+                  title="Attach image"
+                >
+                  <Paperclip size={13}/>
+                </button>
+                <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
+                  onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
+                  onPaste={e => {
+                    const files: File[] = [];
+                    for (const item of Array.from(e.clipboardData.items)) {
+                      if (item.kind === "file") {
+                        const f = item.getAsFile();
+                        if (f && f.type.startsWith("image/")) files.push(f);
+                      }
+                    }
+                    if (files.length) {
+                      e.preventDefault();
+                      addFiles(files);
+                    }
+                  }}
+                  disabled={sending}
+                  placeholder={sending ? "Sending…" : attachments.length ? "Add a caption…" : "Message your assistant…"}
+                  className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
+                  style={{fontFamily:"'DM Sans',sans-serif"}}/>
+                <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
+                  <Send size={11}/>
+                </button>
+              </div>
             </div>
           ) : (
             <div
