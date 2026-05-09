@@ -94,6 +94,12 @@ export GDPR_REAL_DB_URL="postgresql://postgres@/$DBNAME?host=$ENC_SOCK"
 
 echo "[gdpr-real-db] running vitest (gdpr-roundtrip-realdb + cap-race-realdb)"
 cd "$ROOT"
+# Both real-DB suites are gated on GDPR_REAL_DB_URL and share the same
+# ephemeral cluster: gdpr-roundtrip-realdb pins delete_user_data() per-table
+# coverage (task #11), cap-race-realdb pins the SQL trio that backs the
+# per-day cap (task #15: reserve_inference_slot / finalize_inference_usage /
+# release_inference_slot). Running them in the same vitest invocation keeps
+# the cluster spin-up cost amortized across both.
 exec npx vitest run \
   tests/leak-suite/gdpr-roundtrip-realdb.test.ts \
   tests/leak-suite/cap-race-realdb.test.ts \

@@ -1,11 +1,18 @@
 name: gdpr-real-db
 
-# Runs the GDPR delete_user_data() round-trip against an ephemeral Postgres
-# with every supabase/migrations/*.sql applied. The companion mock-based
-# test in tests/leak-suite/gdpr-roundtrip.test.ts runs in the regular
-# `bun run test` job; this one is its end-to-end counterpart and catches
-# SQL-level regressions (typo'd table name, broken function body, missing
-# FK cascade, RLS that blocks the delete) that the mock cannot.
+# Runs the real-Postgres regression suites against an ephemeral cluster
+# with every supabase/migrations/*.sql applied. Two suites share this job:
+#   1. tests/leak-suite/gdpr-roundtrip-realdb.test.ts — pins
+#      delete_user_data() per-table coverage (catches typo'd table names,
+#      broken function bodies, missing FK cascades, RLS that blocks the
+#      delete). Companion mock: tests/leak-suite/gdpr-roundtrip.test.ts.
+#   2. tests/leak-suite/cap-race-realdb.test.ts (task #19) — pins the
+#      per-day cap SQL trio (reserve_inference_slot /
+#      finalize_inference_usage / release_inference_slot) against the real
+#      advisory lock + status filter + stale-pending sweep. Companion
+#      mock: tests/leak-suite/cap-race.test.ts.
+# Both are gated on GDPR_REAL_DB_URL so the offline `bun run test` path
+# stays green; here that URL is exported by scripts/test-gdpr-real-db.sh.
 
 on:
   push:
@@ -13,7 +20,9 @@ on:
     paths:
       - "supabase/migrations/**"
       - "src/lib/gdpr.functions.ts"
+      - "src/server/inference/chat.ts"
       - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/cap-race-realdb.test.ts"
       - "tests/leak-suite/fixtures/auth-shim.sql"
       - "scripts/test-gdpr-real-db.sh"
       - ".github/workflows/gdpr-real-db.yml"
@@ -21,7 +30,9 @@ on:
     paths:
       - "supabase/migrations/**"
       - "src/lib/gdpr.functions.ts"
+      - "src/server/inference/chat.ts"
       - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/cap-race-realdb.test.ts"
       - "tests/leak-suite/fixtures/auth-shim.sql"
       - "scripts/test-gdpr-real-db.sh"
       - ".github/workflows/gdpr-real-db.yml"
@@ -30,7 +41,7 @@ on:
 jobs:
   gdpr-real-db:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -51,5 +62,5 @@ jobs:
       - name: Install Node dependencies
         run: npm ci --no-audit --no-fund
 
-      - name: Run delete_user_data round-trip against real Postgres
+      - name: Run real-Postgres regressions (gdpr-roundtrip + cap-race)
         run: bash scripts/test-gdpr-real-db.sh
