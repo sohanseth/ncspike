@@ -19,7 +19,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { getProvider, InferenceError, type InferenceMessage } from "./index";
 import type { InferenceChunk } from "./types";
-import { capFor, chainFor, type Badge } from "./router";
+import { capFor, chainFor, modalityFor, type Badge } from "./router";
 import { isOnDeviceProvider } from "@/lib/provider-tiers";
 import { costMicroUsd } from "./pricing";
 import type { ProviderId } from "@/lib/provider-tiers";
@@ -40,6 +40,30 @@ function assertNoOnDeviceProviders(badge: Badge, chain: ProviderId[]): void {
         `cannot run on-device generation; the client must call the on-device ` +
         `path directly via prepareOnDeviceTurn / finalizeOnDeviceTurn. See docs/11.`,
     );
+  }
+}
+
+/**
+ * Thrown by `runChain` / `runChainStream` when a chain's resolved modality
+ * is `'image-out'`. Phase 2.9a (slice a) wires the fork but leaves the
+ * branch as a stub — slice b adds real image-out adapters. Until then the
+ * runner refuses image-out chains explicitly so a misrouted call surfaces
+ * loudly rather than as an opaque chain-exhausted later.
+ *
+ * Note: image-generation requests today are handled OUT-OF-BAND in
+ * `src/routes/api.chat.stream.ts` via `runImageGenTurn` (Lovable AI Gateway,
+ * text-out chains only). This error covers a different future code path:
+ * a chain whose `modality` is declared image-out reaching the chain runner.
+ */
+export class ImageOutNotAvailableError extends Error {
+  public readonly badge: Badge;
+  constructor(badge: Badge) {
+    super(
+      `IMAGE_OUT_NOT_AVAILABLE: chain for badge "${badge}" has modality 'image-out'; ` +
+        `no image-out adapter is wired in slice a. See docs/12 §15.`,
+    );
+    this.name = "ImageOutNotAvailableError";
+    this.badge = badge;
   }
 }
 
@@ -245,6 +269,13 @@ export type RunChainArgs = {
 export async function runChain(args: RunChainArgs): Promise<ChainResult> {
   const { badge } = args;
   const cfg = chainFor(badge);
+  // Phase 2.9a slice-a fork: image-out chains are not yet runnable. No
+  // shipping chain declares `'image-out'` today, so this is dormant in
+  // production but lets slice b wire real adapters without changing the
+  // text path. Throw BEFORE any side effect (cap-check, provider call).
+  if (modalityFor(cfg) === "image-out") {
+    throw new ImageOutNotAvailableError(badge);
+  }
   assertNoOnDeviceProviders(badge, cfg.chain);
 
   if (!args.assumeCapChecked) {
@@ -364,6 +395,9 @@ export async function* runChainStream(
 ): AsyncGenerator<ChainStreamEvent, void, void> {
   const { badge } = args;
   const cfg = chainFor(badge);
+  if (modalityFor(cfg) === "image-out") {
+    throw new ImageOutNotAvailableError(badge);
+  }
   assertNoOnDeviceProviders(badge, cfg.chain);
 
   if (!args.assumeCapChecked) {

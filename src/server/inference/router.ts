@@ -9,6 +9,15 @@ import type { ProviderId } from "@/lib/provider-tiers";
 
 export type Badge = "flash" | "pro" | "genius" | "private";
 
+/**
+ * Output modality of a chain. Phase 2.9a (slice a) introduces this fork so
+ * the runner can route image-generation turns separately from text turns
+ * without refactoring the existing text path. All shipping chains default
+ * to `'text-out'` for now; an `'image-out'` chain is reachable only via
+ * future routing in slice b. See docs/12-spec-image-gen-private.md §15.
+ */
+export type Modality = "text-out" | "image-out";
+
 export type BadgeChain = {
   badge: Badge;
   /** Display label shown in the UI. */
@@ -19,6 +28,12 @@ export type BadgeChain = {
   paidOnly: boolean;
   /** True = no fallback allowed. PRIVATE-only. */
   failClosed: boolean;
+  /**
+   * Output modality. Defaults to `'text-out'` if omitted (every shipping
+   * chain in 2.9a). The chain runner forks on this BEFORE walking providers
+   * — image-out is currently a stub that throws `IMAGE_OUT_NOT_AVAILABLE`.
+   */
+  modality?: Modality;
 };
 
 export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
@@ -28,6 +43,7 @@ export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
     chain: ["groq", "google", "cloudflare", "lovable"],
     paidOnly: false,
     failClosed: false,
+    modality: "text-out",
   },
   pro: {
     badge: "pro",
@@ -35,6 +51,7 @@ export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
     chain: ["anthropic", "openai", "groq", "lovable"],
     paidOnly: false,
     failClosed: false,
+    modality: "text-out",
   },
   genius: {
     // Renamed from "GPT-5" per gate G3 (locked 2026-05-08).
@@ -43,6 +60,7 @@ export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
     chain: ["openai", "anthropic", "lovable"],
     paidOnly: true,
     failClosed: false,
+    modality: "text-out",
   },
   private: {
     badge: "private",
@@ -55,8 +73,18 @@ export const BADGE_CHAINS: Record<Badge, BadgeChain> = {
     chain: ["onDeviceApple", "onDeviceAndroid", "onDeviceWebLLM"],
     paidOnly: false,
     failClosed: true,
+    modality: "text-out",
   },
 };
+
+/**
+ * Resolved modality for a chain, with the slice-a default applied. Callers
+ * should prefer this over reading `cfg.modality` directly so the default
+ * lives in one place.
+ */
+export function modalityFor(cfg: BadgeChain): Modality {
+  return cfg.modality ?? "text-out";
+}
 
 export function chainFor(badge: Badge): BadgeChain {
   return BADGE_CHAINS[badge];
