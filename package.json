@@ -12,7 +12,8 @@
     "format": "prettier --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:gdpr:realdb": "bash scripts/test-gdpr-real-db.sh"
+    "test:gdpr:realdb": "bash scripts/test-gdpr-real-db.sh",
+    "backfill:trait-meta": "tsx scripts/backfill-trait-meta.ts"
   },
   "dependencies": {
     "@aparajita/capacitor-secure-storage": "^8.0.0",
@@ -88,6 +89,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.32.0",
+    "tsx": "^4.21.0",
     "@lovable.dev/vite-tanstack-config": "^1.4.0",
     "@types/node": "^22.16.5",
     "@types/pg": "^8.20.0",

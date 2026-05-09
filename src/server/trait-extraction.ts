@@ -801,6 +801,224 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
   return { written: true, version: nextVersion };
 }
 
+// ─── Task #40: one-shot backfill of v1 sheets to per-trait freshness ────────
+//
+// Sheets written by the task #24 extractor only carry `category_meta` and
+// per-CATEGORY embeddings. The runtime read-path in `readPriorTraitMeta` seeds
+// each leaf with the category-level `last_seen_at` lazily, but `trait_embeddings`
+// stays empty until the user's NEXT extraction run — so a quiet user keeps
+// running without per-leaf re-confirmation cosine signals.
+//
+// `backfillTraitMetaForUserId` upgrades a single row in place WITHOUT
+// re-running the LLM:
+//   - it splits each existing category's content into its constituent leaves
+//   - seeds `trait_meta[cat][path]` from `category_meta[cat]` (or `derived_at`
+//     when category_meta is itself missing — possible on very-old sheets that
+//     pre-date task #24)
+//   - re-embeds each leaf via bge-small-en and writes `trait_embeddings`
+//   - re-validates against `TraitSheetSchema` and upserts at the SAME version
+//     (this is a metadata upgrade, not a logical new sheet, so we don't bump
+//     `version` — the broker continues to serve the same content)
+//
+// Idempotent: if every leaf in every category in the existing sheet already
+// has a `trait_meta` entry AND a `trait_embeddings` entry, the row is a no-op.
+
+export type BackfillResult =
+  | { status: "upgraded"; categories: number; leaves: number }
+  | { status: "noop"; reason: "already_upgraded" | "no_sheet" | "empty_sheet" }
+  | { status: "failed"; reason: "embedding_failed" | "zod_reject" | "upsert_failed" };
+
+function sheetNeedsBackfill(sheet: TraitSheet): boolean {
+  const cats = Object.keys(sheet.categories) as TraitCategory[];
+  if (cats.length === 0) return false;
+  for (const cat of cats) {
+    const traits = splitContentToTraits(cat, sheet.categories[cat]);
+    const traitMetaForCat = sheet.trait_meta?.[cat] ?? {};
+    const traitEmbedsForCat = sheet.trait_embeddings?.[cat] ?? {};
+    for (const path of Object.keys(traits)) {
+      if (!traitMetaForCat[path]) return true;
+      if (!traitEmbedsForCat[path]) return true;
+    }
+  }
+  return false;
+}
+
+export async function backfillTraitMetaForUserId(userId: string): Promise<BackfillResult> {
+  const { data: existing } = await (supabaseAdmin as any)
+    .from("user_traits")
+    .select("version, sheet, derived_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!existing?.sheet) return { status: "noop", reason: "no_sheet" };
+
+  const priorSheet = existing.sheet as TraitSheet;
+  const priorCats = priorSheet.categories ?? {};
+  const catKeys = Object.keys(priorCats) as TraitCategory[];
+  if (catKeys.length === 0) return { status: "noop", reason: "empty_sheet" };
+
+  if (!sheetNeedsBackfill(priorSheet)) {
+    return { status: "noop", reason: "already_upgraded" };
+  }
+
+  const fallbackLastSeen = priorSheet.derived_at ?? new Date().toISOString();
+
+  // Compose target trait_meta + identify which leaves still need embeddings.
+  const newTraitMeta: Record<string, Record<string, TraitMeta>> = {};
+  const newTraitEmbeds: Record<string, Record<string, number[]>> = {};
+  const embedSlots: Array<{ cat: TraitCategory; path: string }> = [];
+  const embedInputs: string[] = [];
+
+  for (const cat of catKeys) {
+    const traits = splitContentToTraits(cat, priorCats[cat]);
+    if (Object.keys(traits).length === 0) continue;
+
+    const priorMetaForCat = priorSheet.trait_meta?.[cat] ?? {};
+    const priorEmbedsForCat = priorSheet.trait_embeddings?.[cat] ?? {};
+    const catFallback = priorSheet.category_meta?.[cat];
+    const catLastSeen = catFallback?.last_seen_at ?? fallbackLastSeen;
+    const catSources = catFallback?.source_memory_ids ?? [];
+
+    newTraitMeta[cat] = {};
+    newTraitEmbeds[cat] = {};
+
+    for (const [path, value] of Object.entries(traits)) {
+      newTraitMeta[cat][path] = priorMetaForCat[path] ?? {
+        last_seen_at: catLastSeen,
+        source_memory_ids: catSources.slice(0, MAX_PER_CATEGORY_SOURCES),
+      };
+      const priorEmb = priorEmbedsForCat[path];
+      if (priorEmb) {
+        newTraitEmbeds[cat][path] = priorEmb;
+      } else {
+        embedSlots.push({ cat, path });
+        embedInputs.push(traitToEmbeddingText(cat, path, value));
+      }
+    }
+  }
+
+  if (embedInputs.length > 0) {
+    let vecs: number[][];
+    try {
+      vecs = await embedTexts(embedInputs);
+    } catch {
+      for (const cat of new Set(embedSlots.map((s) => s.cat))) {
+        await logExtractionFailure(userId, cat, "embedding_failed");
+      }
+      return { status: "failed", reason: "embedding_failed" };
+    }
+    embedSlots.forEach((slot, i) => {
+      newTraitEmbeds[slot.cat][slot.path] = vecs[i];
+    });
+  }
+
+  const candidate: TraitSheet = {
+    ...priorSheet,
+    trait_meta: newTraitMeta,
+    trait_embeddings: newTraitEmbeds,
+  };
+
+  const validated = TraitSheetSchema.safeParse(candidate);
+  if (!validated.success) {
+    for (const issue of validated.error.issues) {
+      await logExtractionFailure(userId, null, "zod_reject", issue.path.join("."));
+    }
+    return { status: "failed", reason: "zod_reject" };
+  }
+
+  // Same version — backfill is metadata-only, not a new logical sheet.
+  const { error: upsertError } = await (supabaseAdmin as any)
+    .from("user_traits")
+    .upsert(
+      {
+        user_id: userId,
+        version: existing.version,
+        sheet: validated.data,
+        derived_at: validated.data.derived_at,
+        source_count: validated.data.source_memory_ids.length,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id" },
+    );
+  if (upsertError) {
+    console.error(`[trait-backfill] upsert failed for ${userId}:`, upsertError);
+    return { status: "failed", reason: "upsert_failed" };
+  }
+
+  let leaves = 0;
+  for (const cat of catKeys) leaves += Object.keys(newTraitMeta[cat] ?? {}).length;
+  return { status: "upgraded", categories: catKeys.length, leaves };
+}
+
+export type BackfillSummary = {
+  users: number;
+  upgraded: number;
+  alreadyUpgraded: number;
+  skipped: number;
+  failed: number;
+};
+
+/**
+ * Iterate every `user_traits` row and upgrade any v1 sheet to the per-trait
+ * freshness format. Safe to re-run — already-upgraded rows are detected and
+ * skipped without any LLM or embedding work. Errors are isolated per-user so
+ * one bad row doesn't poison the batch.
+ */
+export async function backfillTraitMetaAllUsers(): Promise<BackfillSummary> {
+  const summary: BackfillSummary = {
+    users: 0,
+    upgraded: 0,
+    alreadyUpgraded: 0,
+    skipped: 0,
+    failed: 0,
+  };
+  // Paginate via deterministic user_id ordering. PostgREST's default row cap
+  // (typically 1000) silently truncates an unbounded select, which would mean
+  // the "one-shot, everyone gets upgraded" guarantee is quietly broken on any
+  // deployment with more than that many trait rows. We page until a short page
+  // tells us we've hit the end.
+  const PAGE_SIZE = 500;
+  const userIds: string[] = [];
+  let from = 0;
+  for (;;) {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("user_traits")
+      .select("user_id")
+      .order("user_id", { ascending: true })
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) {
+      // Surface as failed so the script's non-zero exit fires; otherwise a
+      // truncated/erroring user-list silently returns "0 failed" and the
+      // operator believes the backfill completed cleanly.
+      console.error("[trait-backfill] user-list query failed:", error);
+      summary.failed++;
+      return summary;
+    }
+    const page = ((data ?? []) as Array<{ user_id: string }>).map((r) => r.user_id);
+    userIds.push(...page);
+    if (page.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  summary.users = userIds.length;
+
+  for (const userId of userIds) {
+    try {
+      const r = await backfillTraitMetaForUserId(userId);
+      if (r.status === "upgraded") summary.upgraded++;
+      else if (r.status === "noop" && r.reason === "already_upgraded") summary.alreadyUpgraded++;
+      else if (r.status === "noop") summary.skipped++;
+      else summary.failed++;
+    } catch (e) {
+      summary.failed++;
+      console.error(`[trait-backfill] user ${userId} threw:`, e);
+    }
+  }
+
+  console.log(
+    `[trait-backfill] done: users=${summary.users} upgraded=${summary.upgraded} alreadyUpgraded=${summary.alreadyUpgraded} skipped=${summary.skipped} failed=${summary.failed}`,
+  );
+  return summary;
+}
+
 /**
  * Cron-callable batch entry. Iterates users who have ANY recent memory_nodes
  * activity in the extraction window. Errors are isolated per-user so one bad
