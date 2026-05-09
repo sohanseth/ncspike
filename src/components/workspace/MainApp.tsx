@@ -2411,6 +2411,21 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const [threadId, setThreadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** Click-to-expand lightbox source. Cleared on backdrop click / Escape. */
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    // Capture-phase + stopImmediatePropagation so Escape closes the lightbox
+    // FIRST without also tripping the panel-level Escape-to-close handler
+    // registered in the effect below.
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setLightboxSrc(null);
+      e.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [lightboxSrc]);
   // Unified Converse surface: text vs voice modes share the same message list
   // and stream pipeline. Voice mode auto-plays the assistant reply via the
   // proxied ElevenLabs endpoint (skipped for PRIVATE badge per spec §3).
@@ -2735,7 +2750,15 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                           {msg.images && msg.images.length > 0 && (
                             <div className="grid grid-cols-1 gap-1.5">
                               {msg.images.map((src, k) => (
-                                <img key={k} src={src} alt="" className="rounded-lg max-h-80 object-contain w-full border border-white/10" />
+                                <button
+                                  type="button"
+                                  key={k}
+                                  onClick={() => setLightboxSrc(src)}
+                                  className="block w-full rounded-lg overflow-hidden border border-white/10 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                                  aria-label="Expand generated image"
+                                >
+                                  <img src={src} alt="Generated image" className="max-h-80 object-contain w-full" />
+                                </button>
                               ))}
                             </div>
                           )}
@@ -2752,6 +2775,15 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                         {msg.meta.provider}{msg.meta.model ? ` · ${msg.meta.model}` : ""}
                         {msg.meta.fallbackDepth && msg.meta.fallbackDepth > 0 ? ` · fallback ${msg.meta.fallbackDepth}` : ""}
                       </span>
+                    </div>
+                  )}
+                  {msg.images && msg.images.length > 0 && msg.meta?.provider &&
+                    (msg.meta.provider === "onDeviceWebGpuImage"
+                      || msg.meta.provider === "onDeviceAppleImage"
+                      || msg.meta.provider === "onDeviceAndroidImage") && (
+                    <div className="ml-8 mt-1 flex items-center gap-1.5 text-[10px] font-mono text-emerald-300/70">
+                      <Shield size={9} />
+                      <span>Generated on your device — no image bytes sent to any hosted provider.</span>
                     </div>
                   )}
                   {msg.contextUsed && msg.contextUsed.categories.length > 0 && (
@@ -2934,6 +2966,32 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
 
         </div>
       </div>
+
+      {lightboxSrc && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-6 cursor-zoom-out"
+          style={{ background: "rgba(4,2,12,0.92)", backdropFilter: "blur(20px)" }}
+          onClick={() => setLightboxSrc(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Expanded image"
+        >
+          <img
+            src={lightboxSrc}
+            alt="Expanded generated image"
+            className="max-w-[92vw] max-h-[90vh] object-contain rounded-xl border border-white/10 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            onClick={() => setLightboxSrc(null)}
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80"
+            aria-label="Close expanded image"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
