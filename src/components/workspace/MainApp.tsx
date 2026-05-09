@@ -3846,6 +3846,13 @@ function AddTaskButton() {
   const [text, setText] = useState("");
   const [listening, setListening] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceLang, setVoiceLang] = useState<string>(() => {
+    if (typeof window === "undefined") return "en-US";
+    return localStorage.getItem("voice-lang") || (navigator.language || "en-US");
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("voice-lang", voiceLang);
+  }, [voiceLang]);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // SpeechRecognition is a browser API not in TS lib types; cast loosely.
   const recogRef = useRef<any>(null);
