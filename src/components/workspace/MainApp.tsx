@@ -2123,6 +2123,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
   const Icon = domain?.Icon;
 
   const { items: inbox, error: inboxErr } = useInbox();
+  const { tasks: manualTasks, toggleDone: toggleManualDone, removeTask: removeManualTask } = useManualTasks();
   const { status, refresh } = useVoiceDraftsStatus();
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
@@ -2141,6 +2142,11 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
     if (isOther) return inbox.filter(i => i.category === "needs_review" || i.category === "ignore");
     return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
   }, [inbox, isOther, domainId]);
+
+  const myManualTasks = useMemo(
+    () => (isOther ? [] : manualTasks.filter(t => t.domain === domainId)),
+    [manualTasks, isOther, domainId]
+  );
 
   const visible = items.filter(i => !doneIds.has(i.id));
   const fallbackC = C.professional;
@@ -2171,7 +2177,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
             {isOther ? "Other" : domain!.label}
           </p>
           <p className="text-[10px] font-mono text-muted-foreground/50">
-            {visible.length} {visible.length === 1 ? "item" : "items"}
+            {visible.length + myManualTasks.length} {visible.length + myManualTasks.length === 1 ? "item" : "items"}
           </p>
         </div>
       </div>
@@ -2187,7 +2193,40 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
           {!inbox && !inboxErr && (
             <div className="rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading…</div>
           )}
-          {inbox && visible.length === 0 && (
+          {myManualTasks.length > 0 && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 flex flex-col gap-1">
+              <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
+                <Mono className="!text-foreground/55">Your tasks</Mono>
+                <span className="text-[10px] font-mono text-muted-foreground/40">{myManualTasks.length}</span>
+              </div>
+              {myManualTasks.map(t => (
+                <div key={t.id} className="group flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition-colors">
+                  <button
+                    onClick={() => toggleManualDone(t.id)}
+                    className="w-4 h-4 rounded-md border border-white/20 flex items-center justify-center flex-shrink-0 hover:border-white/40 transition-colors"
+                    style={t.done ? { background: cardC.icon, borderColor: cardC.icon } : undefined}
+                    aria-label={t.done ? "Mark not done" : "Mark done"}
+                  >
+                    {t.done && <Check size={10} className="text-background"/>}
+                  </button>
+                  <span className={`flex-1 text-[12.5px] leading-snug ${t.done ? "line-through text-muted-foreground/40" : "text-foreground/85"}`} style={{fontFamily:"'DM Sans',sans-serif"}}>
+                    {t.text}
+                  </span>
+                  {t.urgent && !t.done && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-300/90">urgent</span>
+                  )}
+                  <button
+                    onClick={() => removeManualTask(t.id)}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-rose-300 transition-all"
+                    aria-label="Remove"
+                  >
+                    <X size={12}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {inbox && visible.length === 0 && myManualTasks.length === 0 && (
             <div className="rounded-2xl border border-white/[0.06] px-4 py-6 flex flex-col items-center gap-2 text-center">
               <Check size={16} className="text-emerald-400"/>
               <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>
