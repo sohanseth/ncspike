@@ -1834,8 +1834,19 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
   const { items: inboxRaw, error: inboxErr } = useInbox();
   const inbox = useMemo(() => (inboxRaw ?? []).filter(i => !doneIds.has(i.id)), [inboxRaw, doneIds]);
 
+  // Manual tasks the user added via the header "Add task" button. Stored in
+  // localStorage; merged here so they appear in the matching bento box
+  // alongside live Gmail items.
+  const { tasks: manualTasks } = useManualTasks();
+  const activeManual = useMemo(() => manualTasks.filter(t => !t.done), [manualTasks]);
+
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
+    // Manual tasks first so they appear at the top of each domain.
+    activeManual.forEach(t => {
+      const arr = groups[t.domain] ?? (groups[t.domain] = []);
+      arr.push({ id: t.id, text: t.text, meta: "Added by you", urgent: t.urgent, progress: 0 });
+    });
     (inbox ?? []).filter(i => i.category !== "ignore" && i.category !== "needs_review").forEach(i => {
       const arr = groups[i.domain] ?? (groups[i.domain] = []);
       arr.push({
@@ -1847,7 +1858,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       });
     });
     return groups;
-  }, [inbox]);
+  }, [inbox, activeManual]);
 
   const urgencyByDomain = useMemo(() => {
     const out: Partial<Record<DomainId, UrgencyCounts>> = {};
@@ -1858,8 +1869,14 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       else if (i.category === "today") u.today += 1;
       else if (i.category === "proactive") u.proactive += 1;
     });
+    // Manual tasks bump urgent vs proactive depending on the urgency hint.
+    activeManual.forEach(t => {
+      const u = out[t.domain] ?? (out[t.domain] = { urgent: 0, today: 0, proactive: 0 });
+      if (t.urgent) u.urgent += 1;
+      else u.proactive += 1;
+    });
     return out;
-  }, [inbox]);
+  }, [inbox, activeManual]);
 
   const otherList = useMemo(
     () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore"),
