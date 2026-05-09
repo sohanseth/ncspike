@@ -113,6 +113,7 @@ export type Database = {
           created_at: string
           fallback_depth: number | null
           id: string
+          in_reply_to_id: string | null
           metadata: Json
           model: string | null
           provider: string | null
@@ -128,6 +129,7 @@ export type Database = {
           created_at?: string
           fallback_depth?: number | null
           id?: string
+          in_reply_to_id?: string | null
           metadata?: Json
           model?: string | null
           provider?: string | null
@@ -143,6 +145,7 @@ export type Database = {
           created_at?: string
           fallback_depth?: number | null
           id?: string
+          in_reply_to_id?: string | null
           metadata?: Json
           model?: string | null
           provider?: string | null
@@ -152,6 +155,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "chat_messages_in_reply_to_id_fkey"
+            columns: ["in_reply_to_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "chat_messages_thread_id_fkey"
             columns: ["thread_id"]
@@ -317,6 +327,7 @@ export type Database = {
           id: string
           input_tokens: number | null
           latency_ms: number | null
+          message_id: string | null
           model_used: string | null
           output_tokens: number | null
           provider_chain: string[]
@@ -344,6 +355,7 @@ export type Database = {
           id?: string
           input_tokens?: number | null
           latency_ms?: number | null
+          message_id?: string | null
           model_used?: string | null
           output_tokens?: number | null
           provider_chain: string[]
@@ -371,6 +383,7 @@ export type Database = {
           id?: string
           input_tokens?: number | null
           latency_ms?: number | null
+          message_id?: string | null
           model_used?: string | null
           output_tokens?: number | null
           provider_chain?: string[]
@@ -389,7 +402,15 @@ export type Database = {
           voice_turn_latency_ms?: number | null
           vtl_ms?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "inference_usage_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       memory_edges: {
         Row: {
@@ -842,6 +863,7 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: {
           chat_context_log_deleted: number
+          chat_message_attachments_deleted: number
           chat_messages_deleted: number
           chat_threads_deleted: number
           extraction_failures_deleted: number
