@@ -2123,6 +2123,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
   const Icon = domain?.Icon;
 
   const { items: inbox, error: inboxErr } = useInbox();
+  const { tasks: manualTasks, toggleDone: toggleManualDone, removeTask: removeManualTask } = useManualTasks();
   const { status, refresh } = useVoiceDraftsStatus();
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
@@ -2141,6 +2142,11 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
     if (isOther) return inbox.filter(i => i.category === "needs_review" || i.category === "ignore");
     return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
   }, [inbox, isOther, domainId]);
+
+  const myManualTasks = useMemo(
+    () => (isOther ? [] : manualTasks.filter(t => t.domain === domainId)),
+    [manualTasks, isOther, domainId]
+  );
 
   const visible = items.filter(i => !doneIds.has(i.id));
   const fallbackC = C.professional;
