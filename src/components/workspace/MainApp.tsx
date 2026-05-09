@@ -416,7 +416,9 @@ function TopBar({
             // get trapped by the iframe's frame-ancestors policy and Google
             // refuses to render inside an iframe (ERR_BLOCKED_BY_RESPONSE).
             const a = document.createElement("a");
-            a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+            // `igu=1` ("I'm Google User") tells Google to skip its iframe-embed
+            // block, so results render inside the Lovable preview wrapper too.
+            a.href = `https://www.google.com/search?igu=1&q=${encodeURIComponent(q)}`;
             a.target = "_blank";
             a.rel = "noopener noreferrer";
             document.body.appendChild(a);
