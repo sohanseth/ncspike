@@ -1,10 +1,35 @@
-import { Search, Command, LogOut } from "lucide-react";
+import { Search, LogOut } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 export function Topbar({ title, subtitle }: { title: string; subtitle?: string }) {
   const { signOut } = useAuth();
   const navigate = useNavigate();
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Cmd/Ctrl-K focuses the search box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = query.trim();
+    if (!q) return;
+    // Opens in a new tab — the OS hands the URL to the user's default browser
+    // (Chrome, Safari, etc.) when launched from a PWA/native shell.
+    const url = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
 
   const handleSignOut = async () => {
     await signOut();
