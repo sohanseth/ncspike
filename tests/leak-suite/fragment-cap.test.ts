@@ -23,6 +23,20 @@
  */
 import { describe, it, expect, vi } from "vitest";
 
+// Spy on logScrubEvent so we can assert the audit row identity for the
+// fragment-oversize branch. Preserve the rest of the module (notably `scrub`
+// and `loadKnownNames`) so the broker's step-8 PII pass still runs normally.
+const logScrubEventSpy = vi.fn(async () => {});
+vi.mock("@/server/pii-scrub", async () => {
+  const actual = await vi.importActual<typeof import("@/server/pii-scrub")>(
+    "@/server/pii-scrub",
+  );
+  return {
+    ...actual,
+    logScrubEvent: logScrubEventSpy,
+  };
+});
+
 // 80-char string (the safeString cap). Letters only so it can't trip any PII
 // regex or injection sentinel.
 const STR80 = "x".repeat(80);
@@ -114,6 +128,7 @@ describe("Broker — fragment length cap", () => {
   });
 
   it("oversized (but schema-valid) trait sheet → scrubBlocked=true, empty fragment", async () => {
+    logScrubEventSpy.mockClear();
     const { assembleSystemPrompt } = await import("@/server/context-broker");
     const result = await assembleSystemPrompt({
       userId: "00000000-0000-0000-0000-000000000001",
@@ -126,5 +141,20 @@ describe("Broker — fragment length cap", () => {
     expect(result.scrubBlocked).toBe(true);
     expect(result.fragment).toBe("");
     expect(result.contextUsed.categories).toHaveLength(0);
+
+    // Pin the audit-row identity: the fragment-oversize branch — and ONLY
+    // that branch — must have fired. A future refactor that returns
+    // scrubBlocked from a different code path (e.g. the step-8 PII scrub,
+    // or a silent early-return) would either drop this call or log a
+    // different patternClass, and this assertion would catch it.
+    expect(logScrubEventSpy).toHaveBeenCalledTimes(1);
+    expect(logScrubEventSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "00000000-0000-0000-0000-000000000001",
+        patternClass: "fragment_oversize",
+        badge: "private",
+        providerTier: -1,
+      }),
+    );
   });
 });
