@@ -411,7 +411,17 @@ function TopBar({
           onClick={() => {
             const q = window.prompt("Search Google for:")?.trim();
             if (!q) return;
-            window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, "_blank", "noopener,noreferrer");
+            // Use an <a target="_blank"> click so the new tab opens at the top
+            // level — `window.open` from inside the Lovable preview iframe can
+            // get trapped by the iframe's frame-ancestors policy and Google
+            // refuses to render inside an iframe (ERR_BLOCKED_BY_RESPONSE).
+            const a = document.createElement("a");
+            a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
           }}
           title="Search Google"
           aria-label="Search Google"
