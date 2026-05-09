@@ -363,8 +363,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     };
   });
 
-// Re-export typed errors so the UI can do `instanceof` checks if desired.
-export { CapExceededError, ChainExhaustedError };
+// Note: typed errors (CapExceededError, ChainExhaustedError) are not re-exported
+// here — re-exporting them as top-level values would force the client bundle to
+// pull in @/server/inference/chat (a server-only module) and trip the
+// import-protection plugin. Server code should import them directly from
+// "@/server/inference/chat".
 
 // ──────────────────────────────────────────────────────────────────────────────
 // On-device path (Phase 2.8 — see docs/11-spec-on-device-tier.md).
