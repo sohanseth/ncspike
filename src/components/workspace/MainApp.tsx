@@ -373,7 +373,54 @@ function DomainTiles({ onDomain }: { onDomain:(id:DomainId)=>void }) {
   );
 }
 
+// ─── Action pill (header buttons: Search / Add tasks / Chat / Compose / You) ─
+//
+// Glassmorphic pill with a per-button accent colour applied to the icon and
+// glow halo. Active state lights the whole pill with the accent. Designed so
+// the row of header actions feels like a connected set rather than five
+// neutral grey buttons.
+
+function ActionPill({
+  icon, label, accent, active, onClick, title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  accent: string;
+  active?: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={title ?? label}
+      className={`group relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 hover:-translate-y-px ${
+        active
+          ? "text-foreground/95 border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.4)]"
+          : "border-white/[0.08] text-foreground/70 hover:text-foreground hover:border-white/20"
+      }`}
+      style={{
+        fontFamily: "'DM Sans',sans-serif",
+        background: active
+          ? `linear-gradient(135deg, ${accent}33, ${accent}10)`
+          : "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+        boxShadow: active ? `0 0 18px ${accent}55, inset 0 0 0 1px ${accent}55` : undefined,
+      }}
+    >
+      <span
+        className="inline-flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ color: accent, filter: `drop-shadow(0 0 6px ${accent}99)` }}
+      >
+        {icon}
+      </span>
+      <span className="hidden sm:block">{label}</span>
+    </button>
+  );
+}
+
 // ─── Top bar ──────────────────────────────────────────────────────────────────
+
 
 function TopBar({
   mapView, setMapView, tool, setTool, onDomain, onVoice, onExplore, onTest,
