@@ -20,6 +20,11 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# On-device NSFW classifier model — fetched at build time by
+# scripts/fetch-android-nsfw-model.sh, never committed (binary, may be
+# license-encumbered, swappable). See android/app/src/main/assets/README.md.
+android/app/src/main/assets/nsfw_image_classifier.tflite
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
