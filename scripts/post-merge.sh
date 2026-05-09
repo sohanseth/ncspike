@@ -17,3 +17,14 @@ if [ -f package-lock.json ]; then
 else
   npm install --no-audit --no-fund --prefer-offline
 fi
+
+# Reconcile Android native pieces this repo owns: MediaPipe gradle dep,
+# noCompress tflite, MainActivity plugin registration, and the on-device
+# NSFW model in APK assets. This is a no-op until `npx cap add android`
+# has been run on a Mac and the generated `android/` project committed
+# back. The script fails closed if the project IS generated but the
+# model asset is missing, so we never silently ship an APK whose safety
+# gate falls back to WebGPU on every device.
+if [ -f scripts/setup-android-native.sh ]; then
+  bash scripts/setup-android-native.sh
+fi

@@ -59,6 +59,44 @@ What you'll see:
 - `ios/App/App/Info.plist` and `ios/App/App.xcodeproj` — open in Xcode, set the Team to your Apple Developer team, set the bundle id (should already be `com.neuralconnexions.app`).
 - `android/app/build.gradle` — `applicationId "com.neuralconnexions.app"`. Sync Gradle.
 
+### Day 1.5 — wire the on-device NSFW gate (Android)
+
+Without this step the Android safety gate never fires and the JS
+bridge in `src/lib/imagegen-safety.ts` falls back to the heavier
+WebGPU/WASM classifier on every Android device. After `cap add android`,
+run the single reconciler:
+
+```bash
+NSFW_MODEL_URL="https://…/nsfw_image_classifier.tflite" \
+NSFW_MODEL_SHA256="<expected-sha256>" \
+bash scripts/setup-android-native.sh
+```
+
+`scripts/setup-android-native.sh` is idempotent and does four things:
+
+1. Patches `android/app/build.gradle` to add the MediaPipe dep
+   (`com.google.mediapipe:tasks-vision:0.10.14`) and
+   `aaptOptions { noCompress "tflite" }` so MediaPipe can mmap the
+   asset directly.
+2. Patches `android/app/src/main/java/com/neuralconnexions/app/MainActivity.java`
+   to call `registerPlugin(NCImageSafetyMediaPipe.class)` on
+   `onCreate`.
+3. Calls `scripts/fetch-android-nsfw-model.sh` (with sha256 verification)
+   to drop `nsfw_image_classifier.tflite` into APK assets.
+4. **Fails closed** if the gradle file is present but the model asset
+   is still missing, so a broken build aborts instead of silently
+   shipping an inert APK.
+
+The same script is wired into `scripts/post-merge.sh`, so after the
+generated `android/` project has been committed once, every subsequent
+merge re-applies the gradle and MainActivity patches automatically.
+
+After running it, `npx cap sync android` and rebuild. On a real device,
+generate an image: the JS bridge log should show
+`NCImageSafetyMediaPipe` selected (not the WebGPU fallback), and a
+known-bad fixture from `tests/leak-suite/fixtures/` should be denied
+with zero network traffic during classify.
+
 ---
 
 ## Day 1 — first device run (smoke test)
