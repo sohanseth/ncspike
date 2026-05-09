@@ -3775,23 +3775,28 @@ export function MainApp() {
 // to localStorage, and shows up in the matching bento box on the home canvas.
 
 function AddTaskButton() {
-  const { addTask } = useManualTasks();
+  const { addTasks } = useManualTasks();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // Live preview of where the task will land while the user is typing.
-  const preview = useMemo(() => (text.trim() ? classifyTask(text) : null), [text]);
+  // Live per-line preview — one entry per non-empty line so users can see
+  // exactly how each task in a bulk paste will be categorised.
+  const previews = useMemo(() => {
+    return text
+      .split(/\r?\n/)
+      .map((raw) => raw.replace(/^\s*[-*•·–—]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim())
+      .filter(Boolean)
+      .map((line) => ({ line, ...classifyTask(line) }));
+  }, [text]);
 
   useEffect(() => {
     if (open) {
-      // setTimeout so the dialog mounts before we focus.
       const t = setTimeout(() => inputRef.current?.focus(), 30);
       return () => clearTimeout(t);
     }
   }, [open]);
 
-  // ESC closes the modal.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -3802,8 +3807,8 @@ function AddTaskButton() {
   }, [open]);
 
   const submit = () => {
-    const created = addTask(text);
-    if (!created) return;
+    const created = addTasks(text);
+    if (!created.length) return;
     setText("");
     setOpen(false);
   };
@@ -3820,13 +3825,13 @@ function AddTaskButton() {
     <>
       <button
         onClick={() => setOpen(true)}
-        title="Add a task"
-        aria-label="Add a task"
+        title="Add tasks"
+        aria-label="Add tasks"
         className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
         style={{ fontFamily: "'DM Sans',sans-serif" }}
       >
         <ListTodo size={13} />
-        <span className="hidden sm:block">Add task</span>
+        <span className="hidden sm:block">Add tasks</span>
       </button>
 
       {open && (
@@ -3841,7 +3846,8 @@ function AddTaskButton() {
           >
             <div className="flex items-center gap-2 mb-3">
               <ListTodo size={14} className="text-primary" />
-              <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add a task</h2>
+              <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add tasks</h2>
+              <span className="text-[10.5px] font-mono text-muted-foreground/60">one per line</span>
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close"
@@ -3851,41 +3857,53 @@ function AddTaskButton() {
               </button>
             </div>
 
-            <input
+            <textarea
               ref={inputRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") submit();
+                // Cmd/Ctrl+Enter submits; plain Enter inserts a new line so
+                // users can keep adding tasks.
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  submit();
+                }
               }}
-              placeholder="e.g. Reply to Sarah about the partnership terms"
-              maxLength={240}
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/50 focus:border-primary/40 focus:bg-white/[0.06]"
+              rows={5}
+              placeholder={"Reply to Sarah about the partnership terms\nPick up kids from ballet at 5\nFinish chapter 3 of the design book"}
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.06] resize-none font-mono leading-relaxed"
             />
 
-            <div className="mt-3 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/80 font-mono">
-                {preview ? (
-                  <>
+            {previews.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
+                {previews.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/80">
                     <span
-                      className="inline-block w-2 h-2 rounded-full"
-                      style={{ background: domainColor[preview.domain], boxShadow: `0 0 8px ${domainColor[preview.domain]}` }}
+                      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: domainColor[p.domain], boxShadow: `0 0 8px ${domainColor[p.domain]}` }}
                     />
-                    Will land in <span className="text-foreground/90 capitalize">{preview.domain}</span>
-                    {preview.urgent && <span className="text-rose-300">· urgent</span>}
-                  </>
-                ) : (
-                  <span>Auto-categorised into the right bento box</span>
-                )}
+                    <span className="capitalize text-foreground/80 w-20 flex-shrink-0">{p.domain}</span>
+                    <span className="truncate text-foreground/60">{p.line}</span>
+                    {p.urgent && <span className="text-rose-300 flex-shrink-0">urgent</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-between">
+              <div className="text-[11px] text-muted-foreground/70 font-mono">
+                {previews.length === 0
+                  ? "Auto-categorised into the right bento box"
+                  : `${previews.length} task${previews.length === 1 ? "" : "s"} · ⌘/Ctrl+Enter to add`}
               </div>
               <button
                 onClick={submit}
-                disabled={!text.trim()}
+                disabled={previews.length === 0}
                 className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-medium border border-primary/40 bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 style={{ fontFamily: "'DM Sans',sans-serif" }}
               >
                 <Plus size={12} />
-                Add
+                Add {previews.length > 1 ? `${previews.length} tasks` : "task"}
               </button>
             </div>
           </div>
