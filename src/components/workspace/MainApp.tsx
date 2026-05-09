@@ -10,7 +10,9 @@ import {
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip,
+  ShieldAlert,
 } from "lucide-react";
+import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import {
   makePending,
   revokePending,
@@ -2716,16 +2718,33 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           {messages.map((msg,i)=>{
             const isLast = i === messages.length - 1;
             const isStreamingPlaceholder = msg.role === "assistant" && isLast && sending && msg.text.length === 0;
+            // Task #47: distinguish on-device-image-blocked turns from
+            // successful assistant replies. Detection key is the exact
+            // placeholder string written by `finalizeOnDeviceImageGenBlockedTurn`
+            // (pinned by the leak suite via IMAGE_BLOCKED_PLACEHOLDER_TEXT).
+            const isImageBlocked = msg.role === "assistant" && msg.text === IMAGE_BLOCKED_PLACEHOLDER_TEXT;
             return (
             <div key={i} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
               {msg.role==="assistant" ? (
                 <div className="max-w-[92%]">
                   <div className="flex items-start gap-2">
-                    <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                      style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
-                      <Zap size={10} style={{color:"#ddd6fe"}}/>
+                    <div
+                      className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={isImageBlocked
+                        ? {background:"linear-gradient(135deg,#b4530933,#7c2d1233)", border:"1px solid rgba(251,146,60,0.35)"}
+                        : {background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}
+                    >
+                      {isImageBlocked
+                        ? <ShieldAlert size={11} style={{color:"#fdba74"}} aria-hidden="true"/>
+                        : <Zap size={10} style={{color:"#ddd6fe"}}/>}
                     </div>
-                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]">
+                    <div
+                      className={isImageBlocked
+                        ? "rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-amber-500/30 bg-amber-500/[0.07] min-w-[140px]"
+                        : "rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]"}
+                      role={isImageBlocked ? "status" : undefined}
+                      aria-label={isImageBlocked ? "Generated image was blocked by the on-device safety classifier" : undefined}
+                    >
                       {typeof msg.loadProgressPct === "number" && msg.text.length === 0 ? (
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Loading on-device model" role="status">
                           <p className="text-[11px] text-muted-foreground/70 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>
@@ -2763,7 +2782,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                             </div>
                           )}
                           {msg.text && (
-                            <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                            <p
+                              className={isImageBlocked
+                                ? "text-[12.5px] text-amber-200/85 leading-relaxed whitespace-pre-wrap"
+                                : "text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap"}
+                              style={{fontFamily:"'DM Sans',sans-serif"}}
+                            >{msg.text}</p>
                           )}
                         </>
                       )}

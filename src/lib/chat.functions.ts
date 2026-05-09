@@ -917,9 +917,12 @@ export type FinalizeOnDeviceImageGenBlockedTurnResult = {
   assistantMessageId: string;
 };
 
-/** docs/12 §15.4 — exact placeholder copy. Pinned by the leak suite. */
-export const IMAGE_BLOCKED_PLACEHOLDER_TEXT =
-  "Image was generated but blocked by the on-device safety classifier. The image was not saved.";
+// Re-exported from a small client-safe module so the chat UI can detect
+// the placeholder without pulling this server-fn module into the browser
+// bundle. The string literal lives in `./chat-message-kinds` now;
+// keeping the named export here preserves the leak-suite import path.
+import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "./chat-message-kinds";
+export { IMAGE_BLOCKED_PLACEHOLDER_TEXT };
 
 export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
   method: "POST",
