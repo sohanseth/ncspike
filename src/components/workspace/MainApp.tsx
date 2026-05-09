@@ -404,8 +404,23 @@ function TopBar({
         <DomainTiles onDomain={onDomain}/>
       </div>
 
-      {/* Primary actions — Voice, Chat, Compose */}
+      {/* Primary actions — Search, Voice, Chat, Compose */}
       <div className="ml-auto flex items-center gap-2">
+        {/* Google search — opens results in a new tab (uses the OS default browser from native shells) */}
+        <button
+          onClick={() => {
+            const q = window.prompt("Search Google for:")?.trim();
+            if (!q) return;
+            window.open(`https://www.google.com/search?q=${encodeURIComponent(q)}`, "_blank", "noopener,noreferrer");
+          }}
+          title="Search Google"
+          aria-label="Search Google"
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          <Search size={13}/>
+          <span className="hidden sm:block">Search</span>
+        </button>
+
         {/* Voice */}
         <button onClick={onVoice}
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
