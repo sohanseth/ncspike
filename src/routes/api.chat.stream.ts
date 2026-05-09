@@ -220,8 +220,6 @@ export const Route = createFileRoute("/api/chat/stream")({
           .select("id")
           .single();
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
-<<<<<<< HEAD
-=======
 
         // ─────────────────────────────────────────────────────────────
         // Vision branch: when the turn has image attachments, persist
