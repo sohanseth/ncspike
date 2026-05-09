@@ -3752,4 +3752,130 @@ export function MainApp() {
   );
 }
 
+// ─── AddTaskButton ────────────────────────────────────────────────────────────
+// Header button + lightweight modal for entering a free-text task. The task
+// text is run through the keyword classifier in `manual-tasks.ts`, persisted
+// to localStorage, and shows up in the matching bento box on the home canvas.
+
+function AddTaskButton() {
+  const { addTask } = useManualTasks();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Live preview of where the task will land while the user is typing.
+  const preview = useMemo(() => (text.trim() ? classifyTask(text) : null), [text]);
+
+  useEffect(() => {
+    if (open) {
+      // setTimeout so the dialog mounts before we focus.
+      const t = setTimeout(() => inputRef.current?.focus(), 30);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  // ESC closes the modal.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const submit = () => {
+    const created = addTask(text);
+    if (!created) return;
+    setText("");
+    setOpen(false);
+  };
+
+  const domainColor: Record<ManualTask["domain"], string> = {
+    learning: "#8b5cf6",
+    professional: "#38bdf8",
+    social: "#fb7185",
+    family: "#fbbf24",
+    personal: "#34d399",
+  };
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        title="Add a task"
+        aria-label="Add a task"
+        className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
+        style={{ fontFamily: "'DM Sans',sans-serif" }}
+      >
+        <ListTodo size={13} />
+        <span className="hidden sm:block">Add task</span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl border border-white/10 p-5 shadow-2xl"
+            style={{ background: "radial-gradient(ellipse at 0% 0%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(20,18,38,0.96)" }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <ListTodo size={14} className="text-primary" />
+              <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add a task</h2>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="ml-auto text-muted-foreground/60 hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <input
+              ref={inputRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+              placeholder="e.g. Reply to Sarah about the partnership terms"
+              maxLength={240}
+              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/50 focus:border-primary/40 focus:bg-white/[0.06]"
+            />
+
+            <div className="mt-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground/80 font-mono">
+                {preview ? (
+                  <>
+                    <span
+                      className="inline-block w-2 h-2 rounded-full"
+                      style={{ background: domainColor[preview.domain], boxShadow: `0 0 8px ${domainColor[preview.domain]}` }}
+                    />
+                    Will land in <span className="text-foreground/90 capitalize">{preview.domain}</span>
+                    {preview.urgent && <span className="text-rose-300">· urgent</span>}
+                  </>
+                ) : (
+                  <span>Auto-categorised into the right bento box</span>
+                )}
+              </div>
+              <button
+                onClick={submit}
+                disabled={!text.trim()}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-medium border border-primary/40 bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                style={{ fontFamily: "'DM Sans',sans-serif" }}
+              >
+                <Plus size={12} />
+                Add
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export default MainApp;
