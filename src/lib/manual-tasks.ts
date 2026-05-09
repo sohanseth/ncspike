@@ -154,6 +154,30 @@ export function useManualTasks() {
     return task;
   }, []);
 
+  // Bulk add — accepts an array of free-text lines (or a single block where
+  // each newline is one task). Empty lines and pure-bullet glyphs get stripped.
+  const addTasks = useCallback((input: string | string[]): ManualTask[] => {
+    const lines = Array.isArray(input) ? input : input.split(/\r?\n/);
+    const created: ManualTask[] = [];
+    for (const raw of lines) {
+      const cleaned = raw.replace(/^\s*[-*•·–—]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim().slice(0, 240);
+      if (!cleaned) continue;
+      const { domain, urgent } = classifyTask(cleaned);
+      created.push({
+        id: `mt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`,
+        text: cleaned,
+        domain,
+        urgent,
+        createdAt: new Date().toISOString(),
+      });
+    }
+    if (!created.length) return [];
+    const next = [...created, ...readAll()];
+    writeAll(next);
+    setTasks(next);
+    return created;
+  }, []);
+
   const removeTask = useCallback((id: string) => {
     const next = readAll().filter((t) => t.id !== id);
     writeAll(next);
@@ -166,5 +190,5 @@ export function useManualTasks() {
     setTasks(next);
   }, []);
 
-  return { tasks, addTask, removeTask, toggleDone };
+  return { tasks, addTask, addTasks, removeTask, toggleDone };
 }
