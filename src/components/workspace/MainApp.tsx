@@ -2698,10 +2698,6 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                       <Zap size={10} style={{color:"#ddd6fe"}}/>
                     </div>
-<<<<<<< HEAD
-                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px] flex flex-col gap-2">
-                      {isStreamingPlaceholder ? (
-=======
                     <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]">
                       {typeof msg.loadProgressPct === "number" && msg.text.length === 0 ? (
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Loading on-device model" role="status">
@@ -2717,7 +2713,6 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                           <p className="text-[10px] font-mono text-muted-foreground/45">{msg.loadProgressPct}%</p>
                         </div>
                       ) : isStreamingPlaceholder ? (
->>>>>>> 1e45def (Fix WebLLM load-progress pollution + GDPR coverage for chat_message_attachments)
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Assistant is responding" role="status">
                           <div className="h-2 w-32 rounded bg-white/[0.08] animate-pulse"/>
                           <div className="h-2 w-24 rounded bg-white/[0.06] animate-pulse" style={{animationDelay:"120ms"}}/>
