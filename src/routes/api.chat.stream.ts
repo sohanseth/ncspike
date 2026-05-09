@@ -112,6 +112,111 @@ function sseEvent(name: string, data: unknown): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
 }
 
+async function imageGenSseResponse(args: {
+  userId: string;
+  threadId: string;
+  badge: Badge;
+  history: InferenceMessage[];
+  userText: string;
+  attachments: ImageGenAttachment[];
+  userMessageId: string;
+  signal?: AbortSignal;
+}): Promise<Response> {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (name: string, data: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(sseEvent(name, data)));
+        } catch {
+          /* closed */
+        }
+      };
+      send("init", { threadId: args.threadId, userMessageId: args.userMessageId });
+      const t0 = Date.now();
+      try {
+        const history = args.history.filter(
+          (m): m is { role: "user" | "assistant"; content: string } =>
+            m.role === "user" || m.role === "assistant",
+        );
+        const ig = await runImageGenTurn({
+          badge: args.badge,
+          userId: args.userId,
+          history,
+          userText: args.userText,
+          attachments: args.attachments,
+          signal: args.signal,
+        });
+        send("meta", { provider: ig.provider, fallbackDepth: 0 });
+        send("delta", { text: ig.text });
+        const { data: aRow } = await supabaseAdmin
+          .from("chat_messages")
+          .insert({
+            user_id: args.userId,
+            thread_id: args.threadId,
+            role: "assistant",
+            content: ig.text,
+            badge: args.badge,
+            provider: ig.provider,
+            model: ig.model,
+            fallback_depth: 0,
+          } as never)
+          .select("id")
+          .single();
+        if (aRow?.id) {
+          await supabaseAdmin.from("chat_message_attachments").insert({
+            message_id: aRow.id,
+            user_id: args.userId,
+            storage_path: ig.storagePath,
+            mime: ig.mime,
+            bytes: ig.bytes,
+          });
+        }
+        await supabaseAdmin.from("inference_usage").insert({
+          user_id: args.userId,
+          thread_id: args.threadId,
+          badge: args.badge,
+          provider_chain: [ig.provider],
+          provider_used: ig.provider,
+          model_used: ig.model,
+          fallback_depth: 0,
+          latency_ms: Date.now() - t0,
+          status: "ok",
+        });
+        await supabaseAdmin
+          .from("chat_threads")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", args.threadId)
+          .eq("user_id", args.userId);
+        send("done", {
+          messageId: aRow?.id ?? null,
+          provider: ig.provider,
+          model: ig.model,
+          fallbackDepth: 0,
+          inputTokens: null,
+          outputTokens: null,
+          contextUsed: null,
+          traitSheetVersion: null,
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Image generation failed";
+        send("error", { kind: "internal", message: msg });
+      } finally {
+        try { controller.close(); } catch { /* already */ }
+      }
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+      Connection: "keep-alive",
+    },
+  });
+}
+
 export const Route = createFileRoute("/api/chat/stream")({
   server: {
     handlers: {
