@@ -1,0 +1,243 @@
+This is strong. It reads like someone who actually understands the product surface, not someone brainstorming “agents” in the abstract. The best parts are the separation between runtime, templates, data sources, and write-action trust. That framing prevents the idea from ballooning into “let users build anything,” which is exactly the trap.
+
+My main critique: it is already close to spec-quality, but it slightly overstates confidence in timeline, cost, and template scope. I would tighten those before turning it into a planning doc.
+
+What’s working well
+
+The central distinction is excellent:
+
+This is a real product direction, not a feature.
+
+That is the right frame. Persistent user-scoped agents are a platform capability. They affect infra, pricing, notifications, privacy tiers, UX surfaces, trust, and product positioning. Calling it a feature would under-resource it.
+
+The “three distinct things” decomposition is also very good:
+
+Persistent, scope-aware agents
+User-buildable configuration
+Human-in-the-loop action
+
+That cleanly separates what is new from what already exists in the roadmap. It also prevents write-actions from hijacking the v1 discussion.
+
+The two traps section is probably the strongest part. Especially this:
+
+The honest v1 is a curated template marketplace.
+
+That is the right product move. “Describe any agent and we’ll build it” sounds magical but becomes a security, reliability, eval, tool-permission, and support nightmare. Curated templates give the illusion of broad power while keeping the execution surface bounded.
+
+The PRIVATE-tier honesty is also important. Saying “runs when open” is much better than pretending mobile background execution is reliable. That kind of product honesty builds trust.
+
+Main weaknesses
+1. The timeline looks too aggressive
+
+The suggested schedule totals roughly 9.5 weeks through 3.5, excluding truly generative agents. That may be possible for a prototype, but it does not feel honest for a production-quality shipped system.
+
+The risk is not just coding the agent loop. It is:
+
+permissions and privacy copy
+observability for silent failures
+retry behavior
+dedupe quality
+notification controls
+agent debugging
+per-user cost caps
+data-source edge cases
+cancellation/archive behavior
+UI for reviewing findings
+evals for “genuinely new” versus spam
+legal/product review for job and shopping data sources
+
+I would either label the timeline explicitly as prototype/MVP engineering estimate or widen it. Otherwise the doc may look naïve despite being strategically sharp.
+
+A safer version:
+
+Phase	Scope	Estimate
+3.0	Runtime + ResearchDigest	2–3 weeks
+3.1	JobAgent clean aggregator + Inbox	3–4 weeks
+3.2	Shopping/DealWatcher with one affiliate source	2–3 weeks
+3.3	Cadence, inactive review, notification budget	1–2 weeks
+3.4	Natural-language template configuration	1–2 weeks
+3.5	Draft-only write-actions	3–4 weeks
+
+That still sounds ambitious, but less brittle.
+
+2. “ResearchDigest is easiest” may be directionally true but product-risky
+
+ResearchDigest has easy data access, but weak differentiation. A digest can become generic very quickly unless the obsession model is excellent.
+
+For v1, ResearchDigest is technically easiest, but JobAgent may be the better proof of product value because the user immediately understands the benefit:
+
+“Find me new backend jobs matching X and only show me ones I haven’t seen.”
+
+That has obvious utility. ResearchDigest risks feeling like a fancy Google Alert unless the filtering and memory are unusually good.
+
+Possible fix: keep ResearchDigest as the first runtime test, but position it internally as runtime validation, not necessarily the hero launch template.
+
+3. The data-source section is good but needs a stronger legal/compliance distinction
+
+You mention ToS-grey scraping, which is good. But I would make the posture sharper:
+
+Public ATS boards: acceptable v1
+Company RSS/career pages: case-by-case
+LinkedIn/Indeed scraping: explicitly out of scope
+Retail feeds: affiliate/API only
+User-provided URLs: allowed only with safe fetching, robots/ToS posture clarified
+
+Right now, “scraped company-careers pages later if users ask” could become a slippery slope. Better to say later only after a legal/product review and source allowlist.
+
+4. “User-scoped durable obsession” is a great phrase, but maybe too internal
+
+I like it. But in a spec, I’d define it once and then use more concrete language.
+
+For example:
+
+An agent is a user-scoped, persistent watcher for a single stated concern.
+
+That is clearer than “durable obsession,” which is memorable but slightly odd. It works in a critique or strategy memo; in the actual spec, I’d soften it.
+
+5. The cost math needs caveats
+
+The cost line is useful:
+
+20 listings/day × 4 LLM hops = ~$0.016/user/day
+
+But it assumes the expensive part is only the LLM. For agent systems, costs also come from:
+
+fetching
+storage
+queues
+retries
+embedding/dedupe if used
+notification infrastructure
+observability/log retention
+failed or repeated runs
+increased support load
+
+I would keep the estimate but label it as LLM inference only, then require a per-agent budget object.
+
+Something like:
+
+agentBudget: {
+  maxRunsPerDay: number
+  maxItemsConsideredPerRun: number
+  maxLLMHopsPerItem: number
+  maxNotificationsPerDay: number
+}
+
+That makes the cap concrete.
+
+Suggested wording improvements
+
+This sentence is strong but could be even cleaner:
+
+What you're describing extends that one agent into N user-scoped agents, each tied to a durable obsession.
+
+Maybe:
+
+What you're describing is a generalization of the overnight agent: instead of one system-owned proactive agent, we support many user-owned watchers, each scoped to one durable concern.
+
+This is clearer and more spec-friendly.
+
+Current:
+
+The agent loop is the easy part; the data feeds are the actual product.
+
+Excellent. Keep that.
+
+Current:
+
+If we ship that for v1 we'll spend six months on prompt-injection defenses and tool-call validation and have nothing to show.
+
+Good, but I’d make it slightly less absolute:
+
+If we make that v1, the project turns into a sandboxing, eval, and tool-validation platform before users see any value.
+
+That sounds more senior and less ranty.
+
+Current:
+
+PRIVATE: runs when you open the app. FLASH/PRO: runs every hour in the background.
+
+Very good. This should probably become product copy.
+
+Missing pieces I would add
+Agent lifecycle state
+
+You mention inactive review, but the spec should define states:
+
+draft
+active
+paused
+inactive
+archived
+error
+needs_user_attention
+
+This matters for UI, billing, scheduling, and trust.
+
+Dedupe and memory model
+
+Persistent agents live or die on dedupe. The doc should explicitly say each agent needs a state store:
+
+seen items
+rejected items
+user-approved items
+user feedback
+source history
+last successful run
+last error
+confidence thresholds
+
+Without this, agents become spam machines.
+
+Failure handling
+
+Agents will fail quietly unless designed otherwise. Add rules like:
+
+After N consecutive source failures, mark agent as degraded.
+After N days with no useful results, suggest changing scope.
+If a source becomes unavailable, tell the user plainly.
+Do not notify users about routine failures unless action is needed.
+Notification budget
+
+You mention cadence, but I’d formalize it. Something like:
+
+Each user has a daily notification budget. Agents compete for it based on urgency, confidence, and user preference. Default behavior is digest-first, interruption-last.
+
+That is a strong product principle.
+
+Evaluation criteria
+
+Before shipping each template, define what “good” means:
+
+precision of surfaced items
+dedupe accuracy
+user approval rate
+mute/archive rate
+notification open rate
+false urgency rate
+cost per active agent
+abandonment after 30 days
+
+That will keep the team from optimizing for “agent runs successfully” instead of “agent is worth keeping.”
+
+On the three decisions
+
+Your recommendations are right.
+
+For JobAgent v1: Greenhouse/Lever/Ashby/public ATS aggregator only. Do not start with brittle scraping. It will poison the project with maintenance work too early.
+
+For PRIVATE agents: ship runs-when-open. Refusing PRIVATE entirely would make the product story worse. Just be blunt in setup that background monitoring requires FLASH/PRO.
+
+For action surface: Inbox by default. Agents should not pollute chat by default. Chat is conversational; Inbox is operational. Let users opt into chat notifications only for urgent cases.
+
+Overall verdict
+
+This is a very good product critique. The strongest strategic call is rejecting “build any tool” and replacing it with curated agent templates plus natural-language configuration. That is the difference between a shippable agent product and a science project.
+
+Before converting it into docs/13-spec-phase-3-agent-runtime.md, I would tighten three things:
+
+Make the timeline less optimistic or label it as MVP-only.
+Treat dedupe, lifecycle state, and failure handling as first-class parts of the runtime.
+Make the data-source posture stricter, especially around scraping.
+
+With those changes, this is strong enough to become the basis of a real spec.
