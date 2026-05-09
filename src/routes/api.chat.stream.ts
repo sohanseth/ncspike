@@ -197,6 +197,7 @@ async function imageGenSseResponse(args: {
           outputTokens: null,
           contextUsed: null,
           traitSheetVersion: null,
+          assistantImages: ig.signedUrl ? [ig.signedUrl] : [],
         });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Image generation failed";
