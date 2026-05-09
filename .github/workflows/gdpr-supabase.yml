@@ -16,6 +16,19 @@ name: gdpr-supabase
 #   * `workflow_dispatch` (manual rerun),
 #   * pull_request labeled `run-gdpr-supabase` (opt-in per PR).
 #
+# Cost gate: even on push to `main`, the trigger paths filter is
+# necessarily coarse (e.g. it includes the workflow file itself), so a
+# docs-only or comment-only push to one of those files would otherwise
+# burn a full staging-clone run. To avoid that, we hash the actual
+# content that can change observed behavior — the migrations directory
+# plus the four code/test files explicitly named in task #26 — and short-
+# circuit the destructive job when the hash matches the last successful
+# run on this branch. The hash is persisted via `actions/cache` keyed by
+# the hash itself; a cache hit means "we already proved this exact set of
+# bytes passes against the staging clone, no need to spend the quota
+# again". `workflow_dispatch` and the `run-gdpr-supabase` PR label both
+# bypass this check and always force a full run.
+#
 # See docs/14-ci.md for which secret/project this targets and why.
 
 on:
@@ -59,21 +72,96 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ── Cost gate ──────────────────────────────────────────────────────
+      # Compute a content hash over exactly the files whose change could
+      # affect the staging-clone run's outcome. Anything outside this set
+      # cannot influence the destructive job, so reusing a previous green
+      # result is safe. The list deliberately mirrors task #26:
+      #   * supabase/migrations/**   — the schema being applied
+      #   * src/lib/gdpr.functions.ts — RPC entry points exercised
+      #   * src/server/inference/chat.ts — code path under cap-race
+      #   * the two real-DB test files themselves
+      # We intentionally do NOT include the workflow file or the runner
+      # script in the hash — changes to those should force a re-run, and
+      # they do via the trigger `paths` filter (which lands here with a
+      # different commit SHA but the same content hash, and we still run
+      # because the cache lookup is keyed only on the content hash, so an
+      # edit to the workflow itself will produce the same hash and… would
+      # actually skip. That's fine: workflow edits that don't change what
+      # gets executed against Supabase are exactly the edits we want to
+      # skip. If the workflow change also changes one of the hashed
+      # files, the hash flips and we re-run. If you want to force a run
+      # without touching content, use workflow_dispatch.)
+      - name: Compute content hash for cost gate
+        id: hash
+        run: |
+          set -euo pipefail
+          HASH="$(
+            {
+              find supabase/migrations -type f -name '*.sql' | sort | xargs sha256sum
+              sha256sum \
+                src/lib/gdpr.functions.ts \
+                src/server/inference/chat.ts \
+                tests/leak-suite/gdpr-roundtrip-realdb.test.ts \
+                tests/leak-suite/cap-race-realdb.test.ts
+            } | sha256sum | awk '{print $1}'
+          )"
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
+          echo "[cost-gate] content hash: $HASH"
+
+      # Look up a marker for this exact hash. A cache hit means a
+      # previous run with the identical hashed content already finished
+      # green against the staging clone, so re-running is pure waste.
+      # workflow_dispatch and the `run-gdpr-supabase` PR label bypass
+      # this lookup entirely (handled in the skip step below).
+      - name: Restore previous-success marker
+        id: marker
+        if: github.event_name == 'push'
+        uses: actions/cache/restore@v4
+        with:
+          path: .gdpr-supabase-marker
+          key: gdpr-supabase-success-${{ steps.hash.outputs.hash }}
+
+      - name: Decide whether to skip
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          CACHE_HIT: ${{ steps.marker.outputs.cache-hit }}
+        run: |
+          set -euo pipefail
+          # workflow_dispatch and the labeled-PR path always run.
+          if [ "$EVENT" != "push" ]; then
+            echo "[cost-gate] event=$EVENT — bypassing content-hash skip, full run"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$CACHE_HIT" = "true" ]; then
+            echo "[cost-gate] content hash matches last successful run — skipping destructive job to save Supabase quota"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "[cost-gate] content hash is new — running full staging-clone job"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/setup-node@v4
+        if: steps.decide.outputs.skip == 'false'
         with:
           node-version: "20"
 
       - name: Install psql client
+        if: steps.decide.outputs.skip == 'false'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client-16
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
 
       - name: Install Node dependencies
+        if: steps.decide.outputs.skip == 'false'
         run: npm ci --no-audit --no-fund
 
       - name: Skip if staging secret is not configured
         id: gate
+        if: steps.decide.outputs.skip == 'false'
         env:
           SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
         run: |
@@ -85,8 +173,33 @@ jobs:
           fi
 
       - name: Run gdpr-roundtrip + cap-race against staging Supabase
-        if: steps.gate.outputs.skip == 'false'
+        if: steps.decide.outputs.skip == 'false' && steps.gate.outputs.skip == 'false'
         env:
           SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
           I_UNDERSTAND_THIS_WIPES_DATA: "yes"
         run: bash scripts/test-gdpr-supabase.sh
+
+      # Only persist the success marker after the suite actually passed
+      # against the staging clone. If we skipped because the staging
+      # secret wasn't configured, we did NOT prove anything green — do
+      # not poison the cache with a marker for that hash.
+      - name: Write success marker
+        if: >-
+          github.event_name == 'push' &&
+          steps.decide.outputs.skip == 'false' &&
+          steps.gate.outputs.skip == 'false'
+        run: |
+          printf 'sha=%s\nhash=%s\nrun_id=%s\n' \
+            "${{ github.sha }}" \
+            "${{ steps.hash.outputs.hash }}" \
+            "${{ github.run_id }}" > .gdpr-supabase-marker
+
+      - name: Save success marker to cache
+        if: >-
+          github.event_name == 'push' &&
+          steps.decide.outputs.skip == 'false' &&
+          steps.gate.outputs.skip == 'false'
+        uses: actions/cache/save@v4
+        with:
+          path: .gdpr-supabase-marker
+          key: gdpr-supabase-success-${{ steps.hash.outputs.hash }}
