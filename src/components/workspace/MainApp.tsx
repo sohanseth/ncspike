@@ -2524,6 +2524,9 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   fallbackDepth: evt.fallbackDepth,
                 },
                 contextUsed: evt.contextUsed,
+                ...(evt.assistantImages && evt.assistantImages.length > 0
+                  ? { images: [...(last.images ?? []), ...evt.assistantImages] }
+                  : {}),
               };
             }
             return next;
