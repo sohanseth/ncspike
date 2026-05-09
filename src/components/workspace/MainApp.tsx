@@ -1968,6 +1968,12 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
         <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
       </div>
 
+      {/* Domain tiles — moved here from the header so they sit right under the
+          greeting, giving the bento entry-points more visual weight. */}
+      <div className="flex-shrink-0 flex justify-center md:justify-start px-1">
+        <DomainTiles onDomain={onDomain}/>
+      </div>
+
       {inboxErr && (
         <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-2.5">
           <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr} · <Link to="/workspace/connections" className="text-primary/80 hover:text-primary font-mono">connect Gmail →</Link></p>
