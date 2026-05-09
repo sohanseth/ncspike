@@ -163,11 +163,29 @@ export class BlockListUnavailableError extends Error {
 
 async function loadTraitBlocks(userId: string): Promise<CategoryBlocksMap> {
   const out: CategoryBlocksMap = new Map();
-  const { data, error } = await (supabaseAdmin as any)
-    .from("user_trait_blocks")
-    .select("category, trait_path, blocked_until")
-    .eq("user_id", userId)
-    .gt("blocked_until", new Date().toISOString());
+  // Wrap the Supabase call in try/catch so a *thrown* runtime exception
+  // (network drop, client misconfiguration, RLS denial that surfaces as a
+  // throw rather than a {data,error} envelope) is treated identically to
+  // an envelope-error: fail-CLOSED via BlockListUnavailableError. The
+  // earlier delta only handled the envelope path, which left a silent
+  // fail-OPEN on throw paths (architect 2026-05-09 finding #1).
+  let data: unknown;
+  let error: { message?: string } | null = null;
+  try {
+    const res = await (supabaseAdmin as any)
+      .from("user_trait_blocks")
+      .select("category, trait_path, blocked_until")
+      .eq("user_id", userId)
+      .gt("blocked_until", new Date().toISOString());
+    data = res.data;
+    error = res.error;
+  } catch (e) {
+    console.warn(`[context-broker] trait-block load threw for ${userId}:`, e);
+    throw new BlockListUnavailableError(
+      "trait",
+      `user_trait_blocks load threw: ${(e as Error)?.message ?? String(e)}`,
+    );
+  }
   if (error) {
     // Fail-closed: a blocklist we can't read is indistinguishable from a
     // missing blocklist, and silently injecting traits the user explicitly
@@ -192,11 +210,24 @@ async function loadProviderCategoryBlocks(
   tier: PrivacyTier,
 ): Promise<Set<TraitCategory>> {
   const out = new Set<TraitCategory>();
-  const { data, error } = await (supabaseAdmin as any)
-    .from("user_provider_category_blocks")
-    .select("category")
-    .eq("user_id", userId)
-    .eq("provider_tier", tier);
+  // Same throw-path hardening as loadTraitBlocks above — see comment there.
+  let data: unknown;
+  let error: { message?: string } | null = null;
+  try {
+    const res = await (supabaseAdmin as any)
+      .from("user_provider_category_blocks")
+      .select("category")
+      .eq("user_id", userId)
+      .eq("provider_tier", tier);
+    data = res.data;
+    error = res.error;
+  } catch (e) {
+    console.warn(`[context-broker] provider-block load threw for ${userId}:`, e);
+    throw new BlockListUnavailableError(
+      "provider-category",
+      `user_provider_category_blocks load threw: ${(e as Error)?.message ?? String(e)}`,
+    );
+  }
   if (error) {
     // Fail-closed (see BlockListUnavailableError above).
     console.warn(`[context-broker] provider-block load failed for ${userId}:`, error);
@@ -334,10 +365,13 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
     providerCategoryBlocks = await loadProviderCategoryBlocks(args.userId, tier);
   } catch (e) {
     if (e instanceof BlockListUnavailableError) {
+      // Source discriminator goes into `category` (free-form text column on
+      // pii_scrub_events) so ops/debug can tell trait-block from
+      // provider-category-block failures without parsing the message.
       await logScrubEvent({
         userId: args.userId,
         patternClass: "blocklist_unavailable",
-        category: null,
+        category: `__source:${e.source}`,
         badge: args.badge,
         providerTier: tier,
       });
@@ -388,7 +422,7 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
       await logScrubEvent({
         userId: args.userId,
         patternClass: "blocklist_unavailable",
-        category: null,
+        category: `__source:${e.source}`,
         badge: args.badge,
         providerTier: tier,
       });

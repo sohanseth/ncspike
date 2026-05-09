@@ -606,7 +606,17 @@ export const Route = createFileRoute("/api/chat/stream")({
             strictestTierInChain: tier,
           });
         } catch (e) {
-          console.warn(`[api.chat.stream] broker failed, proceeding with default prompt:`, e);
+          // Fail-CLOSED on any broker exception (architect 2026-05-09
+          // finding #2). Force scrubBlocked=true so the existing typed
+          // SSE error path below fires; do NOT silently fall through to
+          // the default system prompt.
+          console.warn(`[api.chat.stream] broker threw, fail-closing:`, e);
+          broker = {
+            fragment: "",
+            contextUsed: { categories: [], trait_paths: [] },
+            scrubBlocked: true,
+            traitSheetVersion: null,
+          };
         }
 
         // Fail-closed when the broker scrub blocks. Emitting a typed SSE
