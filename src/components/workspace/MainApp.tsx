@@ -33,6 +33,7 @@ import { readPreferLocalAudio } from "@/lib/voice-preferences";
 import { supabase } from "@/integrations/supabase/client";
 import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
+import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
