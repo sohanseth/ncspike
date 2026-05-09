@@ -34,6 +34,26 @@ import type { OnDeviceProviderId } from "./provider-tiers";
 export async function* streamOnDeviceChat(
   input: StreamChatInput,
 ): AsyncGenerator<ChatStreamEvent, void, void> {
+  // ─── 0. Fail-closed for image attachments ───────────────────────────────
+  // PRIVATE / on-device adapters are text-only (WebLLM, Apple Foundation
+  // Models, Gemini Nano). A turn with image attachments cannot be honestly
+  // served at this tier — silently dropping the attachments would let the
+  // model reply with garbage to a half-question (e.g. "Add fringe to this
+  // photo" → text-only model sees only "Add fringe to this photo" and
+  // hallucinates a textual answer). Per docs/11 §9 / docs/12 §11 we refuse
+  // upfront with a clear message instead of degrading silently.
+  if (Array.isArray(input.attachments) && input.attachments.length > 0) {
+    yield {
+      kind: "error",
+      type: "validation",
+      message:
+        "PRIVATE can't see images on this device. Switch to FLASH, PRO, or " +
+        "Genius to send a turn with an attachment, or remove the attachment " +
+        "to keep this turn on-device.",
+    };
+    return;
+  }
+
   // ─── 1. Capability detection ────────────────────────────────────────────
   const cap = await detectOnDeviceCapability();
   if (!cap.available || !cap.providerId) {

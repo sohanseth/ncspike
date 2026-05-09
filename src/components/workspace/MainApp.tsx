@@ -2594,11 +2594,23 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && attachments.length === 0) || sending) return;
+    // Fail-closed for PRIVATE + attachments: refuse before the upload starts
+    // so we don't leave orphan bytes in the chat-attachments bucket. The
+    // server-side runner has the same guard (defense-in-depth); this one
+    // is purely UX so the toast fires instantly without a network round-trip.
+    if (model === "private" && attachments.length > 0) {
+      void import("sonner").then(({ toast }) =>
+        toast.error(
+          "PRIVATE can't see images on this device. Switch to FLASH, PRO, or Genius to send this attachment.",
+        ),
+      );
+      return;
+    }
     const pending = attachments;
     setInput("");
     setAttachments([]);
     void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, attachments, sending, runChatTurn]);
+  }, [input, attachments, sending, model, runChatTurn]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
