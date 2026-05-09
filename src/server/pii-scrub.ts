@@ -23,7 +23,11 @@ export type ScrubPatternClass =
   | "exact_age"
   | "gov_id"
   | "employer_heuristic"
-  | "injection_sentinel";
+  | "injection_sentinel"
+  // Phase 2.7-bis: assembled fragment exceeded MAX_FRAGMENT_CHARS. Not a
+  // PII shape per se, but reuses the same fail-closed code path so the
+  // audit trail is uniform.
+  | "fragment_oversize";
 
 export type ScrubResult =
   | { ok: true }

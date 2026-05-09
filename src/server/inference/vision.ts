@@ -51,11 +51,21 @@ const DEFAULT_VISION_SYSTEM =
 
 const TIMEOUT_MS = 60_000;
 
-/** Vision model picker. PRIVATE stays on Cloudflare to preserve fail-closed. */
+/** Vision model picker. PRIVATE has NO vision pathway — fail-closed.
+ *
+ *  Phase 2.7-bis hardening: the prior PRIVATE→Cloudflare mapping was a
+ *  privacy violation (image bytes shipped off-device under a badge labeled
+ *  "On your device"). Until on-device vision lands (Phase 2.9 §image-edit),
+ *  PRIVATE + attachment must reject before any byte leaves the user's
+ *  storage. The MainApp client + the SSE route both guard this at their
+ *  edges; this `throw` is defense-in-depth.
+ */
 function pickVisionModel(badge: Badge): { provider: ProviderId; model: string } {
   switch (badge) {
     case "private":
-      return { provider: "cloudflare", model: "@cf/meta/llama-3.2-11b-vision-instruct" };
+      throw new Error(
+        "PRIVATE has no vision pathway. Image attachments must be rejected at the SSE route edge.",
+      );
     case "genius":
       return { provider: "openai", model: "openai/gpt-5" };
     case "pro":
@@ -67,6 +77,11 @@ function pickVisionModel(badge: Badge): { provider: ProviderId; model: string } 
 }
 
 export async function runVisionTurn(args: VisionTurnArgs): Promise<VisionTurnResult> {
+  if (args.badge === "private") {
+    throw new Error(
+      "PRIVATE refuses image attachments — no on-device vision adapter is shipped yet.",
+    );
+  }
   const pick = pickVisionModel(args.badge);
   if (pick.provider === "cloudflare") {
     return runCloudflareVision(args, pick.model);

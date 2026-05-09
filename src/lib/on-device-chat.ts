@@ -77,6 +77,17 @@ export async function* streamOnDeviceChat(
     const msg = e instanceof Error ? e.message : "Couldn't prepare on-device turn";
     // Cap-exceeded surfaces with the same shape as hosted chains so the
     // toast in MainApp.tsx fires identically.
+    // Broker scrub-block surfaces as a typed validation error (mirrors the
+    // hosted SSE branch — fail-closed, same UI copy class).
+    if (msg.startsWith("SCRUB_BLOCKED:")) {
+      yield {
+        kind: "error",
+        type: "validation",
+        message:
+          "Personalization context blocked by safety scrub. Try rephrasing or open Privacy → Forget a trait.",
+      };
+      return;
+    }
     if (msg.startsWith("CAP_EXCEEDED:")) {
       const parts = msg.slice("CAP_EXCEEDED:".length).split("|");
       const used = Number(parts[0]);

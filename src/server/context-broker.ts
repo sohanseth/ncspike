@@ -244,6 +244,14 @@ const FRAGMENT_PREAMBLE =
   "If a value would not help the response, ignore it.\n\n" +
   "USER_CONTEXT = ";
 
+/**
+ * Hard cap on the assembled fragment, in characters. The §13 fragment is
+ * JSON of 1–4 trait categories; a healthy sheet stays under ~1.5 KB, so 6 KB
+ * leaves comfortable headroom while catching pathological / poisoned sheets.
+ * Exported so the leak suite can assert the cap is real.
+ */
+export const MAX_FRAGMENT_CHARS = 6000;
+
 function buildFragment(selected: Record<string, unknown>): string {
   if (Object.keys(selected).length === 0) return "";
   // JSON.stringify with no whitespace — the preamble explicitly tells the
@@ -345,6 +353,27 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
 
   // 7. Build the §13 JSON-only fragment.
   const fragment = buildFragment(selected);
+
+  // 7-bis. Hard fragment-length cap. A pathologically large trait sheet
+  //        (or a future schema bug that lets a category balloon) could
+  //        emit a multi-KB JSON blob that wastes input tokens and skews
+  //        model behavior. Treat as scrubBlocked (fail-closed) so callers
+  //        surface the same typed error and we get an audit row.
+  if (fragment.length > MAX_FRAGMENT_CHARS) {
+    await logScrubEvent({
+      userId: args.userId,
+      patternClass: "fragment_oversize",
+      category: usedCategories[0] ?? null,
+      badge: args.badge,
+      providerTier: tier,
+    });
+    return {
+      fragment: "",
+      contextUsed: { categories: [], trait_paths: [] },
+      scrubBlocked: true,
+      traitSheetVersion: version,
+    };
+  }
 
   // 8. Final scrub pass. Defense in depth — the schema already forbids most
   //    PII shapes, but a poisoned sheet from before D3 hardening, or a known-

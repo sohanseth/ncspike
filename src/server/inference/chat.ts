@@ -198,8 +198,26 @@ async function writeUsage(args: WriteUsageArgs): Promise<void> {
     status: args.status,
     error_class: args.errorClass ?? null,
   });
-  // Telemetry must never break the request path — log and swallow.
-  if (error) console.error("[inference_usage] insert failed:", error.message);
+  // Telemetry write failure handling.
+  //
+  // Caps are currently enforced from inference_usage(status='ok'). That
+  // means a swallowed insert error here makes the cap fail OPEN — the next
+  // request undercounts and the user can exceed their quota. Until the
+  // atomic-ledger migration lands (see follow-up task: "Phase 2.6 cap
+  // atomicity hardening"), the best we can do is shout loudly so the
+  // operator notices in the Cloudflare/Vercel log feed.
+  //
+  // We deliberately do NOT throw on `status='ok'` here: throwing would
+  // surface as an error to a user who already received a successful
+  // response, which is worse UX than over-counting. Throwing on
+  // status='cap_exceeded' would be even worse — it would let the blocked
+  // user retry forever. The proper fix is the atomic ledger.
+  if (error) {
+    console.error(
+      `[inference_usage] CAP-CRITICAL insert failure (status=${args.status}):`,
+      error.message,
+    );
+  }
 }
 
 export type RunChainArgs = {

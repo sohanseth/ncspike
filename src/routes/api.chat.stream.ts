@@ -373,6 +373,18 @@ export const Route = createFileRoute("/api/chat/stream")({
         // image-out model; otherwise we describe via the vision model.
         // ─────────────────────────────────────────────────────────────
         if (v.attachments.length > 0) {
+          // Server-side fail-closed for PRIVATE + attachments. Defense in
+          // depth: the MainApp client refuses before upload, but if a
+          // crafted client still posts attachments under badge=private,
+          // we MUST reject before any byte is read out of the chat-
+          // attachments bucket. Until an on-device vision adapter ships
+          // (Phase 2.9), there is no compliant path here.
+          if (effectiveBadge === "private") {
+            return new Response(
+              "PRIVATE cannot process image attachments — no on-device vision adapter is shipped yet.",
+              { status: 400 },
+            );
+          }
           // Validate all attachment paths belong to this user (path prefix
           // = userId), then download each blob from the private bucket.
           const visionAttachments: VisionAttachment[] = [];
@@ -595,6 +607,40 @@ export const Route = createFileRoute("/api/chat/stream")({
           });
         } catch (e) {
           console.warn(`[api.chat.stream] broker failed, proceeding with default prompt:`, e);
+        }
+
+        // Fail-closed when the broker scrub blocks. Emitting a typed SSE
+        // error and bailing before any provider call is the spec-correct
+        // behavior — the prior implementation silently fell back to the
+        // default system prompt, which masked a privacy-guard event.
+        if (broker.scrubBlocked) {
+          const encErr = new TextEncoder();
+          const errBody = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                encErr.encode(sseEvent("init", { threadId, userMessageId: userRow.id })),
+              );
+              controller.enqueue(
+                encErr.encode(
+                  sseEvent("error", {
+                    kind: "validation",
+                    message:
+                      "Personalization context blocked by safety scrub. Try rephrasing or open Privacy → Forget a trait.",
+                  }),
+                ),
+              );
+              controller.close();
+            },
+          });
+          return new Response(errBody, {
+            status: 200,
+            headers: {
+              "Content-Type": "text/event-stream",
+              "Cache-Control": "no-cache, no-transform",
+              "X-Accel-Buffering": "no",
+              Connection: "keep-alive",
+            },
+          });
         }
 
         const encoder = new TextEncoder();

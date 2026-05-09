@@ -287,6 +287,14 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       console.warn(`[chat.sendChatMessage] broker failed, proceeding with default prompt:`, e);
     }
 
+    // Fail-closed when the broker scrub blocks the assembled fragment. The
+    // prior behavior silently swapped to the default system prompt and let
+    // inference proceed, masking what is supposed to be a privacy guard
+    // event. Surface as a typed error the client can render.
+    if (broker.scrubBlocked) {
+      throw new Error("SCRUB_BLOCKED:context");
+    }
+
     // 5. Run the chain. CapExceededError and ChainExhaustedError surface to
     //    the caller as typed errors — UI shows a friendly upsell or retry.
     //    Re-uses paidTierForCap from step 3 to avoid a second auth lookup.
@@ -503,6 +511,14 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
       });
     } catch (e) {
       console.warn("[prepareOnDeviceTurn] broker failed, default prompt:", e);
+    }
+
+    // Fail-closed on scrub-block, same as the hosted path. The on-device
+    // runner runs entirely on the user's hardware so there is no leak risk
+    // here, but consistency with the hosted path matters and the user
+    // should still see that something tripped the guard.
+    if (broker.scrubBlocked) {
+      throw new Error("SCRUB_BLOCKED:context");
     }
 
     return {
