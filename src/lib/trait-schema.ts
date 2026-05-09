@@ -180,24 +180,42 @@ export type SourceRef = z.infer<typeof SourceRefSchema>;
 // ─── TraitSheet root ────────────────────────────────────────────────────────
 
 /**
- * Per-category provenance + freshness metadata. Added in Phase 2.7 follow-up
- * (task #24) to support cross-night carry-forward of traits per spec §B9:
- *
- * - `last_seen_at` is refreshed to "now" whenever a category is freshly
- *   extracted OR re-confirmed by a new in-window memory whose embedding is
- *   within 0.4 cosine of the prior category embedding.
- * - `source_memory_ids` is the per-category union of memory refs that have
- *   ever contributed to or re-confirmed this category. It is what gets
- *   *extended* on re-confirmation rather than rebuilt from scratch (spec §B9).
- *
- * Sheet-level `source_memory_ids` is retained for backward compatibility and
- * still records the memory window of the most recent extraction run.
+ * Per-category provenance + freshness metadata. Originally added in task #24
+ * for cross-night carry-forward at the category granularity. Task #28 moved
+ * the source-of-truth for freshness down to `trait_meta` (per-leaf), but we
+ * keep `CategoryMetaSchema` exported and `category_meta` accepted on read
+ * for backward compatibility with sheets written by the v1 extractor —
+ * task-#28 migration treats a v1 `category_meta[cat].last_seen_at` as the
+ * implicit `last_seen_at` for every leaf trait inside that category.
  */
 export const CategoryMetaSchema = z.object({
   last_seen_at: z.string().datetime(),
   source_memory_ids: z.array(SourceRefSchema).max(500).default([]),
 });
 export type CategoryMeta = z.infer<typeof CategoryMetaSchema>;
+
+/**
+ * Per-trait (leaf) provenance + freshness metadata. Spec §B9 talks about
+ * decay at the trait level — "a trait whose source memories haven't been
+ * touched in 90 days drops out". Task #28 implements that:
+ *
+ * - `last_seen_at` is refreshed to "now" whenever the leaf trait is freshly
+ *   extracted OR re-confirmed by an in-window memory whose embedding is
+ *   within 0.4 cosine of the prior PER-TRAIT embedding.
+ * - `source_memory_ids` is the per-leaf union of memory refs that have ever
+ *   contributed to or re-confirmed this leaf. Extended (not re-created) on
+ *   re-confirmation.
+ *
+ * Trait-path keys within a category:
+ *   - physical / preferences / professional / wellness / transient → the
+ *     top-level field name (e.g. "diet", "tone", "role_band").
+ *   - household → the member `ref` (e.g. "child_1", "partner").
+ */
+export const TraitMetaSchema = z.object({
+  last_seen_at: z.string().datetime(),
+  source_memory_ids: z.array(SourceRefSchema).max(500).default([]),
+});
+export type TraitMeta = z.infer<typeof TraitMetaSchema>;
 
 export const TraitSheetSchema = z.object({
   schema_version: z.literal(1),
@@ -216,9 +234,21 @@ export const TraitSheetSchema = z.object({
     })
     .strict(),
   category_embeddings: z.record(z.string(), CategoryEmbeddingSchema),
-  // Optional for backward compatibility — sheets written before task #24
-  // simply omit it; the extractor falls back to `derived_at` as last_seen_at.
+  // v1 (task #24) per-category meta. Optional and only consulted on read as
+  // a migration fallback — task #28 writes `trait_meta` instead.
   category_meta: z.record(z.string(), CategoryMetaSchema).optional(),
+  // task #28: per-leaf freshness map. Outer key = category, inner key =
+  // trait path within that category. Optional for backward compatibility.
+  trait_meta: z
+    .record(z.string(), z.record(z.string(), TraitMetaSchema))
+    .optional(),
+  // task #28: per-leaf embedding for trait-level re-confirmation on the next
+  // run. Outer key = category, inner key = trait path. Optional — sheets
+  // written before #28 don't carry these and re-confirm is skipped (carry
+  // forward by age only) until the next fresh extraction populates them.
+  trait_embeddings: z
+    .record(z.string(), z.record(z.string(), CategoryEmbeddingSchema))
+    .optional(),
 });
 
 export type TraitSheet = z.infer<typeof TraitSheetSchema>;

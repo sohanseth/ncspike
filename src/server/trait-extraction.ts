@@ -27,9 +27,9 @@ import {
   CATEGORY_PATCH_SCHEMAS,
   TRAIT_CATEGORIES,
   TraitSheetSchema,
-  type CategoryMeta,
   type SourceRef,
   type TraitCategory,
+  type TraitMeta,
   type TraitSheet,
 } from "@/lib/trait-schema";
 import { scrub } from "@/server/pii-scrub";
@@ -363,6 +363,97 @@ function mergeSources(...lists: readonly SourceRef[][]): SourceRef[] {
   return out;
 }
 
+// ─── Trait-leaf helpers (task #28) ──────────────────────────────────────────
+//
+// "Trait" = an individually-decayable leaf inside a category. For closed-shape
+// categories that's the top-level field name (preferences.diet, wellness.sleep_pattern,
+// …). For `household`, each member is keyed by its identifier-free `ref`
+// (child_1, partner, parent_1) — that's the natural unit of "one trait the
+// user re-confirms or doesn't".
+//
+// Splitting per-trait lets `preferences.diet` decay independently of
+// `preferences.tone` (spec §B9), which the per-CATEGORY model in task #24
+// could not express — re-confirming any leaf reset the clock for every
+// sibling in the same category.
+
+type TraitMap = Record<string, unknown>;
+
+function splitContentToTraits(cat: TraitCategory, content: unknown): TraitMap {
+  if (content == null) return {};
+  if (cat === "household") {
+    const out: TraitMap = {};
+    if (!Array.isArray(content)) return out;
+    for (const m of content as Array<Record<string, unknown>>) {
+      const ref = typeof m?.ref === "string" ? m.ref : null;
+      if (ref) out[ref] = m;
+    }
+    return out;
+  }
+  if (typeof content !== "object") return {};
+  return { ...(content as Record<string, unknown>) };
+}
+
+function joinTraitsToContent(cat: TraitCategory, traits: TraitMap): unknown {
+  if (cat === "household") {
+    // Preserve a stable order — sorted by `ref` so the broker's downstream
+    // hashing/diffing of the assembled fragment is deterministic across runs.
+    return Object.keys(traits)
+      .sort()
+      .map((k) => traits[k]);
+  }
+  return { ...traits };
+}
+
+/**
+ * Embedding text for a single leaf. Mirrors `categoryToEmbeddingText`'s
+ * "flat key:value" style — the embedding model anchors on semantic content
+ * rather than JSON punctuation. For household members we serialize the
+ * whole member object (relation, age_band, interests, preferences) so the
+ * re-confirm cosine has signal to match against memory about that person.
+ */
+function traitToEmbeddingText(cat: TraitCategory, path: string, value: unknown): string {
+  const flatten = (val: unknown, prefix = ""): string[] => {
+    if (val == null) return [];
+    if (Array.isArray(val)) return val.flatMap((v, i) => flatten(v, `${prefix}[${i}]`));
+    if (typeof val === "object") {
+      return Object.entries(val as Record<string, unknown>).flatMap(([k, v]) =>
+        flatten(v, prefix ? `${prefix}.${k}` : k),
+      );
+    }
+    return [`${prefix}:${String(val)}`];
+  };
+  const parts = flatten(value);
+  return `${cat}.${path}; ${parts.join("; ")}`.slice(0, 1500);
+}
+
+/**
+ * Backward-compat read of trait_meta from a prior sheet. Sheets written by
+ * the v1 (task #24) extractor only carry `category_meta`. Treat the
+ * category-level `last_seen_at` as the implicit per-leaf last-seen for every
+ * leaf in that category — i.e. on first run after upgrade, no leaf is
+ * older than the category's previous timestamp, but each leaf's clock then
+ * runs independently from there.
+ */
+function readPriorTraitMeta(
+  priorSheet: TraitSheet | null,
+  cat: TraitCategory,
+  priorTraits: TraitMap,
+): Record<string, TraitMeta> {
+  if (!priorSheet) return {};
+  const fromV2 = priorSheet.trait_meta?.[cat];
+  if (fromV2) return fromV2;
+  const fromV1 = priorSheet.category_meta?.[cat];
+  if (!fromV1) return {};
+  const fallback: Record<string, TraitMeta> = {};
+  for (const path of Object.keys(priorTraits)) {
+    fallback[path] = {
+      last_seen_at: fromV1.last_seen_at,
+      source_memory_ids: fromV1.source_memory_ids,
+    };
+  }
+  return fallback;
+}
+
 // ─── 7. Main entry ──────────────────────────────────────────────────────────
 
 export async function runTraitExtractionForUserId(userId: string): Promise<ExtractionResult> {
@@ -386,7 +477,10 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
   const priorSheet = (existing?.sheet ?? null) as TraitSheet | null;
   const priorCats = (priorSheet?.categories ?? {}) as Partial<TraitSheet["categories"]>;
   const priorEmbeds = (priorSheet?.category_embeddings ?? {}) as Record<string, number[]>;
-  const priorMeta = (priorSheet?.category_meta ?? {}) as Record<string, CategoryMeta>;
+  const priorTraitEmbeds = (priorSheet?.trait_embeddings ?? {}) as Record<
+    string,
+    Record<string, number[]>
+  >;
 
   // Load 30-day memory.
   const memory = await loadRecentMemory(userId);
@@ -438,134 +532,215 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
     newlyExtracted.add(cat);
   }
 
-  // Embed each newly-extracted category. Carried-forward categories reuse
-  // their prior embedding, so we don't re-embed them.
-  const newCatKeys = Array.from(newlyExtracted);
-  let newEmbeddings: number[][] = [];
-  if (newCatKeys.length > 0) {
-    try {
-      newEmbeddings = await embedTexts(
-        newCatKeys.map((k) =>
-          categoryToEmbeddingText(k, (categories as Record<string, unknown>)[k]),
-        ),
-      );
-    } catch {
-      for (const cat of newCatKeys) {
-        await logExtractionFailure(userId, cat, "embedding_failed");
-      }
-      return { written: false, reason: "embedding_failed", version: existing?.version ?? 0 };
-    }
-  }
-  const category_embeddings: Record<string, number[]> = {};
-  newCatKeys.forEach((k, i) => {
-    category_embeddings[k] = newEmbeddings[i];
-  });
-
-  // ─── Spec §B9 carry-forward ──────────────────────────────────────────────
+  // ─── Spec §B9 PER-TRAIT carry-forward (task #28) ─────────────────────────
   //
-  // Without this, a user who mentions "I'm vegetarian" in March and not again
-  // until June has the trait silently wiped on day 31 because we only see the
-  // last 30 days of memory. Carry-forward keeps prior categories alive across
-  // nights up to the 90-day decay window, and re-confirmation refreshes the
-  // window when a new in-window memory is semantically similar.
+  // Task #24 implemented carry-forward / decay at the CATEGORY level — any
+  // re-confirmation refreshed the whole category's `last_seen_at`, so a user
+  // re-confirming `preferences.diet` also reset the clock for sibling traits
+  // (`preferences.tone`, `brands_avoided`, …) and could keep them alive past
+  // the 90-day window. Spec §B9 is per-leaf ("a trait whose source memories
+  // haven't been touched in 90 days"), so task #28 moves the decay clock down
+  // to each individual leaf inside the category.
+  //
+  // For each leaf we compute, INDEPENDENTLY:
+  //   - REFRESH: leaf appears in the freshly-extracted patch, OR a new memory
+  //     embeds within RECONFIRM_COSINE_FLOOR of the prior PER-LEAF embedding
+  //     → last_seen_at = now, source_memory_ids EXTENDED with new refs.
+  //   - CARRY: leaf was in prior sheet, not refreshed, last_seen < 90d
+  //     → unchanged.
+  //   - DECAY: leaf was in prior sheet, not refreshed, last_seen >= 90d
+  //     → dropped. A category whose every leaf decays disappears too.
   const nowIso = new Date().toISOString();
-  const newCategoryMeta: Record<string, CategoryMeta> = {};
+  const decayMs = TRAIT_DECAY_DAYS * 24 * 60 * 60 * 1000;
 
-  // Step 1: For each freshly-extracted category, mark fresh and EXTEND
-  // (not replace) any prior per-category source_memory_ids. This is the
-  // spec §B9 "re-confirmed extends, not re-creates" rule applied to the
-  // case where a freshly-extracted category overlaps a prior one.
-  for (const cat of newlyExtracted) {
-    const priorSources = priorMeta[cat]?.source_memory_ids ?? [];
-    newCategoryMeta[cat] = {
-      last_seen_at: nowIso,
-      source_memory_ids: mergeSources(priorSources, memoryRefs).slice(
-        0,
-        MAX_PER_CATEGORY_SOURCES,
-      ),
-    };
-  }
-
-  // Step 2: For each prior category NOT freshly extracted, decide whether to
-  // carry it forward. Re-confirm via cosine ≥ 0.4 against new memory; else
-  // age-decay at 90 days from last_seen_at.
-  const priorCatKeys = Object.keys(priorCats) as TraitCategory[];
-  const carryForwardCandidates = priorCatKeys.filter(
-    (cat) => !newlyExtracted.has(cat) && priorCats[cat] != null,
-  );
-
-  // Embed new memory for re-confirmation (one batched call). Only if there
-  // are categories we might carry forward — skip the API hit otherwise.
+  // Embed memory ONCE for trait-level re-confirmation. Only if there's any
+  // prior trait we could possibly re-confirm — saves the API hit on first
+  // run / cold-start cases.
+  const haveAnyPriorTrait = Object.keys(priorCats).length > 0;
   let memoryEmbeddings: number[][] = [];
-  if (carryForwardCandidates.length > 0) {
+  if (haveAnyPriorTrait && memory.length > 0) {
     const memoryToEmbed = memory.slice(0, MAX_MEMORY_FOR_RECONFIRM);
     try {
       memoryEmbeddings = await embedTexts(
         memoryToEmbed.map((n) => `[${n.node_type}] ${n.label}`),
       );
     } catch {
-      // Soft-fail: without memory embeddings, we can't re-confirm by cosine,
-      // but age-based carry-forward still applies. Don't roll back the run.
+      // Soft-fail: without memory embeddings we lose only the cosine
+      // re-confirmation path; fresh-extraction refresh and age-based carry
+      // still apply. Don't roll back the run.
       memoryEmbeddings = [];
     }
   }
 
-  for (const cat of carryForwardCandidates) {
-    const priorContent = priorCats[cat];
-    const priorEmbedding = priorEmbeds[cat];
-    const meta = priorMeta[cat];
-    const lastSeenStr = meta?.last_seen_at ?? priorSheet!.derived_at;
-    const ageMs = Date.now() - Date.parse(lastSeenStr);
-    const decayMs = TRAIT_DECAY_DAYS * 24 * 60 * 60 * 1000;
+  // Per-category, per-trait merge.
+  const finalCategories: Partial<TraitSheet["categories"]> = {};
+  const newTraitMeta: Record<string, Record<string, TraitMeta>> = {};
 
-    // Re-confirmation check: any new memory whose embedding is within 0.4
-    // cosine of the prior category embedding counts as "still relevant".
-    const reconfirmingRefs: SourceRef[] = [];
-    if (priorEmbedding && memoryEmbeddings.length > 0) {
-      for (let i = 0; i < memoryEmbeddings.length; i++) {
-        if (cosineSim(memoryEmbeddings[i], priorEmbedding) >= RECONFIRM_COSINE_FLOOR) {
-          reconfirmingRefs.push(memoryRefs[i]);
+  for (const cat of TRAIT_CATEGORIES) {
+    const freshContent = newlyExtracted.has(cat)
+      ? (categories as Record<string, unknown>)[cat]
+      : null;
+    const priorContent = priorCats[cat] ?? null;
+
+    if (freshContent == null && priorContent == null) continue;
+
+    const freshTraits = splitContentToTraits(cat, freshContent);
+    const priorTraits = splitContentToTraits(cat, priorContent);
+    const priorMetaForCat = readPriorTraitMeta(priorSheet, cat, priorTraits);
+    const priorTraitEmbedsForCat = priorTraitEmbeds[cat] ?? {};
+    const fallbackPriorLastSeen =
+      priorSheet?.category_meta?.[cat]?.last_seen_at ?? priorSheet?.derived_at ?? nowIso;
+
+    const allPaths = new Set<string>([
+      ...Object.keys(freshTraits),
+      ...Object.keys(priorTraits),
+    ]);
+
+    const keptTraits: TraitMap = {};
+    const keptMeta: Record<string, TraitMeta> = {};
+
+    for (const path of allPaths) {
+      const inFresh = path in freshTraits;
+      const priorMeta = priorMetaForCat[path];
+      const priorSources = priorMeta?.source_memory_ids ?? [];
+
+      if (inFresh) {
+        // REFRESH (fresh extraction). Spec §B9: source_memory_ids EXTENDED.
+        keptTraits[path] = freshTraits[path];
+        keptMeta[path] = {
+          last_seen_at: nowIso,
+          source_memory_ids: mergeSources(priorSources, memoryRefs).slice(
+            0,
+            MAX_PER_CATEGORY_SOURCES,
+          ),
+        };
+        continue;
+      }
+
+      // path is only in prior — candidate for re-confirm / carry / decay.
+      const priorEmb = priorTraitEmbedsForCat[path];
+      const reconfirmingRefs: SourceRef[] = [];
+      if (priorEmb && memoryEmbeddings.length > 0) {
+        for (let i = 0; i < memoryEmbeddings.length; i++) {
+          if (cosineSim(memoryEmbeddings[i], priorEmb) >= RECONFIRM_COSINE_FLOOR) {
+            reconfirmingRefs.push(memoryRefs[i]);
+          }
         }
       }
+      const reconfirmed = reconfirmingRefs.length > 0;
+      const lastSeenStr = priorMeta?.last_seen_at ?? fallbackPriorLastSeen;
+      const ageMs = Date.now() - Date.parse(lastSeenStr);
+
+      if (reconfirmed) {
+        keptTraits[path] = priorTraits[path];
+        keptMeta[path] = {
+          last_seen_at: nowIso,
+          source_memory_ids: mergeSources(priorSources, reconfirmingRefs).slice(
+            0,
+            MAX_PER_CATEGORY_SOURCES,
+          ),
+        };
+      } else if (ageMs < decayMs) {
+        // CARRY unchanged.
+        keptTraits[path] = priorTraits[path];
+        keptMeta[path] = {
+          last_seen_at: lastSeenStr,
+          source_memory_ids: priorSources,
+        };
+      }
+      // else: DECAY → leaf dropped.
     }
-    const reconfirmed = reconfirmingRefs.length > 0;
 
-    if (!reconfirmed && ageMs >= decayMs) {
-      // Expired: drop. (Skip writing this category into the new sheet.)
-      continue;
-    }
+    if (Object.keys(keptTraits).length === 0) continue;
+    (finalCategories as Record<string, unknown>)[cat] = joinTraitsToContent(cat, keptTraits);
+    newTraitMeta[cat] = keptMeta;
+  }
 
-    // Carry forward content + embedding from prior.
-    (categories as Record<string, unknown>)[cat] = priorContent;
-    if (priorEmbedding) category_embeddings[cat] = priorEmbedding;
+  // ─── Embeddings for the merged sheet ────────────────────────────────────
+  //
+  // We need TWO embedding sets on the new sheet:
+  //   (a) per-category embeddings — consumed by the broker for request-time
+  //       cosine ranking against the user's query. Re-embedded for any
+  //       category whose final content changed; reused from prior otherwise.
+  //   (b) per-trait embeddings — consumed by the NEXT extraction run for
+  //       trait-level re-confirmation. Re-embedded for any leaf that was
+  //       freshly extracted; reused from prior otherwise.
+  //
+  // Batched into a single `embedTexts` call for efficiency.
+  const finalCatKeys = Object.keys(finalCategories) as TraitCategory[];
+  type EmbedSlot =
+    | { kind: "category"; cat: TraitCategory }
+    | { kind: "trait"; cat: TraitCategory; path: string };
+  const embedSlots: EmbedSlot[] = [];
+  const embedInputs: string[] = [];
+  const category_embeddings: Record<string, number[]> = {};
+  const trait_embeddings: Record<string, Record<string, number[]>> = {};
 
-    if (reconfirmed) {
-      // Spec §B9: re-confirmed traits get source_memory_ids EXTENDED, not
-      // re-created. last_seen_at refreshes the 90-day window.
-      newCategoryMeta[cat] = {
-        last_seen_at: nowIso,
-        source_memory_ids: mergeSources(
-          meta?.source_memory_ids ?? [],
-          reconfirmingRefs,
-        ).slice(0, MAX_PER_CATEGORY_SOURCES),
-      };
+  for (const cat of finalCatKeys) {
+    trait_embeddings[cat] = {};
+    const wasFreshlyExtracted = newlyExtracted.has(cat);
+    const priorContent = priorCats[cat] ?? null;
+    const finalContent = (finalCategories as Record<string, unknown>)[cat];
+    // Reuse prior category embedding only if the final content is byte-equal
+    // to the prior content (i.e. the category was carried forward intact).
+    // Any leaf change means we must re-embed so the broker's ranking sees
+    // the new content.
+    const unchanged =
+      !wasFreshlyExtracted && priorContent != null &&
+      JSON.stringify(finalContent) === JSON.stringify(priorContent);
+    if (unchanged && priorEmbeds[cat]) {
+      category_embeddings[cat] = priorEmbeds[cat];
     } else {
-      // Within 90-day window but no re-confirmation: carry meta unchanged.
-      newCategoryMeta[cat] = {
-        last_seen_at: lastSeenStr,
-        source_memory_ids: meta?.source_memory_ids ?? [],
-      };
+      embedSlots.push({ kind: "category", cat });
+      embedInputs.push(categoryToEmbeddingText(cat, finalContent));
+    }
+
+    const traits = splitContentToTraits(cat, finalContent);
+    const priorTraitsForCat = splitContentToTraits(cat, priorContent);
+    const priorTraitEmbedsForCat = priorTraitEmbeds[cat] ?? {};
+    for (const [path, value] of Object.entries(traits)) {
+      const priorVal = priorTraitsForCat[path];
+      const valUnchanged =
+        priorVal !== undefined && JSON.stringify(priorVal) === JSON.stringify(value);
+      if (valUnchanged && priorTraitEmbedsForCat[path]) {
+        trait_embeddings[cat][path] = priorTraitEmbedsForCat[path];
+      } else {
+        embedSlots.push({ kind: "trait", cat, path });
+        embedInputs.push(traitToEmbeddingText(cat, path, value));
+      }
     }
   }
 
-  // If carry-forward + extraction produced nothing AND there is no prior
-  // sheet to decay, this is a true no-op (cold-start with no signal yet).
-  // BUT if a prior sheet exists and everything in it has decayed, we MUST
-  // write the resulting empty sheet — otherwise the stale prior persists in
-  // user_traits and the broker keeps serving expired traits, defeating the
-  // 90-day rule. Spec §B9: "drops out of the next sheet version" requires
-  // an actual next sheet.
-  if (Object.keys(categories).length === 0 && !priorSheet) {
+  if (embedInputs.length > 0) {
+    let vecs: number[][];
+    try {
+      vecs = await embedTexts(embedInputs);
+    } catch {
+      // Differentiate which categories actually needed an embedding so the
+      // failure log isn't noisy with categories that were carried forward
+      // intact (and thus didn't need embedding work).
+      const failedCats = new Set<TraitCategory>();
+      for (const s of embedSlots) failedCats.add(s.cat);
+      for (const cat of failedCats) {
+        await logExtractionFailure(userId, cat, "embedding_failed");
+      }
+      return { written: false, reason: "embedding_failed", version: existing?.version ?? 0 };
+    }
+    embedSlots.forEach((slot, i) => {
+      if (slot.kind === "category") {
+        category_embeddings[slot.cat] = vecs[i];
+      } else {
+        trait_embeddings[slot.cat][slot.path] = vecs[i];
+      }
+    });
+  }
+
+  // If the merged sheet is empty AND no prior sheet exists, this is a true
+  // no-op (cold start, no signal yet). If a prior sheet exists and everything
+  // decayed, we MUST persist the empty sheet so the broker stops serving the
+  // stale prior — spec §B9 "drops out of the next sheet version" requires an
+  // actual next sheet to exist.
+  if (finalCatKeys.length === 0 && !priorSheet) {
     return {
       written: false,
       reason: "no_categories_extracted",
@@ -579,9 +754,10 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
     schema_version: 1,
     derived_at: nowIso,
     source_memory_ids: sourceRefs,
-    categories,
+    categories: finalCategories,
     category_embeddings,
-    category_meta: newCategoryMeta,
+    trait_meta: newTraitMeta,
+    trait_embeddings,
   };
 
   // Final assembled-sheet guard. Per-category validation already ran above,

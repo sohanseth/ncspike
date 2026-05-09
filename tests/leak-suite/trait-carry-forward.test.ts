@@ -1,17 +1,24 @@
 /**
- * Spec §B9 — cross-night trait carry-forward + 90-day decay (task #24).
+ * Spec §B9 — cross-night trait carry-forward + 90-day decay.
  *
- * v1's extractor regenerated the sheet from scratch every night and only saw
- * the last 30 days of memory, so a trait mentioned in March and not again
- * until June got silently wiped on day 31. This test exercises the three
- * branches of the carry-forward logic:
+ * History:
+ * - Task #24 introduced carry-forward / decay at the CATEGORY level. That
+ *   meant any re-confirmation refreshed every leaf in the category — so
+ *   re-confirming `preferences.diet` would also reset the clock for siblings
+ *   (`tone`, `brands_avoided`, …) and could keep them alive past 90 days.
+ * - Task #28 moves the decay clock down to each individual leaf (per spec
+ *   §B9 wording: "a trait whose source memories haven't been touched in 90
+ *   days drops out"). The two new behaviours under test:
  *
- *   1. CARRY: prior category, no new memory references it, last_seen < 90d
- *      → carried forward unchanged with prior meta.
- *   2. RECONFIRM: prior category, ≥1 new memory cosine ≥ 0.4 against prior
- *      embedding → carried forward, last_seen refreshed, source_memory_ids
- *      EXTENDED (not re-created).
- *   3. EXPIRE: prior category, no re-confirmation, last_seen ≥ 90d → dropped.
+ *     (a) PER-LEAF decay: in the same category, one leaf can be refreshed
+ *         while a sibling expires. Re-confirming `diet` does NOT bump
+ *         `tone`'s clock.
+ *     (b) PER-LEAF re-confirmation: cosine match against the prior PER-LEAF
+ *         embedding refreshes only that leaf, not the whole category.
+ *
+ * The old behaviours (CARRY, FRESH-EXTENDS, SILENT-NIGHT-DECAY, COLD-START)
+ * are still exercised, just now expressed against `trait_meta` instead of
+ * `category_meta`.
  *
  * Supabase + Cloudflare are stubbed so the test runs offline & deterministic.
  */
@@ -19,31 +26,31 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { TraitSheet } from "@/lib/trait-schema";
 
 // ─── Knobs the per-test setup writes to ─────────────────────────────────────
-//
-// We declare these at module scope so the vi.mock factories (hoisted to the
-// top of the file) can read them. Each test mutates them via `setup(...)`.
 
 type MemRow = { id: string; node_type: string; label: string; data: unknown; created_at: string };
 
 const ZERO_384 = (): number[] => new Array(384).fill(0);
 
-// Two orthogonal-ish base vectors. PRIOR_EMB is what the prior sheet's
-// preferences-category embedding is set to. MEMORY_EMB_MATCH is identical to
-// PRIOR_EMB so cosine = 1.0 (re-confirms). MEMORY_EMB_FAR is a different
-// pattern so cosine << 0.4 (does not re-confirm).
-const PRIOR_PREF_EMB = (() => {
+// Three orthogonal-ish base vectors used as per-LEAF embeddings on the prior
+// sheet. Memory embeddings are then chosen identical to one of them so the
+// test gets a clean cosine = 1.0 hit on exactly the leaf it's targeting.
+const PRIOR_DIET_EMB = (() => {
   const v = ZERO_384();
   for (let i = 0; i < 384; i++) v[i] = Math.sin(i * 0.13);
   return v;
 })();
-const PRIOR_TRANSIENT_EMB = (() => {
+const PRIOR_TONE_EMB = (() => {
+  const v = ZERO_384();
+  for (let i = 0; i < 384; i++) v[i] = Math.sin(i * 0.31 + 0.5);
+  return v;
+})();
+const PRIOR_FOCUS_EMB = (() => {
   const v = ZERO_384();
   for (let i = 0; i < 384; i++) v[i] = Math.cos(i * 0.21);
   return v;
 })();
-const MEMORY_EMB_MATCH_PREFS = PRIOR_PREF_EMB.slice();
+// "Far" vector — orthogonal-ish to all three priors so cosine << 0.4.
 const MEMORY_EMB_FAR = (() => {
-  // Orthogonal-ish to both prior embeddings: a different sinusoid phase.
   const v = ZERO_384();
   for (let i = 0; i < 384; i++) v[i] = Math.sin(i * 0.07 + 1.7);
   return v;
@@ -57,7 +64,7 @@ const harness = {
   llmResponses: [] as (string | null)[],
   // Per-call return for embedTexts; index = call number.
   embeddingResponses: [] as number[][][],
-  // Captured upsert payload (the sheet written).
+  // Captured upsert payload.
   upserted: null as null | {
     user_id: string;
     version: number;
@@ -113,9 +120,6 @@ vi.mock("@/integrations/supabase/client.server", () => {
       : { data: null, error: null };
     const chain: any = {
       maybeSingle: async () => result,
-      // upsert() — capture payload, return success. The extractor calls
-      // .upsert(row, { onConflict }) and awaits the resulting promise; the
-      // promise resolves to `{ error: null }` (Supabase's pattern).
       upsert: (row: any) => {
         harness.upserted = row;
         const res = { data: null, error: null };
@@ -140,7 +144,7 @@ vi.mock("@/integrations/supabase/client.server", () => {
     if (table === "user_settings") return makeUserSettingsChain();
     if (table === "user_traits") return makeUserTraitsChain();
     if (table === "memory_nodes") return makeMemoryChain();
-    return makeInsertChain(); // extraction_failures et al
+    return makeInsertChain();
   }
 
   return {
@@ -156,24 +160,25 @@ vi.mock("@/server/inference/cloudflare", () => {
       generate: async () => {
         const idx = llmCall++;
         const r = harness.llmResponses[idx] ?? "{}";
-        if (r === null) {
-          // Mimic the real provider's error path; extractCategoryPatch
-          // catches and treats as null patch.
-          throw new Error("no response");
-        }
+        if (r === null) throw new Error("no response");
         return { text: r };
       },
     },
     embedTexts: async (texts: readonly string[]) => {
       const idx = embedCall++;
       const preset = harness.embeddingResponses[idx];
-      if (preset) return preset.slice(0, texts.length);
-      // Fallback: deterministic per-text vector so unmocked callers don't hang.
+      if (preset) {
+        // Pad with ZERO_384 if the preset is shorter than the request, so a
+        // test that only cares about the FIRST few vectors doesn't have to
+        // enumerate every trait-embedding the implementation requests.
+        const out: number[][] = [];
+        for (let i = 0; i < texts.length; i++) {
+          out.push(preset[i] ?? ZERO_384());
+        }
+        return out;
+      }
       return texts.map(() => ZERO_384());
     },
-    // Reset call counters between tests via a magic re-import is tricky —
-    // we instead reset the closures by re-mocking. Vitest re-evaluates the
-    // factory once, so we use a getter to allow tests to peek if needed.
     __resetCloudflareCounters: () => {
       llmCall = 0;
       embedCall = 0;
@@ -182,7 +187,6 @@ vi.mock("@/server/inference/cloudflare", () => {
 });
 
 beforeEach(async () => {
-  // Reset the module-level call counters in the cloudflare mock between tests.
   const cf = await import("@/server/inference/cloudflare");
   (cf as unknown as { __resetCloudflareCounters: () => void }).__resetCloudflareCounters();
 });
@@ -192,21 +196,29 @@ beforeEach(async () => {
 const USER_ID = "11111111-1111-1111-1111-111111111111";
 const MEM_ID_NEW_PREFS = "22222222-2222-2222-2222-222222222222";
 const MEM_ID_NEW_FAR = "33333333-3333-3333-3333-333333333333";
-const MEM_ID_PRIOR_PREFS = "44444444-4444-4444-4444-444444444444";
-const MEM_ID_PRIOR_TRANSIENT = "55555555-5555-5555-5555-555555555555";
+const MEM_ID_PRIOR_DIET = "44444444-4444-4444-4444-444444444444";
+const MEM_ID_PRIOR_TONE = "55555555-5555-5555-5555-555555555555";
+const MEM_ID_PRIOR_FOCUS = "66666666-6666-6666-6666-666666666666";
 
+/**
+ * Build a prior sheet with leaves whose `last_seen_at` clocks are set
+ * INDEPENDENTLY per leaf. Mirrors how the new (task #28) extractor writes
+ * sheets — one entry per leaf in trait_meta, plus a per-leaf embedding in
+ * trait_embeddings used for re-confirmation.
+ */
 function priorSheetWith(opts: {
-  prefsLastSeenDaysAgo: number;
-  transientLastSeenDaysAgo: number;
+  dietLastSeenDaysAgo: number;
+  toneLastSeenDaysAgo: number;
+  focusLastSeenDaysAgo: number;
 }): TraitSheet {
   const now = Date.now();
-  const prefsSeen = new Date(now - opts.prefsLastSeenDaysAgo * 86400_000).toISOString();
-  const transientSeen = new Date(
-    now - opts.transientLastSeenDaysAgo * 86400_000,
-  ).toISOString();
+  const isoDaysAgo = (n: number) => new Date(now - n * 86400_000).toISOString();
+  const dietSeen = isoDaysAgo(opts.dietLastSeenDaysAgo);
+  const toneSeen = isoDaysAgo(opts.toneLastSeenDaysAgo);
+  const focusSeen = isoDaysAgo(opts.focusLastSeenDaysAgo);
   return {
     schema_version: 1,
-    derived_at: prefsSeen,
+    derived_at: dietSeen,
     source_memory_ids: [],
     categories: {
       preferences: {
@@ -217,35 +229,56 @@ function priorSheetWith(opts: {
         current_focus: "preparing for spring marathon",
       },
     },
+    // Category embeddings are still required by the schema (broker uses
+    // them at request time). They don't gate carry-forward in the new
+    // per-trait model.
     category_embeddings: {
-      preferences: PRIOR_PREF_EMB,
-      transient: PRIOR_TRANSIENT_EMB,
+      preferences: PRIOR_DIET_EMB,
+      transient: PRIOR_FOCUS_EMB,
     },
-    category_meta: {
+    trait_meta: {
       preferences: {
-        last_seen_at: prefsSeen,
-        source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_PREFS }],
+        diet: {
+          last_seen_at: dietSeen,
+          source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_DIET }],
+        },
+        tone: {
+          last_seen_at: toneSeen,
+          source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_TONE }],
+        },
       },
       transient: {
-        last_seen_at: transientSeen,
-        source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_TRANSIENT }],
+        current_focus: {
+          last_seen_at: focusSeen,
+          source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_FOCUS }],
+        },
+      },
+    },
+    trait_embeddings: {
+      preferences: {
+        diet: PRIOR_DIET_EMB,
+        tone: PRIOR_TONE_EMB,
+      },
+      transient: {
+        current_focus: PRIOR_FOCUS_EMB,
       },
     },
   };
 }
 
-// 6 categories in TRAIT_CATEGORIES, so 6 LLM calls per run. We return "{}"
-// for every category to simulate "the new memory window contains nothing
-// the LLM can pull a category from" — which is the exact case the
-// carry-forward fix is for.
+// 6 categories in TRAIT_CATEGORIES, so 6 LLM calls per run.
 const ALL_EMPTY_LLM: (string | null)[] = ["{}", "[]", "{}", "{}", "{}", "{}"];
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
-  it("CARRY: prior trait survives a night with no re-confirming memory (still inside 90d)", async () => {
+describe("Trait extractor — spec §B9 PER-TRAIT carry-forward & decay (task #28)", () => {
+  it("CARRY: every leaf inside its 90-day window survives a night with no re-confirming memory", async () => {
     setup({
-      prior: priorSheetWith({ prefsLastSeenDaysAgo: 60, transientLastSeenDaysAgo: 60 }),
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 60,
+        toneLastSeenDaysAgo: 60,
+        focusLastSeenDaysAgo: 60,
+      }),
       memory: [
         {
           id: MEM_ID_NEW_FAR,
@@ -256,14 +289,14 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
         },
       ],
       llmResponses: ALL_EMPTY_LLM,
-      // memory embedding call returns FAR, so cosine << 0.4 → no re-confirm
+      // Memory-embed call returns a FAR vector; cosine << 0.4 against every
+      // prior leaf embedding → nothing re-confirmed.
       embeddingResponses: [[MEMORY_EMB_FAR]],
     });
     const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
     const r = await runTraitExtractionForUserId(USER_ID);
     expect(r.written).toBe(true);
     const sheet = harness.upserted!.sheet;
-    // Both prior categories carried forward unchanged.
     expect(sheet.categories.preferences).toEqual({
       diet: ["vegetarian"],
       tone: "warm",
@@ -271,21 +304,34 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
     expect(sheet.categories.transient).toEqual({
       current_focus: "preparing for spring marathon",
     });
-    // Embeddings re-used from prior (not re-computed).
-    expect(sheet.category_embeddings.preferences).toEqual(PRIOR_PREF_EMB);
-    // Meta preserved (last_seen_at NOT refreshed because no re-confirmation).
-    expect(sheet.category_meta!.preferences.last_seen_at).toBe(
-      harness.prior!.category_meta!.preferences.last_seen_at,
+    // last_seen_at preserved per leaf (no refresh because nothing matched).
+    const tm = sheet.trait_meta!;
+    expect(tm.preferences.diet.last_seen_at).toBe(
+      harness.prior!.trait_meta!.preferences.diet.last_seen_at,
     );
-    // source_memory_ids unchanged (no extension on plain carry-forward).
-    expect(sheet.category_meta!.preferences.source_memory_ids).toEqual([
-      { kind: "memory", id: MEM_ID_PRIOR_PREFS },
+    expect(tm.preferences.tone.last_seen_at).toBe(
+      harness.prior!.trait_meta!.preferences.tone.last_seen_at,
+    );
+    // source_memory_ids untouched on plain carry.
+    expect(tm.preferences.diet.source_memory_ids).toEqual([
+      { kind: "memory", id: MEM_ID_PRIOR_DIET },
     ]);
   });
 
-  it("RECONFIRM: cosine ≥ 0.4 refreshes last_seen_at and EXTENDS source_memory_ids", async () => {
+  it("SIBLING DECAY: re-confirming `preferences.diet` does NOT save expired sibling `preferences.tone`", async () => {
+    // The headline scenario for task #28. Prior:
+    //   - preferences.diet  → last seen 80d ago (inside window)
+    //   - preferences.tone  → last seen 200d ago (already expired)
+    // The user mentions diet again. Under the OLD per-category model, the
+    // category-wide `last_seen_at` would refresh and `tone` would be kept
+    // alive forever. Under the new per-leaf model, only `diet` refreshes;
+    // `tone` decays out.
     setup({
-      prior: priorSheetWith({ prefsLastSeenDaysAgo: 80, transientLastSeenDaysAgo: 200 }),
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 80,
+        toneLastSeenDaysAgo: 200,
+        focusLastSeenDaysAgo: 999,
+      }),
       memory: [
         {
           id: MEM_ID_NEW_PREFS,
@@ -295,40 +341,92 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
           created_at: new Date().toISOString(),
         },
       ],
-      llmResponses: ALL_EMPTY_LLM,
-      // Memory embedding identical to prior preferences embedding ⇒ cosine=1.0
-      // ⇒ preferences is re-confirmed. transient's prior embedding is far
-      // from this memory, so transient is NOT re-confirmed.
-      embeddingResponses: [[MEMORY_EMB_MATCH_PREFS]],
+      // LLM extracts preferences with ONLY diet (no tone) — i.e. the user
+      // didn't restate their tone preference, only diet.
+      llmResponses: [
+        "{}", // physical
+        "[]", // household
+        '{"diet":["vegetarian"]}', // preferences
+        "{}", // professional
+        "{}", // wellness
+        "{}", // transient
+      ],
+      // Embedding-call sequence for the new per-trait pipeline:
+      //   call 0: memory embeddings for re-confirm (1 memory)
+      //   call 1: final-sheet embeddings (cat: preferences + trait: diet)
+      embeddingResponses: [
+        [MEMORY_EMB_FAR], // memory does NOT cosine-match tone OR focus
+        [PRIOR_DIET_EMB, PRIOR_DIET_EMB], // category + per-trait
+      ],
     });
     const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
     const r = await runTraitExtractionForUserId(USER_ID);
     expect(r.written).toBe(true);
     const sheet = harness.upserted!.sheet;
-
-    // preferences: re-confirmed → carried forward, meta refreshed + extended
-    expect(sheet.categories.preferences).toEqual({
-      diet: ["vegetarian"],
-      tone: "warm",
-    });
-    const prefsMeta = sheet.category_meta!.preferences;
-    // last_seen_at refreshed (newer than prior)
-    expect(Date.parse(prefsMeta.last_seen_at)).toBeGreaterThan(
-      Date.parse(harness.prior!.category_meta!.preferences.last_seen_at),
-    );
-    // source_memory_ids EXTENDED — prior id present, new id appended.
-    const ids = prefsMeta.source_memory_ids.map((s) => s.id);
-    expect(ids).toContain(MEM_ID_PRIOR_PREFS);
-    expect(ids).toContain(MEM_ID_NEW_PREFS);
-
-    // transient: 200 days since last_seen, no re-confirmation → DROPPED
+    // Diet refreshed (kept). Tone decayed (gone). The whole `tone` LEAF must
+    // be missing from the merged content — proving sibling clocks are
+    // independent within the same category.
+    expect(sheet.categories.preferences).toEqual({ diet: ["vegetarian"] });
+    expect(sheet.trait_meta!.preferences.tone).toBeUndefined();
+    // Diet's source_memory_ids EXTENDED with the new memory (spec §B9
+    // "re-confirmed extends, not re-creates").
+    const dietIds = sheet.trait_meta!.preferences.diet.source_memory_ids.map((s) => s.id);
+    expect(dietIds).toContain(MEM_ID_PRIOR_DIET);
+    expect(dietIds).toContain(MEM_ID_NEW_PREFS);
+    // transient leaf was 999d old and not re-confirmed → whole category
+    // disappears (every leaf decayed).
     expect(sheet.categories.transient).toBeUndefined();
-    expect(sheet.category_meta!.transient).toBeUndefined();
+    expect(sheet.trait_meta!.transient).toBeUndefined();
   });
 
-  it("EXPIRE: prior trait > 90 days with no re-confirmation drops out (write empty sheet)", async () => {
+  it("PER-LEAF RECONFIRM: cosine match against ONE leaf's embedding refreshes only that leaf", async () => {
+    // Sibling proof at the cosine layer. New memory matches the prior
+    // `diet` embedding (cosine = 1.0) but NOT the `tone` embedding
+    // (orthogonal-ish). With per-LEAF embeddings, only diet refreshes.
+    // Both leaves were 200d old (would expire on plain age), so without
+    // re-confirmation tone drops out — proving the sibling clock is
+    // truly independent.
     setup({
-      prior: priorSheetWith({ prefsLastSeenDaysAgo: 120, transientLastSeenDaysAgo: 120 }),
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 200,
+        toneLastSeenDaysAgo: 200,
+        focusLastSeenDaysAgo: 999,
+      }),
+      memory: [
+        {
+          id: MEM_ID_NEW_PREFS,
+          node_type: "note",
+          label: "tried a new vegetarian recipe",
+          data: {},
+          created_at: new Date().toISOString(),
+        },
+      ],
+      llmResponses: ALL_EMPTY_LLM,
+      embeddingResponses: [
+        [PRIOR_DIET_EMB], // memory cosine=1.0 vs DIET, far from TONE/FOCUS
+        // No final-sheet embeddings needed: the only surviving leaf (diet)
+        // is carried forward unchanged → its category & trait embedding are
+        // both reused from prior. No second embedTexts call is made.
+      ],
+    });
+    const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
+    const r = await runTraitExtractionForUserId(USER_ID);
+    expect(r.written).toBe(true);
+    const sheet = harness.upserted!.sheet;
+    expect(sheet.categories.preferences).toEqual({ diet: ["vegetarian"] });
+    expect(sheet.trait_meta!.preferences.diet.last_seen_at).not.toBe(
+      harness.prior!.trait_meta!.preferences.diet.last_seen_at,
+    );
+    expect(sheet.trait_meta!.preferences.tone).toBeUndefined();
+  });
+
+  it("DECAY-ALL: every prior leaf > 90 days with no re-confirmation drops out (write empty sheet)", async () => {
+    setup({
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 120,
+        toneLastSeenDaysAgo: 120,
+        focusLastSeenDaysAgo: 120,
+      }),
       memory: [
         {
           id: MEM_ID_NEW_FAR,
@@ -343,44 +441,41 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
     });
     const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
     const r = await runTraitExtractionForUserId(USER_ID);
-    // Both prior categories expired. Spec §B9: "drops out of the next sheet
-    // version" — we MUST persist an empty-categories sheet so the stale prior
-    // is overwritten in user_traits, otherwise the broker keeps serving the
-    // expired traits.
+    // Spec §B9 still requires we PERSIST the empty sheet so the broker stops
+    // serving the stale prior.
     expect(r.written).toBe(true);
-    expect(harness.upserted).not.toBeNull();
     const sheet = harness.upserted!.sheet;
     expect(sheet.categories).toEqual({});
-    expect(sheet.category_meta).toEqual({});
+    expect(sheet.trait_meta).toEqual({});
     expect(sheet.category_embeddings).toEqual({});
+    expect(sheet.trait_embeddings).toEqual({});
   });
 
-  it("SILENT NIGHT: no new memory + prior expired → expired traits dropped, fresh ones kept", async () => {
-    // User went fully silent (memory.length === 0) but prior sheet still has
-    // both an in-window category (preferences, last_seen 10 days ago) and an
-    // expired one (transient, last_seen 200 days ago). Carry-forward/decay
-    // must still run — preferences kept, transient dropped.
+  it("SILENT NIGHT: no new memory + mixed-age prior → in-window leaves kept, expired ones dropped", async () => {
     setup({
-      prior: priorSheetWith({ prefsLastSeenDaysAgo: 10, transientLastSeenDaysAgo: 200 }),
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 10,
+        toneLastSeenDaysAgo: 10,
+        focusLastSeenDaysAgo: 200,
+      }),
       memory: [],
-      llmResponses: [], // LLM must NOT be called on silent nights
+      llmResponses: [],
       embeddingResponses: [],
     });
     const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
     const r = await runTraitExtractionForUserId(USER_ID);
     expect(r.written).toBe(true);
     const sheet = harness.upserted!.sheet;
-    // preferences: still inside 90-day window → carried forward
     expect(sheet.categories.preferences).toEqual({
       diet: ["vegetarian"],
       tone: "warm",
     });
-    expect(sheet.category_meta!.preferences.last_seen_at).toBe(
-      harness.prior!.category_meta!.preferences.last_seen_at,
+    expect(sheet.trait_meta!.preferences.diet.last_seen_at).toBe(
+      harness.prior!.trait_meta!.preferences.diet.last_seen_at,
     );
-    // transient: 200d > 90d, no re-confirmation possible (no memory) → dropped
+    // transient.current_focus: 200d, not re-confirmable on a silent night → dropped
     expect(sheet.categories.transient).toBeUndefined();
-    expect(sheet.category_meta!.transient).toBeUndefined();
+    expect(sheet.trait_meta!.transient).toBeUndefined();
   });
 
   it("SILENT NIGHT with no prior sheet → no_new_memory, no write", async () => {
@@ -397,13 +492,13 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
     expect(harness.upserted).toBeNull();
   });
 
-  it("FRESH EXTRACTION extends prior per-category source_memory_ids (re-confirmed by overlap)", async () => {
-    // The extractor freshly extracts `preferences` from new memory. The prior
-    // sheet also had `preferences` with one source id. Spec §B9 says the
-    // re-confirmed category's source_memory_ids should be EXTENDED, not
-    // re-created — i.e. the prior id must survive into the new sheet.
+  it("FRESH EXTRACTION extends a re-confirmed leaf's source_memory_ids", async () => {
     setup({
-      prior: priorSheetWith({ prefsLastSeenDaysAgo: 10, transientLastSeenDaysAgo: 200 }),
+      prior: priorSheetWith({
+        dietLastSeenDaysAgo: 10,
+        toneLastSeenDaysAgo: 10,
+        focusLastSeenDaysAgo: 200,
+      }),
       memory: [
         {
           id: MEM_ID_NEW_PREFS,
@@ -413,28 +508,80 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
           created_at: new Date().toISOString(),
         },
       ],
-      // 6 LLM calls: only `preferences` returns content.
-      // Order in TRAIT_CATEGORIES: physical, household, preferences,
-      // professional, wellness, transient.
+      // Only `preferences` returns content (just the diet leaf).
       llmResponses: [
         "{}", // physical
         "[]", // household
-        '{"diet":["vegetarian"],"tone":"warm"}', // preferences
+        '{"diet":["vegetarian"]}', // preferences
         "{}", // professional
         "{}", // wellness
         "{}", // transient
       ],
-      // First embedTexts call: 1 newly-extracted category (preferences) ⇒
-      // returns 1 vector. Second call (memory re-confirmation): not made
-      // because transient's prior age (200d) means it expires regardless,
-      // BUT the implementation still embeds memory if there is at least one
-      // carry-forward CANDIDATE. transient is a candidate, so embedTexts is
-      // called a second time — make it return 1 FAR vector so transient does
-      // not get re-confirmed.
       embeddingResponses: [
-        [PRIOR_PREF_EMB], // newly-extracted preferences embedding
-        [MEMORY_EMB_FAR], // memory re-confirmation
+        [MEMORY_EMB_FAR],                       // memory re-confirm pass
+        [PRIOR_DIET_EMB, PRIOR_DIET_EMB],       // [cat:preferences, trait:diet]
+                                                // tone is carried unchanged →
+                                                // its embedding is reused from
+                                                // prior, no new embed needed.
       ],
+    });
+    const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
+    const r = await runTraitExtractionForUserId(USER_ID);
+    expect(r.written).toBe(true);
+    const sheet = harness.upserted!.sheet;
+    expect(sheet.categories.preferences).toEqual({
+      diet: ["vegetarian"],
+      tone: "warm", // tone carried (10d, no re-confirm needed)
+    });
+    const dietIds = sheet.trait_meta!.preferences.diet.source_memory_ids.map((s) => s.id);
+    // Spec §B9: prior id must survive (extension, not re-create).
+    expect(dietIds).toContain(MEM_ID_PRIOR_DIET);
+    expect(dietIds).toContain(MEM_ID_NEW_PREFS);
+    // tone: carried unchanged — same single source id, same last_seen.
+    expect(sheet.trait_meta!.preferences.tone.source_memory_ids).toEqual([
+      { kind: "memory", id: MEM_ID_PRIOR_TONE },
+    ]);
+    expect(sheet.trait_meta!.preferences.tone.last_seen_at).toBe(
+      harness.prior!.trait_meta!.preferences.tone.last_seen_at,
+    );
+  });
+
+  it("BACKWARD COMPAT: prior sheet with only category_meta migrates to per-leaf clocks", async () => {
+    // Sheet from before task #28 — has category_meta but no trait_meta or
+    // trait_embeddings. Each leaf inherits the category_meta last_seen_at as
+    // its starting clock; from then on each runs independently.
+    const dietSeen = new Date(Date.now() - 60 * 86400_000).toISOString();
+    const legacyPrior: TraitSheet = {
+      schema_version: 1,
+      derived_at: dietSeen,
+      source_memory_ids: [],
+      categories: {
+        preferences: { diet: ["vegetarian"], tone: "warm" },
+      },
+      category_embeddings: { preferences: PRIOR_DIET_EMB },
+      category_meta: {
+        preferences: {
+          last_seen_at: dietSeen,
+          source_memory_ids: [{ kind: "memory", id: MEM_ID_PRIOR_DIET }],
+        },
+      },
+    };
+    setup({
+      prior: legacyPrior,
+      memory: [
+        {
+          id: MEM_ID_NEW_FAR,
+          node_type: "search",
+          label: "weather",
+          data: {},
+          created_at: new Date().toISOString(),
+        },
+      ],
+      llmResponses: ALL_EMPTY_LLM,
+      // No trait_embeddings on the prior sheet → no per-leaf re-confirm
+      // possible this night; carry by age. Memory-embed call still happens
+      // because there are prior categories.
+      embeddingResponses: [[MEMORY_EMB_FAR]],
     });
     const { runTraitExtractionForUserId } = await import("@/server/trait-extraction");
     const r = await runTraitExtractionForUserId(USER_ID);
@@ -444,9 +591,8 @@ describe("Trait extractor — spec §B9 carry-forward & 90-day decay", () => {
       diet: ["vegetarian"],
       tone: "warm",
     });
-    const ids = sheet.category_meta!.preferences.source_memory_ids.map((s) => s.id);
-    // Spec §B9: prior id must survive (extension, not re-create).
-    expect(ids).toContain(MEM_ID_PRIOR_PREFS);
-    expect(ids).toContain(MEM_ID_NEW_PREFS);
+    // Both leaves seeded with the legacy category-level last_seen_at.
+    expect(sheet.trait_meta!.preferences.diet.last_seen_at).toBe(dietSeen);
+    expect(sheet.trait_meta!.preferences.tone.last_seen_at).toBe(dietSeen);
   });
 });
