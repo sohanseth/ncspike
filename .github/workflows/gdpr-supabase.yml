@@ -1,10 +1,13 @@
 name: gdpr-supabase
 
-# Runs the GDPR delete_user_data() round-trip against a REAL Supabase project
-# (a dedicated staging clone), not the ephemeral local Postgres used by
-# `gdpr-real-db.yml`. This is the only place CI exercises Supabase-specific
-# behavior — `auth.users` triggers, RLS vs `service_role`, real FK cascades,
-# extension availability — that vanilla Postgres cannot model.
+# Runs the real-DB regression suites (gdpr-roundtrip-realdb +
+# cap-race-realdb) against a REAL Supabase project (a dedicated staging
+# clone), not the ephemeral local Postgres used by `gdpr-real-db.yml`.
+# This is the only place CI exercises Supabase-specific behavior —
+# `auth.users` triggers, RLS vs `service_role`, real FK cascades,
+# extension availability, advisory-lock collisions with Supabase-managed
+# functions — that vanilla Postgres cannot model. Same vitest files as
+# the ephemeral job; only the connection string differs.
 #
 # Gating: this job is destructive (wipes auth.users + every per-user table
 # in the target DB) and burns Supabase project quota, so it does NOT run on
@@ -21,7 +24,9 @@ on:
     paths:
       - "supabase/migrations/**"
       - "src/lib/gdpr.functions.ts"
+      - "src/server/inference/chat.ts"
       - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/cap-race-realdb.test.ts"
       - "scripts/test-gdpr-supabase.sh"
       - ".github/workflows/gdpr-supabase.yml"
   pull_request:
@@ -29,7 +34,9 @@ on:
     paths:
       - "supabase/migrations/**"
       - "src/lib/gdpr.functions.ts"
+      - "src/server/inference/chat.ts"
       - "tests/leak-suite/gdpr-roundtrip*"
+      - "tests/leak-suite/cap-race-realdb.test.ts"
       - "scripts/test-gdpr-supabase.sh"
       - ".github/workflows/gdpr-supabase.yml"
   workflow_dispatch:
@@ -77,7 +84,7 @@ jobs:
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run delete_user_data round-trip against staging Supabase
+      - name: Run gdpr-roundtrip + cap-race against staging Supabase
         if: steps.gate.outputs.skip == 'false'
         env:
           SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}

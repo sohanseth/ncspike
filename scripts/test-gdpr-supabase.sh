@@ -72,6 +72,16 @@ done
 
 export GDPR_REAL_DB_URL="$SUPABASE_STAGING_DB_URL"
 
-echo "[gdpr-supabase] running vitest (gdpr-roundtrip-realdb) against staging Supabase"
+echo "[gdpr-supabase] running vitest (gdpr-roundtrip-realdb + cap-race-realdb) against staging Supabase"
 cd "$ROOT"
-exec npx vitest run tests/leak-suite/gdpr-roundtrip-realdb.test.ts "$@"
+# Both real-DB suites are gated on GDPR_REAL_DB_URL. Running them against the
+# staging clone (in addition to the ephemeral cluster used by
+# scripts/test-gdpr-real-db.sh) catches Supabase-specific drift in either
+# delete_user_data() (per-table coverage) or the cap SQL trio
+# (reserve_inference_slot / finalize_inference_usage / release_inference_slot)
+# — e.g. a missing extension, an RLS policy that blocks service_role, or an
+# advisory-lock collision with another Supabase-managed function.
+exec npx vitest run \
+  tests/leak-suite/gdpr-roundtrip-realdb.test.ts \
+  tests/leak-suite/cap-race-realdb.test.ts \
+  "$@"
