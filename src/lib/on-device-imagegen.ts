@@ -22,6 +22,7 @@ import {
   detectImageGenCapability,
   type ImageGenAdapterId,
 } from "./image-gen-capability";
+import { webgpuSdTurboAdapter } from "./imagegen-adapters/webgpu-sd-turbo";
 
 /** Public input the UI hands the runner per turn. */
 export type StreamImageGenInput = {
@@ -151,10 +152,29 @@ export async function* streamOnDeviceImageGen(
 }
 
 /**
- * Adapter dispatcher. Slice a ships no adapters; slice b will register
- * each (apple-ip / mediapipe / webgpu-*) and route here. Returning `null`
- * means PRIVATE+image MUST refuse — never fall back to a hosted provider.
+ * Adapter dispatcher. Slice b registers the WebGPU SD-Turbo adapter; the
+ * native Apple / Android branches stay `null` because their plugin source
+ * needs Xcode 16 / Android Studio respectively (Replit's Linux container
+ * can't build them — they live in follow-up tasks per docs/12 §15). The
+ * SDXL / Janus WebGPU tiers are reserved for slice b+1.
+ *
+ * Critical invariant (replit.md §"No silent fallbacks"): a missing
+ * platform adapter MUST return `null`, NEVER fall back to WebGPU. Each
+ * branch is explicit so a future picker change can't silently reroute
+ * (e.g. an iPhone losing Apple IP support must not start running our
+ * WebGPU adapter — that would route the user's prompt to a different
+ * model than the one their device + privacy policy expects).
  */
-function pickAdapter(_id: ImageGenAdapterId): ImageGenAdapter | null {
-  return null;
+export function pickAdapter(id: ImageGenAdapterId): ImageGenAdapter | null {
+  switch (id) {
+    case "webgpu-sd-turbo":
+      return webgpuSdTurboAdapter;
+    case "apple-ip":
+    case "mediapipe":
+    case "webgpu-sdxl":
+    case "webgpu-sd15":
+    case "webgpu-janus-1b":
+      // Explicit fail-closed branches. DO NOT add a silent fallback here.
+      return null;
+  }
 }

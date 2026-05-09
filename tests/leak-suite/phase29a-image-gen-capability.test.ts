@@ -87,7 +87,10 @@ describe("Phase 2.9a — detectImageGenCapability branch selection", () => {
     );
   });
 
-  it("WebGPU adapter with SDXL-class VRAM → webgpuSdxlNotWired reason", async () => {
+  it("WebGPU adapter with SDXL-class VRAM → AVAILABLE webgpu-sd-turbo (slice b)", async () => {
+    // Slice b: SDXL-class VRAM (≥2 GB) collapses onto the SD-Turbo adapter
+    // for now (the only WebGPU adapter wired). Slice b+1 will route SDXL-
+    // class VRAM to a real SDXL adapter; the type already supports it.
     probeNativeMock.mockResolvedValue({ available: false });
     setNavigatorGpu({
       requestAdapter: async () => ({
@@ -95,13 +98,11 @@ describe("Phase 2.9a — detectImageGenCapability branch selection", () => {
       }),
     });
     const cap = await detectImageGenCapability();
-    expect(cap.available).toBe(false);
-    expect((cap as { reason: string }).reason).toBe(
-      IMAGE_GEN_REASONS.webgpuSdxlNotWired,
-    );
+    expect(cap.available).toBe(true);
+    expect((cap as { adapter: string }).adapter).toBe("webgpu-sd-turbo");
   });
 
-  it("WebGPU adapter with SD1.5-class VRAM → webgpuSd15NotWired reason", async () => {
+  it("WebGPU adapter with SD1.5-class VRAM → AVAILABLE webgpu-sd-turbo (slice b)", async () => {
     probeNativeMock.mockResolvedValue({ available: false });
     setNavigatorGpu({
       requestAdapter: async () => ({
@@ -109,10 +110,8 @@ describe("Phase 2.9a — detectImageGenCapability branch selection", () => {
       }),
     });
     const cap = await detectImageGenCapability();
-    expect(cap.available).toBe(false);
-    expect((cap as { reason: string }).reason).toBe(
-      IMAGE_GEN_REASONS.webgpuSd15NotWired,
-    );
+    expect(cap.available).toBe(true);
+    expect((cap as { adapter: string }).adapter).toBe("webgpu-sd-turbo");
   });
 
   it("WebGPU adapter with insufficient VRAM → webgpuInsufficientVram reason", async () => {
@@ -173,10 +172,13 @@ describe("Phase 2.9a — detectImageGenCapability branch selection", () => {
     expect(probeNativeMock).toHaveBeenCalledTimes(2);
   });
 
-  it("never returns available:true in slice a (no adapter is wired)", async () => {
-    // All capability shapes that COULD pick an adapter must still return
-    // available:false until slice b lands. Locks the fail-closed posture.
-    const cases: Array<[string, () => void]> = [
+  it("native (Apple/Android) branches stay fail-closed in slice b — only WebGPU is wired", async () => {
+    // Slice b: WebGPU SD-Turbo is wired; Apple Image Playground (iOS) and
+    // AICore Imagen-Nano (Android) plugins still need Xcode 16 / Android
+    // Studio respectively (Replit's Linux container can't build them).
+    // Their branches MUST remain available:false so a missing native
+    // adapter never silently routes to WebGPU on a phone.
+    const nativeOnlyCases: Array<[string, () => void]> = [
       [
         "ios native",
         () => {
@@ -197,24 +199,24 @@ describe("Phase 2.9a — detectImageGenCapability branch selection", () => {
           setNavigatorGpu(null);
         },
       ],
-      [
-        "webgpu sdxl",
-        () => {
-          probeNativeMock.mockResolvedValue({ available: false });
-          setNavigatorGpu({
-            requestAdapter: async () => ({
-              limits: { maxBufferSize: 4 * 1024 * 1024 * 1024 },
-            }),
-          });
-        },
-      ],
     ];
-    for (const [, setup] of cases) {
+    for (const [, setup] of nativeOnlyCases) {
       resetImageGenCapabilityCache();
       probeNativeMock.mockReset();
       setup();
       const cap = await detectImageGenCapability();
       expect(cap.available).toBe(false);
     }
+    // Sanity counter-case: WebGPU SDXL-class VRAM IS available in slice b.
+    resetImageGenCapabilityCache();
+    probeNativeMock.mockReset();
+    probeNativeMock.mockResolvedValue({ available: false });
+    setNavigatorGpu({
+      requestAdapter: async () => ({
+        limits: { maxBufferSize: 4 * 1024 * 1024 * 1024 },
+      }),
+    });
+    const webgpuCap = await detectImageGenCapability();
+    expect(webgpuCap.available).toBe(true);
   });
 });

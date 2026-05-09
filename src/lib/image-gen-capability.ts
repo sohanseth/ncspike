@@ -51,22 +51,19 @@ export type ImageGenCapability =
  *  English. */
 export const IMAGE_GEN_REASONS = {
   /** Native path matched (iOS A17 Pro+ / M-series), but the slice-b
-   *  Apple Image Playground bridge isn't shipped yet. */
+   *  Apple Image Playground bridge isn't shipped yet. Slice b ships the
+   *  WebGPU adapter only — the iOS plugin needs Xcode 16 / macOS, which
+   *  Replit's Linux container can't build, so it lives in a follow-up
+   *  task (see docs/12 §15). The branch stays fail-closed until then. */
   appleIpNotWired:
     "On-device image generation isn't enabled yet on this iPhone. We're shipping it in the next update.",
   /** Native path matched (Android SD8 Gen 2+ / Tensor G3+), but the
-   *  slice-b MediaPipe Image Generator bridge isn't shipped yet. */
+   *  AICore / MediaPipe Image Generator bridge isn't shipped yet — same
+   *  toolchain gap as the iOS branch (Android Studio + Pixel-8-class
+   *  device required). Follow-up task. */
   mediapipeNotWired:
     "On-device image generation isn't enabled yet on this Android device. We're shipping it in the next update.",
-  /** WebGPU adapter present with enough VRAM for SDXL, but the slice-b
-   *  WebGPU pipeline isn't shipped yet. */
-  webgpuSdxlNotWired:
-    "Your browser supports on-device image generation, but the model isn't installed yet.",
-  /** WebGPU adapter present with enough VRAM for SD1.5, but the slice-b
-   *  WebGPU pipeline isn't shipped yet. */
-  webgpuSd15NotWired:
-    "Your browser can run a smaller on-device image model, which isn't installed yet.",
-  /** WebGPU adapter present but `maxBufferSize` below the SD1.5 floor. */
+  /** WebGPU adapter present but `maxBufferSize` below the SD-Turbo floor. */
   webgpuInsufficientVram:
     "On-device image generation needs more video memory than this browser can offer.",
   /** WebGPU not supported by the browser at all (no `navigator.gpu`,
@@ -78,10 +75,11 @@ export const IMAGE_GEN_REASONS = {
     "On-device image generation isn't available on this device.",
 } as const;
 
-/** Minimum buffer sizes per WebGPU tier. Calibrated from docs/12 §15.3.
- *  Conservative — slice b will refine after on-device benchmarks. */
-const SDXL_MIN_BUFFER_BYTES = 2 * 1024 * 1024 * 1024; // 2 GB
-const SD15_MIN_BUFFER_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
+/** Minimum buffer size for the SD-Turbo WebGPU adapter we actually ship in
+ *  slice b. SDXL / Janus tiers are still defined in `ImageGenAdapterId` for
+ *  forward compatibility but the picker maps both VRAM tiers to the SD-Turbo
+ *  adapter today (the only adapter slice b wires). */
+const SD_TURBO_MIN_BUFFER_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB
 
 /** What the native bridge returns. Kept loose because `native-on-device-llm`
  *  is the chat-text bridge today; slice b will add an analogous image probe.
@@ -146,17 +144,15 @@ async function runProbes(): Promise<ImageGenCapability> {
       reason: IMAGE_GEN_REASONS.webgpuInsufficientVram,
     };
   }
-  if (webgpu.kind === "sdxl") {
-    return {
-      available: false,
-      reason: IMAGE_GEN_REASONS.webgpuSdxlNotWired,
-    };
-  }
-  if (webgpu.kind === "sd15") {
-    return {
-      available: false,
-      reason: IMAGE_GEN_REASONS.webgpuSd15NotWired,
-    };
+  // Slice b: any WebGPU adapter at or above the SD-Turbo VRAM floor wins.
+  // Both former tiers (sdxl-class, sd15-class) collapse onto the SD-Turbo
+  // adapter for now — it's the only one with a shipped runner. SDXL / Janus
+  // adapter ids stay in the public type for forward compatibility (slice
+  // b+1 will register them as separate adapters and the picker will choose
+  // by VRAM); the type is intentionally additive so later picker changes
+  // don't bump the public surface.
+  if (webgpu.kind === "sdxl" || webgpu.kind === "sd15") {
+    return { available: true, adapter: "webgpu-sd-turbo" };
   }
 
   // ─── 3. No reachable path (SSR / Node test runner / locked-down env) ──
@@ -203,8 +199,11 @@ async function probeWebGpu(): Promise<WebGpuProbe> {
   }
   if (!adapter) return { kind: "unsupported" };
   const maxBuffer = Number(adapter.limits?.maxBufferSize ?? 0);
-  if (maxBuffer >= SDXL_MIN_BUFFER_BYTES) return { kind: "sdxl" };
-  if (maxBuffer >= SD15_MIN_BUFFER_BYTES) return { kind: "sd15" };
+  // Two tiers preserved for forward-compat: slice b+1 will distinguish
+  // SDXL-class (≥2 GB) from SD15-class (≥1 GB) when the SDXL adapter
+  // ships. Today both collapse onto the SD-Turbo adapter at the picker.
+  if (maxBuffer >= 2 * 1024 * 1024 * 1024) return { kind: "sdxl" };
+  if (maxBuffer >= SD_TURBO_MIN_BUFFER_BYTES) return { kind: "sd15" };
   return { kind: "insufficient" };
 }
 
