@@ -21,6 +21,11 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+import {
+  __setNsfwClassifierForTests,
+  __resetNsfwClassifierCache,
+} from "@/lib/imagegen-safety";
+
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || "http://localhost:54321";
 process.env.SUPABASE_PUBLISHABLE_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY || "test-publishable-key";
@@ -167,10 +172,21 @@ beforeEach(() => {
     throw new Error("fetch MUST NOT be called on PRIVATE+image dispatcher");
   });
   globalThis.fetch = fetchSpy as unknown as typeof globalThis.fetch;
+  // Inject a benign on-device NSFW classifier so the safety gate
+  // returns `allow` deterministically — the production loader can't
+  // run in Node (no WebGPU, no Capacitor bridge) and would otherwise
+  // fail-closed, masking the egress assertions this test is pinning.
+  __setNsfwClassifierForTests(async () => ({
+    nsfw: false,
+    topLabel: "normal",
+    score: 0.99,
+  }));
 });
 
 afterEach(() => {
   if (originalFetch) globalThis.fetch = originalFetch;
+  __setNsfwClassifierForTests(null);
+  __resetNsfwClassifierCache();
 });
 
 describe("Phase 2.9b — PRIVATE+image dispatcher: zero hosted-provider egress", () => {

@@ -1,26 +1,41 @@
 /**
  * Phase 2.9b — output-side NSFW / safety gate fail-closed invariants.
  *
- * Pins the contract from `src/lib/imagegen-safety.ts`:
+ * Pins the contract from `src/lib/imagegen-safety.ts` (locked spec
+ * docs/12 §15.4):
  *   - The classifier is fail-CLOSED. Any throw → deny by default; a
  *     misbehaving classifier must never grant permission.
  *   - Structurally invalid bytes (too small, too big, wrong mime) →
  *     deny with a plain-English reason.
+ *   - When the on-device NSFW model FLAGS the bytes → deny with the
+ *     §15.4 toast text. The dispatcher MUST NOT upload a flagged image
+ *     to the chat-attachments bucket, even though that bucket is the
+ *     user's own (the §15.4 line: "PRIVATE never sends an unfiltered
+ *     image off-device, even to its own bucket, on a flagged result").
+ *   - When the classifier MODEL FAILS TO LOAD → deny. We can't certify
+ *     the image as safe, so we refuse to persist it (also §15.4).
  *   - When the gate denies, the PRIVATE+image dispatcher MUST:
  *       1. NOT upload the bytes (they never touch the storage bucket).
  *       2. Release the reserved cap slot (don't debit the user for a
  *          turn that produced no visible image).
  *       3. Surface a `validation` error event with the deny reason.
- *
- * The third invariant is what docs/12 §15.4 calls out — "PRIVATE never
- * sends an unfiltered image off-device, even to its own bucket, on a
- * flagged result."
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-import { classifyGeneratedImage } from "@/lib/imagegen-safety";
+import {
+  classifyGeneratedImage,
+  __setNsfwClassifierForTests,
+  __resetNsfwClassifierCache,
+} from "@/lib/imagegen-safety";
 
-describe("Phase 2.9b — classifyGeneratedImage fail-closed contract", () => {
+const VALID_PNG = new Uint8Array(2048).fill(0xff);
+
+afterEach(() => {
+  __setNsfwClassifierForTests(null);
+  __resetNsfwClassifierCache();
+});
+
+describe("Phase 2.9b — classifyGeneratedImage structural deny contract", () => {
   it("denies bytes below the minimum size threshold", async () => {
     const v = await classifyGeneratedImage(new Uint8Array(8), "image/png");
     expect(v.allow).toBe(false);
@@ -44,17 +59,62 @@ describe("Phase 2.9b — classifyGeneratedImage fail-closed contract", () => {
     expect(v.allow).toBe(false);
     if (!v.allow) expect(v.reason).toMatch(/mime/i);
   });
+});
 
-  it("allows structurally valid PNG bytes (slice-b stub baseline)", async () => {
-    const v = await classifyGeneratedImage(
-      new Uint8Array(2048).fill(0xff),
-      "image/png",
-    );
+describe("Phase 2.9b — classifyGeneratedImage model-based contract", () => {
+  it("allows when the on-device classifier returns nsfw=false", async () => {
+    __setNsfwClassifierForTests(async () => ({
+      nsfw: false,
+      topLabel: "normal",
+      score: 0.99,
+    }));
+    const v = await classifyGeneratedImage(VALID_PNG, "image/png");
     expect(v.allow).toBe(true);
+  });
+
+  it("denies with the §15.4 toast when the classifier flags the image", async () => {
+    __setNsfwClassifierForTests(async () => ({
+      nsfw: true,
+      topLabel: "nsfw",
+      score: 0.92,
+    }));
+    const v = await classifyGeneratedImage(VALID_PNG, "image/png");
+    expect(v.allow).toBe(false);
+    if (!v.allow) {
+      expect(v.reason).toMatch(/blocked by on-device safety filter/i);
+      expect(v.reason).toMatch(/different prompt/i);
+    }
+  });
+
+  it("denies (fail-closed) when the classifier itself throws mid-inference", async () => {
+    __setNsfwClassifierForTests(async () => {
+      throw new Error("WebGPU device lost");
+    });
+    const v = await classifyGeneratedImage(VALID_PNG, "image/png");
+    expect(v.allow).toBe(false);
+    if (!v.allow) {
+      expect(v.reason).toMatch(/blocked by on-device safety filter/i);
+    }
+  });
+
+  it("denies (fail-closed) when no classifier can be loaded (load-failure path)", async () => {
+    // No override set → production loader runs → no Capacitor + no
+    // browser runtime in the Node test runner → loadWebClassifier()
+    // throws "needs a browser runtime" → gate fails closed.
+    __setNsfwClassifierForTests(null);
+    __resetNsfwClassifierCache();
+    const v = await classifyGeneratedImage(VALID_PNG, "image/png");
+    expect(v.allow).toBe(false);
+    if (!v.allow) {
+      expect(v.reason).toMatch(/blocked by on-device safety filter/i);
+    }
   });
 });
 
-// Dispatcher-level test: deny verdict short-circuits before upload.
+// ───────────────────────────────────────────────────────────────────────────
+// Dispatcher-level: deny verdict short-circuits before upload.
+// ───────────────────────────────────────────────────────────────────────────
+
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || "http://localhost:54321";
 process.env.SUPABASE_PUBLISHABLE_KEY =
   process.env.SUPABASE_PUBLISHABLE_KEY || "test-publishable-key";
@@ -129,7 +189,24 @@ vi.mock("@/lib/image-gen-capability", async () => {
   };
 });
 
-// Adapter returns bytes the safety gate WILL deny (too small).
+// First dispatcher test reuses the structural-deny path: adapter
+// returns bytes < MIN_BYTES, so the gate refuses without ever calling
+// the classifier. This pins that the dispatcher honours structural
+// denies the same way it honours model denies.
+const tooSmallAdapterMock = {
+  streamOnDeviceImageGen: async function* () {
+    yield {
+      kind: "done" as const,
+      bytes: new Uint8Array(8).fill(0xff),
+      mime: "image/png",
+      width: 512,
+      height: 512,
+      adapter: "webgpu-sd-turbo" as const,
+      seed: 42,
+    };
+  },
+};
+
 vi.mock("@/lib/on-device-imagegen", async () => {
   const actual =
     await vi.importActual<typeof import("@/lib/on-device-imagegen")>(
@@ -137,17 +214,8 @@ vi.mock("@/lib/on-device-imagegen", async () => {
     );
   return {
     ...actual,
-    streamOnDeviceImageGen: async function* () {
-      yield {
-        kind: "done" as const,
-        bytes: new Uint8Array(8).fill(0xff), // < MIN_BYTES → deny
-        mime: "image/png",
-        width: 512,
-        height: 512,
-        adapter: "webgpu-sd-turbo" as const,
-        seed: 42,
-      };
-    },
+    streamOnDeviceImageGen: (...args: unknown[]) =>
+      tooSmallAdapterMock.streamOnDeviceImageGen(...(args as [])),
   };
 });
 
@@ -156,9 +224,23 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
     releaseSpy.mockClear();
     finalizeSpy.mockClear();
     uploadSpy.mockClear();
+    __setNsfwClassifierForTests(null);
+    __resetNsfwClassifierCache();
+    // Default adapter for this block: bytes too small (structural deny).
+    tooSmallAdapterMock.streamOnDeviceImageGen = async function* () {
+      yield {
+        kind: "done" as const,
+        bytes: new Uint8Array(8).fill(0xff),
+        mime: "image/png",
+        width: 512,
+        height: 512,
+        adapter: "webgpu-sd-turbo" as const,
+        seed: 42,
+      };
+    };
   });
 
-  it("deny verdict → no upload, reservation released, validation error event", async () => {
+  it("structural deny (too-small bytes) → no upload, reservation released, validation error event", async () => {
     const { streamOnDevicePrivateImage } = await import(
       "@/lib/on-device-private-image"
     );
@@ -176,13 +258,54 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
     expect(errEvt?.type).toBe("validation");
     expect(errEvt?.message).toMatch(/too small/i);
 
-    // Bytes never touched the bucket.
     expect(uploadSpy).not.toHaveBeenCalled();
-    // The cap reservation was released so the user isn't debited.
     expect(releaseSpy).toHaveBeenCalledTimes(1);
-    // Finalize must NOT have run — there is no image to persist.
     expect(finalizeSpy).not.toHaveBeenCalled();
-    // No `done` event slipped through.
+    expect(events.some((e) => e.kind === "done")).toBe(false);
+  });
+
+  it("classifier flags the image → no upload, reservation released, §15.4 toast surfaced", async () => {
+    // Adapter returns structurally-valid bytes (so the classifier IS
+    // reached), and the injected classifier flags them as nsfw.
+    tooSmallAdapterMock.streamOnDeviceImageGen = async function* () {
+      yield {
+        kind: "done" as const,
+        bytes: new Uint8Array(2048).fill(0xff),
+        mime: "image/png",
+        width: 512,
+        height: 512,
+        adapter: "webgpu-sd-turbo" as const,
+        seed: 42,
+      };
+    };
+    __setNsfwClassifierForTests(async () => ({
+      nsfw: true,
+      topLabel: "nsfw",
+      score: 0.95,
+    }));
+
+    const { streamOnDevicePrivateImage } = await import(
+      "@/lib/on-device-private-image"
+    );
+    const events: Array<{ kind: string; type?: string; message?: string }> = [];
+    for await (const ev of streamOnDevicePrivateImage({
+      threadId: null,
+      content: "draw something edgy",
+      badge: "private",
+    })) {
+      events.push(ev as { kind: string; type?: string; message?: string });
+    }
+
+    const errEvt = events.find((e) => e.kind === "error");
+    expect(errEvt).toBeDefined();
+    expect(errEvt?.type).toBe("validation");
+    expect(errEvt?.message).toMatch(/blocked by on-device safety filter/i);
+    expect(errEvt?.message).toMatch(/different prompt/i);
+
+    // §15.4: flagged bytes never touch the bucket, even the user's own.
+    expect(uploadSpy).not.toHaveBeenCalled();
+    expect(releaseSpy).toHaveBeenCalledTimes(1);
+    expect(finalizeSpy).not.toHaveBeenCalled();
     expect(events.some((e) => e.kind === "done")).toBe(false);
   });
 });
