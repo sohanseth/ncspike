@@ -179,6 +179,26 @@ export type SourceRef = z.infer<typeof SourceRefSchema>;
 
 // ─── TraitSheet root ────────────────────────────────────────────────────────
 
+/**
+ * Per-category provenance + freshness metadata. Added in Phase 2.7 follow-up
+ * (task #24) to support cross-night carry-forward of traits per spec §B9:
+ *
+ * - `last_seen_at` is refreshed to "now" whenever a category is freshly
+ *   extracted OR re-confirmed by a new in-window memory whose embedding is
+ *   within 0.4 cosine of the prior category embedding.
+ * - `source_memory_ids` is the per-category union of memory refs that have
+ *   ever contributed to or re-confirmed this category. It is what gets
+ *   *extended* on re-confirmation rather than rebuilt from scratch (spec §B9).
+ *
+ * Sheet-level `source_memory_ids` is retained for backward compatibility and
+ * still records the memory window of the most recent extraction run.
+ */
+export const CategoryMetaSchema = z.object({
+  last_seen_at: z.string().datetime(),
+  source_memory_ids: z.array(SourceRefSchema).max(500).default([]),
+});
+export type CategoryMeta = z.infer<typeof CategoryMetaSchema>;
+
 export const TraitSheetSchema = z.object({
   schema_version: z.literal(1),
   derived_at: z.string().datetime(),
@@ -196,6 +216,9 @@ export const TraitSheetSchema = z.object({
     })
     .strict(),
   category_embeddings: z.record(z.string(), CategoryEmbeddingSchema),
+  // Optional for backward compatibility — sheets written before task #24
+  // simply omit it; the extractor falls back to `derived_at` as last_seen_at.
+  category_meta: z.record(z.string(), CategoryMetaSchema).optional(),
 });
 
 export type TraitSheet = z.infer<typeof TraitSheetSchema>;

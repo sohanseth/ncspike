@@ -27,6 +27,7 @@ import {
   CATEGORY_PATCH_SCHEMAS,
   TRAIT_CATEGORIES,
   TraitSheetSchema,
+  type CategoryMeta,
   type SourceRef,
   type TraitCategory,
   type TraitSheet,
@@ -36,6 +37,20 @@ import { scrub } from "@/server/pii-scrub";
 const MEMORY_WINDOW_DAYS = 30;
 const MAX_MEMORY_NODES = 400; // truncate input to keep prompts under the budget
 const MAX_PATCH_TOKENS = 600;
+// Spec §B9: a trait whose source memories haven't been touched (read,
+// updated, or re-confirmed by similar new memory) in 90 days drops out of
+// the next sheet version.
+const TRAIT_DECAY_DAYS = 90;
+// Spec §B9: "Re-confirmed" means a new in-window memory embeds within 0.4
+// cosine of the existing trait's source memories. We compare against the
+// prior category embedding as the per-category proxy for that signal.
+const RECONFIRM_COSINE_FLOOR = 0.4;
+// Cap on how many memory nodes we embed for re-confirmation. Embedding the
+// full window (up to MAX_MEMORY_NODES = 400) per user per night would blow
+// our embedding budget; the most-recent 100 is more than enough signal.
+const MAX_MEMORY_FOR_RECONFIRM = 100;
+// Per-category source_memory_ids cap — matches CategoryMetaSchema.max(500).
+const MAX_PER_CATEGORY_SOURCES = 500;
 
 export type ExtractionResult = {
   /** True if a new sheet was written. False on no-op (no new memory) or
@@ -317,7 +332,38 @@ function categoryToEmbeddingText(category: TraitCategory, content: unknown): str
   return `${category}; ${parts.join("; ")}`.slice(0, 1500);
 }
 
-// ─── 6. Main entry ──────────────────────────────────────────────────────────
+// ─── 6. Carry-forward helpers (spec §B9) ────────────────────────────────────
+
+function cosineSim(a: readonly number[], b: readonly number[]): number {
+  if (a.length !== b.length || a.length === 0) return 0;
+  let dot = 0;
+  let aMag = 0;
+  let bMag = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    aMag += a[i] * a[i];
+    bMag += b[i] * b[i];
+  }
+  const denom = Math.sqrt(aMag) * Math.sqrt(bMag);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+/** Stable union of SourceRef arrays, deduped on `${kind}:${id}`. */
+function mergeSources(...lists: readonly SourceRef[][]): SourceRef[] {
+  const seen = new Set<string>();
+  const out: SourceRef[] = [];
+  for (const list of lists) {
+    for (const r of list) {
+      const key = `${r.kind}:${r.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+// ─── 7. Main entry ──────────────────────────────────────────────────────────
 
 export async function runTraitExtractionForUserId(userId: string): Promise<ExtractionResult> {
   // Gate on rollout flag.
@@ -330,26 +376,42 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
     return { written: false, reason: "blocked_by_user_setting", version: 0 };
   }
 
-  // Load existing sheet (for version bump).
+  // Load existing sheet (full row — needed for spec §B9 carry-forward).
   const { data: existing } = await (supabaseAdmin as any)
     .from("user_traits")
-    .select("version")
+    .select("version, sheet")
     .eq("user_id", userId)
     .maybeSingle();
   const nextVersion = (existing?.version ?? 0) + 1;
+  const priorSheet = (existing?.sheet ?? null) as TraitSheet | null;
+  const priorCats = (priorSheet?.categories ?? {}) as Partial<TraitSheet["categories"]>;
+  const priorEmbeds = (priorSheet?.category_embeddings ?? {}) as Record<string, number[]>;
+  const priorMeta = (priorSheet?.category_meta ?? {}) as Record<string, CategoryMeta>;
 
   // Load 30-day memory.
   const memory = await loadRecentMemory(userId);
-  if (memory.length === 0) {
+  // Spec §B9: even on a "silent night" (no new memory in the 30-day window),
+  // we must still age out prior categories whose `last_seen_at` exceeds the
+  // 90-day decay window — otherwise stale traits persist forever for any user
+  // who goes quiet. We only short-circuit when there's NOTHING to do: no new
+  // memory AND no prior sheet to potentially decay.
+  if (memory.length === 0 && !priorSheet) {
     return { written: false, reason: "no_new_memory", version: existing?.version ?? 0 };
   }
+  const memoryRefs: SourceRef[] = memory.map((n) => ({ kind: "memory" as const, id: n.id }));
 
   // Per-category extraction with per-category Zod validation BEFORE merge.
   // Architect-required (Day-2 review): one bad category must not roll back
   // the others. The final TraitSheetSchema.safeParse remains as a guard
   // against the assembled-shape ever drifting from per-category shape.
+  //
+  // Silent-night skip: if there's no in-window memory, there is by definition
+  // nothing for the LLM to extract. Skipping the loop avoids 6 wasted LLM
+  // calls per silent night per user, and the carry-forward / decay block
+  // below still runs against the prior sheet.
   const categories: Partial<TraitSheet["categories"]> = {};
-  for (const cat of TRAIT_CATEGORIES) {
+  const newlyExtracted = new Set<TraitCategory>();
+  for (const cat of memory.length === 0 ? [] : TRAIT_CATEGORIES) {
     const patch = await extractCategoryPatch(cat, memory);
     if (patch == null) {
       await logExtractionFailure(userId, cat, "llm_no_response");
@@ -373,9 +435,137 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
       continue;
     }
     (categories as Record<string, unknown>)[cat] = perCat.data;
+    newlyExtracted.add(cat);
   }
 
-  if (Object.keys(categories).length === 0) {
+  // Embed each newly-extracted category. Carried-forward categories reuse
+  // their prior embedding, so we don't re-embed them.
+  const newCatKeys = Array.from(newlyExtracted);
+  let newEmbeddings: number[][] = [];
+  if (newCatKeys.length > 0) {
+    try {
+      newEmbeddings = await embedTexts(
+        newCatKeys.map((k) =>
+          categoryToEmbeddingText(k, (categories as Record<string, unknown>)[k]),
+        ),
+      );
+    } catch {
+      for (const cat of newCatKeys) {
+        await logExtractionFailure(userId, cat, "embedding_failed");
+      }
+      return { written: false, reason: "embedding_failed", version: existing?.version ?? 0 };
+    }
+  }
+  const category_embeddings: Record<string, number[]> = {};
+  newCatKeys.forEach((k, i) => {
+    category_embeddings[k] = newEmbeddings[i];
+  });
+
+  // ─── Spec §B9 carry-forward ──────────────────────────────────────────────
+  //
+  // Without this, a user who mentions "I'm vegetarian" in March and not again
+  // until June has the trait silently wiped on day 31 because we only see the
+  // last 30 days of memory. Carry-forward keeps prior categories alive across
+  // nights up to the 90-day decay window, and re-confirmation refreshes the
+  // window when a new in-window memory is semantically similar.
+  const nowIso = new Date().toISOString();
+  const newCategoryMeta: Record<string, CategoryMeta> = {};
+
+  // Step 1: For each freshly-extracted category, mark fresh and EXTEND
+  // (not replace) any prior per-category source_memory_ids. This is the
+  // spec §B9 "re-confirmed extends, not re-creates" rule applied to the
+  // case where a freshly-extracted category overlaps a prior one.
+  for (const cat of newlyExtracted) {
+    const priorSources = priorMeta[cat]?.source_memory_ids ?? [];
+    newCategoryMeta[cat] = {
+      last_seen_at: nowIso,
+      source_memory_ids: mergeSources(priorSources, memoryRefs).slice(
+        0,
+        MAX_PER_CATEGORY_SOURCES,
+      ),
+    };
+  }
+
+  // Step 2: For each prior category NOT freshly extracted, decide whether to
+  // carry it forward. Re-confirm via cosine ≥ 0.4 against new memory; else
+  // age-decay at 90 days from last_seen_at.
+  const priorCatKeys = Object.keys(priorCats) as TraitCategory[];
+  const carryForwardCandidates = priorCatKeys.filter(
+    (cat) => !newlyExtracted.has(cat) && priorCats[cat] != null,
+  );
+
+  // Embed new memory for re-confirmation (one batched call). Only if there
+  // are categories we might carry forward — skip the API hit otherwise.
+  let memoryEmbeddings: number[][] = [];
+  if (carryForwardCandidates.length > 0) {
+    const memoryToEmbed = memory.slice(0, MAX_MEMORY_FOR_RECONFIRM);
+    try {
+      memoryEmbeddings = await embedTexts(
+        memoryToEmbed.map((n) => `[${n.node_type}] ${n.label}`),
+      );
+    } catch {
+      // Soft-fail: without memory embeddings, we can't re-confirm by cosine,
+      // but age-based carry-forward still applies. Don't roll back the run.
+      memoryEmbeddings = [];
+    }
+  }
+
+  for (const cat of carryForwardCandidates) {
+    const priorContent = priorCats[cat];
+    const priorEmbedding = priorEmbeds[cat];
+    const meta = priorMeta[cat];
+    const lastSeenStr = meta?.last_seen_at ?? priorSheet!.derived_at;
+    const ageMs = Date.now() - Date.parse(lastSeenStr);
+    const decayMs = TRAIT_DECAY_DAYS * 24 * 60 * 60 * 1000;
+
+    // Re-confirmation check: any new memory whose embedding is within 0.4
+    // cosine of the prior category embedding counts as "still relevant".
+    const reconfirmingRefs: SourceRef[] = [];
+    if (priorEmbedding && memoryEmbeddings.length > 0) {
+      for (let i = 0; i < memoryEmbeddings.length; i++) {
+        if (cosineSim(memoryEmbeddings[i], priorEmbedding) >= RECONFIRM_COSINE_FLOOR) {
+          reconfirmingRefs.push(memoryRefs[i]);
+        }
+      }
+    }
+    const reconfirmed = reconfirmingRefs.length > 0;
+
+    if (!reconfirmed && ageMs >= decayMs) {
+      // Expired: drop. (Skip writing this category into the new sheet.)
+      continue;
+    }
+
+    // Carry forward content + embedding from prior.
+    (categories as Record<string, unknown>)[cat] = priorContent;
+    if (priorEmbedding) category_embeddings[cat] = priorEmbedding;
+
+    if (reconfirmed) {
+      // Spec §B9: re-confirmed traits get source_memory_ids EXTENDED, not
+      // re-created. last_seen_at refreshes the 90-day window.
+      newCategoryMeta[cat] = {
+        last_seen_at: nowIso,
+        source_memory_ids: mergeSources(
+          meta?.source_memory_ids ?? [],
+          reconfirmingRefs,
+        ).slice(0, MAX_PER_CATEGORY_SOURCES),
+      };
+    } else {
+      // Within 90-day window but no re-confirmation: carry meta unchanged.
+      newCategoryMeta[cat] = {
+        last_seen_at: lastSeenStr,
+        source_memory_ids: meta?.source_memory_ids ?? [],
+      };
+    }
+  }
+
+  // If carry-forward + extraction produced nothing AND there is no prior
+  // sheet to decay, this is a true no-op (cold-start with no signal yet).
+  // BUT if a prior sheet exists and everything in it has decayed, we MUST
+  // write the resulting empty sheet — otherwise the stale prior persists in
+  // user_traits and the broker keeps serving expired traits, defeating the
+  // 90-day rule. Spec §B9: "drops out of the next sheet version" requires
+  // an actual next sheet.
+  if (Object.keys(categories).length === 0 && !priorSheet) {
     return {
       written: false,
       reason: "no_categories_extracted",
@@ -383,32 +573,15 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
     };
   }
 
-  // Embed each non-empty category.
-  const catKeys = Object.keys(categories) as TraitCategory[];
-  let embeddings: number[][];
-  try {
-    embeddings = await embedTexts(
-      catKeys.map((k) => categoryToEmbeddingText(k, (categories as Record<string, unknown>)[k])),
-    );
-  } catch {
-    for (const cat of catKeys) {
-      await logExtractionFailure(userId, cat, "embedding_failed");
-    }
-    return { written: false, reason: "embedding_failed", version: existing?.version ?? 0 };
-  }
-  const category_embeddings: Record<string, number[]> = {};
-  catKeys.forEach((k, i) => {
-    category_embeddings[k] = embeddings[i];
-  });
-
   // Build candidate sheet.
-  const sourceRefs: SourceRef[] = memory.map((n) => ({ kind: "memory" as const, id: n.id }));
+  const sourceRefs: SourceRef[] = memoryRefs;
   const candidate: TraitSheet = {
     schema_version: 1,
-    derived_at: new Date().toISOString(),
+    derived_at: nowIso,
     source_memory_ids: sourceRefs,
     categories,
     category_embeddings,
+    category_meta: newCategoryMeta,
   };
 
   // Final assembled-sheet guard. Per-category validation already ran above,
