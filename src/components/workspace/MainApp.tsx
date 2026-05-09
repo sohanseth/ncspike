@@ -416,10 +416,11 @@ function TopBar({
             // get trapped by the iframe's frame-ancestors policy and Google
             // refuses to render inside an iframe (ERR_BLOCKED_BY_RESPONSE).
             const a = document.createElement("a");
-            // DuckDuckGo allows iframe embedding (Google sets X-Frame-Options
-            // DENY and the old `igu=1` bypass no longer works), so this loads
-            // cleanly inside the Lovable preview wrapper and in published apps.
-            a.href = `https://duckduckgo.com/?q=${encodeURIComponent(q)}`;
+            // Google search. In the published app, target="_blank" opens a real
+            // top-level browser tab (Chrome/Safari/etc) so this loads normally.
+            // Inside the Lovable preview iframe, Google's X-Frame-Options will
+            // block embedding — that's a preview-only artifact.
+            a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
             a.target = "_blank";
             a.rel = "noopener noreferrer";
             document.body.appendChild(a);
