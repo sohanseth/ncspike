@@ -3906,7 +3906,10 @@ function AddTaskButton() {
     const recog = new Ctor();
     recog.continuous = true;       // keep listening across pauses
     recog.interimResults = true;   // show partial transcripts as they arrive
-    recog.lang = navigator.language || "en-US";
+    recog.lang = voiceLang || navigator.language || "en-US";
+    // Some engines support alternative results — request a few so accented
+    // speech has more chances to match the right word.
+    try { recog.maxAlternatives = 3; } catch { /* noop */ }
 
     // Track the text we had when dictation started so we can append cleanly
     // and keep what the user already typed.
