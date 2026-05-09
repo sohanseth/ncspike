@@ -1,0 +1,85 @@
+name: gdpr-supabase
+
+# Runs the GDPR delete_user_data() round-trip against a REAL Supabase project
+# (a dedicated staging clone), not the ephemeral local Postgres used by
+# `gdpr-real-db.yml`. This is the only place CI exercises Supabase-specific
+# behavior — `auth.users` triggers, RLS vs `service_role`, real FK cascades,
+# extension availability — that vanilla Postgres cannot model.
+#
+# Gating: this job is destructive (wipes auth.users + every per-user table
+# in the target DB) and burns Supabase project quota, so it does NOT run on
+# every PR. It runs only on:
+#   * push to `main` (after merge),
+#   * `workflow_dispatch` (manual rerun),
+#   * pull_request labeled `run-gdpr-supabase` (opt-in per PR).
+#
+# See docs/14-ci.md for which secret/project this targets and why.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "supabase/migrations/**"
+      - "src/lib/gdpr.functions.ts"
+      - "tests/leak-suite/gdpr-roundtrip*"
+      - "scripts/test-gdpr-supabase.sh"
+      - ".github/workflows/gdpr-supabase.yml"
+  pull_request:
+    types: [labeled, synchronize]
+    paths:
+      - "supabase/migrations/**"
+      - "src/lib/gdpr.functions.ts"
+      - "tests/leak-suite/gdpr-roundtrip*"
+      - "scripts/test-gdpr-supabase.sh"
+      - ".github/workflows/gdpr-supabase.yml"
+  workflow_dispatch:
+
+jobs:
+  gdpr-supabase:
+    # Gate the PR path to only fire when the `run-gdpr-supabase` label is
+    # present. push and workflow_dispatch always run.
+    if: >-
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'pull_request' &&
+        contains(github.event.pull_request.labels.*.name, 'run-gdpr-supabase'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Concurrency: never let two of these stomp on the same staging clone.
+    concurrency:
+      group: gdpr-supabase-staging
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+
+      - name: Install Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Skip if staging secret is not configured
+        id: gate
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+        run: |
+          if [ -z "${SUPABASE_STAGING_DB_URL:-}" ]; then
+            echo "::warning::SUPABASE_STAGING_DB_URL is not configured; skipping the real-Supabase round-trip. See docs/14-ci.md."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run delete_user_data round-trip against staging Supabase
+        if: steps.gate.outputs.skip == 'false'
+        env:
+          SUPABASE_STAGING_DB_URL: ${{ secrets.SUPABASE_STAGING_DB_URL }}
+          I_UNDERSTAND_THIS_WIPES_DATA: "yes"
+        run: bash scripts/test-gdpr-supabase.sh
