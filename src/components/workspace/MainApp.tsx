@@ -3904,21 +3904,54 @@ function AddTaskButton() {
     // Track the text we had when dictation started so we can append cleanly
     // and keep what the user already typed.
     const baseText = text.endsWith("\n") || text === "" ? text : text + "\n";
-    let finalAddition = "";
+    // Buffer of completed phrases that share the *current* line. We only break
+    // to a new line on a long silence, sentence-ending punctuation, or an
+    // explicit "new task" / "next task" cue — so a mid-sentence pause like
+    // "buy shoes for … kids" stays on one line.
+    const lines: string[] = [""]; // lines[lines.length-1] is the active line
+    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+    const SILENCE_MS = 1600;
+
+    const render = (interim = "") => {
+      const joined = lines.join("\n").replace(/\s+$/g, "");
+      const tail = interim ? (joined ? " " : "") + interim : "";
+      setText(baseText + joined + tail);
+    };
+
+    const breakLine = () => {
+      if (lines[lines.length - 1].trim()) lines.push("");
+    };
 
     recog.onresult = (event: any) => {
       let interim = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
-        const transcript = result[0].transcript;
+        const transcript = String(result[0].transcript || "").trim();
+        if (!transcript) continue;
         if (result.isFinal) {
-          // Treat each final phrase as a new task line.
-          finalAddition += transcript.trim() + "\n";
+          // Strip an explicit "new task" / "next task" cue and force a break.
+          const cueRe = /^(new task|next task|next)[\s,:.-]*/i;
+          let phrase = transcript;
+          let forceBreak = false;
+          if (cueRe.test(phrase)) {
+            phrase = phrase.replace(cueRe, "").trim();
+            forceBreak = true;
+          }
+          if (forceBreak) breakLine();
+          if (phrase) {
+            const cur = lines[lines.length - 1];
+            lines[lines.length - 1] = cur ? cur + " " + phrase : phrase;
+          }
+          // Sentence-ending punctuation → new line for the next phrase.
+          if (/[.!?]$/.test(phrase)) breakLine();
+          // Reset silence timer — a long pause after this commits a line break.
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => { breakLine(); render(); }, SILENCE_MS);
         } else {
-          interim += transcript;
+          interim += (interim ? " " : "") + transcript;
         }
       }
-      setText(baseText + finalAddition + interim);
+      render(interim);
     };
     recog.onerror = (e: any) => {
       const msg = e?.error === "not-allowed"
@@ -3928,6 +3961,7 @@ function AddTaskButton() {
       setListening(false);
     };
     recog.onend = () => {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       setListening(false);
       recogRef.current = null;
     };
