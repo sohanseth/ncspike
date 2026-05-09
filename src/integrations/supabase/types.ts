@@ -863,6 +863,7 @@ export type Database = {
         Args: { target_user_id: string }
         Returns: {
           chat_context_log_deleted: number
+          chat_message_attachments_deleted: number
           chat_messages_deleted: number
           chat_threads_deleted: number
           extraction_failures_deleted: number
