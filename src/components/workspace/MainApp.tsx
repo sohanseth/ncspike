@@ -436,6 +436,9 @@ function TopBar({
           <span className="hidden sm:block">Search</span>
         </button>
 
+        {/* Add task — manual entry, auto-categorised into a bento box */}
+        <AddTaskButton/>
+
         {/* Voice */}
         <button onClick={onVoice}
           className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
