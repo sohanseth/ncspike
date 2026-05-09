@@ -34,6 +34,8 @@ export type ChatStreamEvent =
       /** Personalization context the broker injected for this turn (D8). */
       contextUsed: { categories: string[]; trait_paths: string[] } | null;
       traitSheetVersion: number | null;
+      /** Signed URLs for any images the assistant generated this turn. */
+      assistantImages?: string[];
     }
   | {
       kind: "error";
