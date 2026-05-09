@@ -2177,7 +2177,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
             {isOther ? "Other" : domain!.label}
           </p>
           <p className="text-[10px] font-mono text-muted-foreground/50">
-            {visible.length} {visible.length === 1 ? "item" : "items"}
+            {visible.length + myManualTasks.length} {visible.length + myManualTasks.length === 1 ? "item" : "items"}
           </p>
         </div>
       </div>
