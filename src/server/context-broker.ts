@@ -145,6 +145,22 @@ function collectTraitPaths(category: TraitCategory, payload: unknown): string[] 
 
 type CategoryBlocksMap = Map<TraitCategory, Set<string>>;
 
+/**
+ * Thrown when a user-controlled blocklist (per-trait or per-provider-tier)
+ * fails to load. We refuse to assemble personalization without knowing the
+ * user's explicit exclusions — that's the whole point of the broker.
+ * `assembleSystemPrompt` catches this and returns `scrubBlocked: true` with
+ * an empty fragment, mirroring the scrub-pass fail-closed branch.
+ */
+export class BlockListUnavailableError extends Error {
+  readonly source: "trait" | "provider-category";
+  constructor(source: "trait" | "provider-category", message: string) {
+    super(message);
+    this.name = "BlockListUnavailableError";
+    this.source = source;
+  }
+}
+
 async function loadTraitBlocks(userId: string): Promise<CategoryBlocksMap> {
   const out: CategoryBlocksMap = new Map();
   const { data, error } = await (supabaseAdmin as any)
@@ -153,8 +169,14 @@ async function loadTraitBlocks(userId: string): Promise<CategoryBlocksMap> {
     .eq("user_id", userId)
     .gt("blocked_until", new Date().toISOString());
   if (error) {
+    // Fail-closed: a blocklist we can't read is indistinguishable from a
+    // missing blocklist, and silently injecting traits the user explicitly
+    // forgot would violate the privacy contract.
     console.warn(`[context-broker] trait-block load failed for ${userId}:`, error);
-    return out;
+    throw new BlockListUnavailableError(
+      "trait",
+      `user_trait_blocks load failed: ${error.message ?? error}`,
+    );
   }
   for (const row of (data ?? []) as Array<{ category: string; trait_path: string }>) {
     const cat = row.category as TraitCategory;
@@ -176,8 +198,12 @@ async function loadProviderCategoryBlocks(
     .eq("user_id", userId)
     .eq("provider_tier", tier);
   if (error) {
+    // Fail-closed (see BlockListUnavailableError above).
     console.warn(`[context-broker] provider-block load failed for ${userId}:`, error);
-    return out;
+    throw new BlockListUnavailableError(
+      "provider-category",
+      `user_provider_category_blocks load failed: ${error.message ?? error}`,
+    );
   }
   for (const row of (data ?? []) as Array<{ category: string }>) {
     const cat = row.category as TraitCategory;
@@ -303,7 +329,27 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
   //    (c) is allowed at this tier.
   const tier = args.strictestTierInChain;
   const tierBlocks = NEVER_AT_TIER[tier];
-  const providerCategoryBlocks = await loadProviderCategoryBlocks(args.userId, tier);
+  let providerCategoryBlocks: Set<TraitCategory>;
+  try {
+    providerCategoryBlocks = await loadProviderCategoryBlocks(args.userId, tier);
+  } catch (e) {
+    if (e instanceof BlockListUnavailableError) {
+      await logScrubEvent({
+        userId: args.userId,
+        patternClass: "blocklist_unavailable",
+        category: null,
+        badge: args.badge,
+        providerTier: tier,
+      });
+      return {
+        fragment: "",
+        contextUsed: { categories: [], trait_paths: [] },
+        scrubBlocked: true,
+        traitSheetVersion: version,
+      };
+    }
+    throw e;
+  }
 
   type Scored = { category: TraitCategory; score: number };
   const scored: Scored[] = [];
@@ -334,7 +380,27 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
   const top = aboveFloor.slice(0, maxK);
 
   // 6. Apply per-trait-path blocks. Categories that go fully empty are dropped.
-  const traitBlocks = await loadTraitBlocks(args.userId);
+  let traitBlocks: CategoryBlocksMap;
+  try {
+    traitBlocks = await loadTraitBlocks(args.userId);
+  } catch (e) {
+    if (e instanceof BlockListUnavailableError) {
+      await logScrubEvent({
+        userId: args.userId,
+        patternClass: "blocklist_unavailable",
+        category: null,
+        badge: args.badge,
+        providerTier: tier,
+      });
+      return {
+        fragment: "",
+        contextUsed: { categories: [], trait_paths: [] },
+        scrubBlocked: true,
+        traitSheetVersion: version,
+      };
+    }
+    throw e;
+  }
   const selected: Record<string, unknown> = {};
   const usedCategories: TraitCategory[] = [];
   const usedTraitPaths: string[] = [];

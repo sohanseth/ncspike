@@ -27,7 +27,13 @@ export type ScrubPatternClass =
   // Phase 2.7-bis: assembled fragment exceeded MAX_FRAGMENT_CHARS. Not a
   // PII shape per se, but reuses the same fail-closed code path so the
   // audit trail is uniform.
-  | "fragment_oversize";
+  | "fragment_oversize"
+  // Phase 2.7-bis (B2 architect, 2026-05-09): the broker could not load the
+  // user's per-trait or per-provider-tier blocklists from Supabase. Treated
+  // as fail-closed (empty fragment, scrubBlocked: true) because we can't
+  // honour exclusions we can't read. Audited as its own class so ops can
+  // distinguish a transient DB blip from a true PII pattern hit.
+  | "blocklist_unavailable";
 
 export type ScrubResult =
   | { ok: true }

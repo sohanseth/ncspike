@@ -179,9 +179,27 @@ These are the calls I can't make alone — they're product decisions, not engine
 
 ## 9. v1 lock proposals (drafted 2026-05-08, post Phase 2.7 D8)
 
-D8 has landed. Phase 2.6 architect review came back APPROVED with one severe
-fixed in this session (cap-check ordering). Phase 2.7 architect review came
-back APPROVED clean. CPAUD viewer is up.
+D8 has landed. Phase 2.6 architect review (2026-05-09 tightening pass) came
+back APPROVED clean — no severe findings on the shipped surface; the known
+cap-atomicity TOCTOU is tracked under Tasks #8 / #15. Phase 2.7 architect
+review (same pass) flagged two severe fail-OPEN paths against the "no
+silent fallbacks" rule in `replit.md`:
+
+1. `resolveBadgeForUser()` returned the requested HOSTED badge on a
+   `user_settings` lookup error — a Strict-mode user could be silently
+   routed to OpenAI/Anthropic during a Supabase hiccup.
+2. Broker blocklist loaders (`loadTraitBlocks`, `loadProviderCategoryBlocks`)
+   returned empty sets on DB error — user-explicit exclusions could be
+   silently bypassed.
+
+Both fixed in-session: the badge resolver now coerces to PRIVATE on DB
+failure (with a distinct `coercedFromDbFailure` telemetry flag), and the
+broker now throws `BlockListUnavailableError` which `assembleSystemPrompt`
+catches as `scrubBlocked: true` (empty fragment, `blocklist_unavailable`
+audit row). New regression suite `tests/leak-suite/fail-closed-blocklist.test.ts`
+pins both behaviours; vitest baseline is now 122/122 + 3 skipped real-DB.
+Architect re-review: APPROVED. CPAUD viewer remains up at
+`/workspace/internal/cpaud`.
 
 The §7 questions are listed below with my **proposed answer** (so you can
 reply with one round of "yes / no / change to X" instead of writing them
