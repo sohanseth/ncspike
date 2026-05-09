@@ -655,3 +655,127 @@ spec (docs/13?) that this phase deliberately does not touch.
 These are the five decisions that genuinely need a human call
 before implementation begins. Everything else in this spec is
 build-ready.
+
+---
+
+## 15. v1 lock (decisions made 2026-05-09)
+
+User answered the §14 questions and asked for one feature beyond
+the original scope: **img2img edit** ("here's my photo, try a new
+hairstyle"). The locked direction is below. Anything not in this
+section stays as drafted in §1–§14.
+
+### 15.1 Locked answers to §14 questions
+
+1. **Apple IP style limit** — moot. v1 does not use Apple Image
+   Playground for the `try a new hairstyle` flow because Apple IP
+   is text-to-image only. We still expose Apple IP for pure
+   text-to-image turns on iOS (it stays the priority-1 adapter
+   for that subset).
+2. **MediaPipe download UX** — no toggle, download whenever the
+   user first hits an on-device image turn. (User confirmed after
+   I clarified the model downloads once, not per request.)
+3. **iOS preference** — Apple IP for text-to-image; the img2img
+   path on iOS is a separate adapter (see §15.3).
+4. **NSFW classifier** — yes, on-device, refuse to persist
+   flagged outputs. NSFWJS in the WebGPU path; Apple's
+   `VNClassifyImageRequest` on iOS; MediaPipe Image Classifier
+   with NSFW labels on Android. This runs after generation,
+   before write to storage. PRIVATE never sends an unfiltered
+   image off-device, even to its own bucket, on a flagged result.
+5. **Cloud fallback** — **never.** PRIVATE turns are on-device
+   end-to-end or they fail closed with an honest message. No
+   silent retry against FLASH / PRO / Genius for PRIVATE turns,
+   even for image. (This overrides the §14.5 recommendation.)
+
+### 15.2 Honest capability matrix for img2img on-device, mid-2026
+
+User cited FLUX.1 Kontext, HunyuanImage-3.0, Core ML, MediaPipe,
+and ControlNet. The field is genuinely moving, but a sober look
+at sizes vs. phone constraints:
+
+| Model | Min size (quantized) | Realistically runs on | Img2img edit quality |
+| --- | --- | --- | --- |
+| FLUX.1 Kontext [dev] | ~6 GB Q4, ~12 GB FP8 | Desktop GPU only | Best in class, but desktop |
+| HunyuanImage-3.0 (80B MoE) | >40 GB | Server / multi-GPU only | Not a phone option |
+| SDXL + InstructPix2Pix | ~4 GB Q4 | Desktop WebGPU; M-series Mac | Good |
+| SD 1.5 + ControlNet (depth/pose/lineart) | ~1.5 GB Q4 | Phone-feasible (Core ML / MediaPipe / WebGPU) | Workable but not photorealistic for face/hair edits |
+| Apple Image Wand | OS-bundled, no public API | iPhone 15 Pro+ | Inpainting only, no public app entry today |
+
+The "try a new hairstyle on my actual face" use case is the
+hardest cell in this table — face/hair edits are exactly where
+small models fall down. v1 ships the best on-device model that
+fits each platform's memory + compute envelope and is honest
+about quality.
+
+### 15.3 What v1 ships, per platform
+
+**iOS (native, Capacitor):**
+- Text-to-image: Apple Image Playground (`imagegenAppleIP`).
+- Img2img edit: **Core ML SD 1.5 + ControlNet** (depth + lineart
+  conditioning) packaged as a Capacitor plugin
+  `NCImageEditCoreMLPlugin.swift`. ~1.5 GB on-device download
+  on first use. 10–20 s per edit on iPhone 15 Pro / A17 Pro+.
+  Older iPhones: capability detection returns `available:false`
+  with reason `"This iPhone doesn't have enough Neural Engine
+  headroom for on-device image editing. Upgrade to iPhone 15 Pro
+  or newer."` — fail-closed, no cloud fallback.
+
+**Android (native, Capacitor):**
+- Text-to-image: MediaPipe Image Generator (`imagegenAndroidMP`).
+- Img2img edit: **MediaPipe Image Generator + ControlNet plugin
+  task** (Google added the conditioning plugin in late 2025).
+  Same ~1 GB base + ~200 MB ControlNet weights. Snapdragon
+  8 Gen 2+ / Tensor G3+ only. Below that: fail-closed.
+
+**Web (WebGPU desktop):**
+- Text-to-image: Janus-Pro 1B if `maxBufferSize ≥ 2 GB`, else
+  SD-Turbo.
+- Img2img edit: **WebGPU SDXL + InstructPix2Pix** (~4 GB) for
+  desktop-class GPUs; **WebGPU SD 1.5 + ControlNet** (~1.5 GB)
+  for mid-tier. Capability probe picks one.
+
+**Web (mobile browser, no WebGPU):**
+- No on-device path. Fail-closed with the standard message.
+
+### 15.4 NSFW pipeline (locked)
+
+Run the on-device classifier on the **output** image (not the
+input — users may legitimately edit photos containing nudity in
+art / medical / parenting contexts they own). On a flagged
+output:
+
+1. Discard the tensor in memory before write.
+2. Persist a `chat_messages` row with `content` set to a
+   placeholder ("Image was generated but blocked by the on-device
+   safety classifier. The image was not saved.") and
+   `image_blocked: true` in a new `inference_usage.metadata`
+   field.
+3. Surface a toast: "Generated image was blocked by on-device
+   safety filter. Try a different prompt."
+4. No telemetry leaves the device about *what* was flagged —
+   only the count.
+
+### 15.5 What is NOT in v1 (deferred)
+
+- FLUX.1 Kontext [dev] integration — desktop-only, revisit when
+  a phone-class quantization (≤2 GB) ships.
+- HunyuanImage-3.0 — server-only at any quantization in 2026.
+- Apple Image Wand integration — no public API; revisit when
+  Apple opens it.
+- Multi-image edits (style transfer from photo A onto photo B) —
+  v1 is single-input edit only.
+- Animation / short video — out of scope for Phase 2.9.
+
+### 15.6 Open question that remains
+
+**v1 storage budget.** A user who runs every platform path could
+end up with ~3 GB of model weights cached locally (Core ML SD +
+ControlNet on iOS, or SDXL + IP2P on web). The §14 answer "no
+toggle, download whenever" works for the first model but will
+feel rude for the second. **Proposed default:** download the
+text-to-image model whenever, but require a one-time "Enable
+on-device image editing (~1.5 GB more)" tap before the img2img
+model loads. This is not a per-request prompt; it's a one-time
+opt-in for the heavier capability. Confirm or override this
+before implementation begins.
