@@ -439,23 +439,21 @@ function TopBar({
         {/* Add task — manual entry, auto-categorised into a bento box */}
         <AddTaskButton/>
 
-        {/* Voice */}
-        <button onClick={onVoice}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <Mic size={13}/>
-          <span className="hidden sm:block">Voice</span>
-        </button>
-
-        {/* Chat */}
+        {/* Chat — combined text + voice. Mic glyph stacked on the bubble
+            signals both modes; the panel itself has a text/voice toggle. */}
         <button onClick={()=>setTool(tool==="chat"?null:"chat")}
+          title="Chat or talk"
+          aria-label="Chat or talk"
           className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
             tool==="chat"
               ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
               : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
           }`}
           style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <MessageCircle size={13}/>
+          <span className="relative inline-flex items-center justify-center" style={{width:13,height:13}}>
+            <MessageCircle size={13}/>
+            <Mic size={7} className="absolute -bottom-0.5 -right-1 bg-background rounded-full p-px" strokeWidth={2.5}/>
+          </span>
           <span className="hidden sm:block">Chat</span>
         </button>
 
