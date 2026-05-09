@@ -3850,16 +3850,13 @@ function AddTaskButton() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
+      <ActionPill
+        icon={<ListTodo size={14}/>}
+        label="Add tasks"
+        accent="#fbbf24"
         title="Add tasks"
-        aria-label="Add tasks"
-        className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-        style={{ fontFamily: "'DM Sans',sans-serif" }}
-      >
-        <ListTodo size={13} />
-        <span className="hidden sm:block">Add tasks</span>
-      </button>
+        onClick={() => setOpen(true)}
+      />
 
       {open && (
         <div
