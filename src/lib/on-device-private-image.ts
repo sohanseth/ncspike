@@ -285,9 +285,15 @@ export async function* streamOnDevicePrivateImage(
         /* noop */
       }
     }
+    // Task #52: surface the block as a dedicated `image_blocked` error
+    // kind (not `validation`) so the UI consumer in MainApp can fill the
+    // optimistic assistant bubble with the same placeholder string the
+    // server-fn just persisted, instead of rolling back the turn. Without
+    // this distinction the styled amber "blocked" bubble only showed up
+    // after a thread reload.
     yield {
       kind: "error",
-      type: "validation",
+      type: "image_blocked",
       message: verdict.reason,
     };
     return;

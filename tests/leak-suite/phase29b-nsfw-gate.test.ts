@@ -260,7 +260,10 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
 
     const errEvt = events.find((e) => e.kind === "error");
     expect(errEvt).toBeDefined();
-    expect(errEvt?.type).toBe("validation");
+    // Task #52: deny path now emits the dedicated `image_blocked` kind so
+    // the live UI can mirror the persisted placeholder bubble instead of
+    // rolling back the turn.
+    expect(errEvt?.type).toBe("image_blocked");
     expect(errEvt?.message).toMatch(/too small/i);
 
     expect(uploadSpy).not.toHaveBeenCalled();
@@ -306,7 +309,8 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
 
     const errEvt = events.find((e) => e.kind === "error");
     expect(errEvt).toBeDefined();
-    expect(errEvt?.type).toBe("validation");
+    // Task #52: deny path now emits `image_blocked`, not `validation`.
+    expect(errEvt?.type).toBe("image_blocked");
     expect(errEvt?.message).toMatch(/blocked by on-device safety filter/i);
     expect(errEvt?.message).toMatch(/different prompt/i);
 

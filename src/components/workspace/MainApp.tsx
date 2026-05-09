@@ -2569,6 +2569,30 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             return next;
           });
         } else if (evt.kind === "error") {
+          // Task #52: PRIVATE on-device image-gen NSFW block. The server-fn
+          // already persisted a styled placeholder assistant row; mirror it
+          // into the live thread by filling the optimistic assistant bubble
+          // with the same placeholder string (which the existing
+          // `isImageBlocked` branch styles as the amber ShieldAlert bubble),
+          // and DO NOT roll back the user message. We mark `gotAnyDelta`
+          // so the finally{} branch keeps the bubble in place, and we leave
+          // `errorMsg` null so the red error banner doesn't also appear.
+          if (evt.type === "image_blocked") {
+            gotAnyDelta = true;
+            setMessages(prev => {
+              const next = prev.slice();
+              const last = next[next.length - 1];
+              if (last && last.role === "assistant") {
+                next[next.length - 1] = {
+                  ...last,
+                  text: IMAGE_BLOCKED_PLACEHOLDER_TEXT,
+                  loadProgressPct: null,
+                };
+              }
+              return next;
+            });
+            break;
+          }
           errorMsg = evt.message;
           // Friendly cap-exceeded toast (spec §1 line 351 / §A1 line 386).
           if (evt.type === "cap_exceeded") {
