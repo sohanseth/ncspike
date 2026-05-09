@@ -871,6 +871,241 @@ export type FinalizeOnDeviceImageGenTurnResult = {
   signedUrl: string;
 };
 
+// ──────────────────────────────────────────────────────────────────────────────
+// On-device IMAGE generation BLOCKED finalize (Phase 2.9b — task #32,
+// docs/12 §15.4).
+//
+// Companion to `finalizeOnDeviceImageGenTurn` for the deny-verdict path:
+// the on-device safety classifier flagged the bytes (or a structural
+// guard refused them), so the dispatcher discards the bytes in memory,
+// NEVER uploads them to chat-attachments, and calls THIS fn instead of
+// `releaseOnDeviceReservation`. The release path returned the cap slot
+// silently; this path leaves a visible audit trail:
+//
+//   1. A placeholder assistant `chat_messages` row with the §15.4 copy
+//      so the user sees, on scroll-back, "the image was blocked and not
+//      saved" instead of an unexplained gap after their prompt.
+//   2. The reserved (pending) `inference_usage` row is finalized to
+//      status='error', error_class='image_blocked' — `error` rows do
+//      NOT count toward the daily cap (see reserve_inference_slot:
+//      `where status in ('ok','pending')`), so the user is correctly
+//      not debited, same as the old release path.
+//   3. `metadata.image_blocked = true` is written to the same
+//      `inference_usage` row (column added in migration
+//      20260517000200_phase29b_inference_usage_metadata.sql) so
+//      dashboards and the retention sweep can distinguish blocked turns
+//      from generic errors without parsing `error_class`.
+//
+// IDOR defenses mirror finalizeOnDeviceImageGenTurn: thread + user-message
+// ownership is verified by hand because service-role bypasses RLS.
+// ──────────────────────────────────────────────────────────────────────────────
+
+export type FinalizeOnDeviceImageGenBlockedTurnInput = {
+  threadId: string;
+  userMessageId: string;
+  reservedUsageId: string;
+  /** Adapter id the on-device runner used (or attempted to use). Recorded
+   *  on the telemetry row as `model_used` so dashboards can split which
+   *  adapter is producing the most blocked verdicts. Validated against
+   *  the same allow-list as the success path. */
+  adapter: string;
+  contextUsed: { categories: string[]; trait_paths: string[] } | null;
+  traitSheetVersion: number | null;
+};
+
+export type FinalizeOnDeviceImageGenBlockedTurnResult = {
+  assistantMessageId: string;
+};
+
+/** docs/12 §15.4 — exact placeholder copy. Pinned by the leak suite. */
+export const IMAGE_BLOCKED_PLACEHOLDER_TEXT =
+  "Image was generated but blocked by the on-device safety classifier. The image was not saved.";
+
+export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
+  method: "POST",
+})
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator(
+    (
+      d: FinalizeOnDeviceImageGenBlockedTurnInput,
+    ): FinalizeOnDeviceImageGenBlockedTurnInput => {
+      if (!d || typeof d !== "object") throw new Error("Invalid input");
+      if (typeof d.threadId !== "string") throw new Error("threadId required");
+      if (typeof d.userMessageId !== "string") {
+        throw new Error("userMessageId required");
+      }
+      if (typeof d.reservedUsageId !== "string") {
+        throw new Error("reservedUsageId required");
+      }
+      if (!IMAGE_GEN_ADAPTERS.has(d.adapter)) {
+        throw new Error(`Unknown adapter "${d.adapter}"`);
+      }
+      return d;
+    },
+  )
+  .handler(
+    async ({
+      data,
+      context,
+    }): Promise<FinalizeOnDeviceImageGenBlockedTurnResult> => {
+      const userId = context.userId;
+      const badge: Badge = "private";
+      const provider = adapterToProvider(data.adapter);
+
+      // IDOR guard: thread + user-message ownership.
+      const { data: userMsg, error: umErr } = await supabaseAdmin
+        .from("chat_messages")
+        .select("id, thread_id, user_id")
+        .eq("id", data.userMessageId)
+        .eq("user_id", userId)
+        .eq("thread_id", data.threadId)
+        .maybeSingle();
+      if (umErr) throw umErr;
+      if (!userMsg) throw new Error("User message not found");
+
+      // Idempotency fast path: if a prior call already wrote the
+      // placeholder for this user message (same in_reply_to_id unique
+      // partial index used by the success path), return it.
+      const { data: existingAssistant } = await supabaseAdmin
+        .from("chat_messages")
+        .select("id")
+        .match({
+          user_id: userId,
+          thread_id: data.threadId,
+          role: "assistant",
+        } as never)
+        .eq("in_reply_to_id" as never, data.userMessageId as never)
+        .maybeSingle();
+      if (existingAssistant) {
+        // Best-effort finalize — same crash-window rationale as the
+        // success path: a prior call may have written the placeholder
+        // but crashed before finalizing the reservation. RPC is
+        // idempotent (returns false on a non-pending row).
+        await finalizeReservedUsage({
+          usageId: data.reservedUsageId,
+          userId,
+          status: "error",
+          providerUsed: provider,
+          modelUsed: data.adapter,
+          fallbackDepth: 0,
+          latencyMs: 0,
+          errorClass: "image_blocked",
+          messageId: existingAssistant.id,
+        }).catch(() => {});
+        await supabaseAdmin
+          .from("inference_usage")
+          .update({ metadata: { image_blocked: true } } as never)
+          .eq("id", data.reservedUsageId)
+          .eq("user_id", userId);
+        return { assistantMessageId: existingAssistant.id };
+      }
+
+      // Persist the placeholder assistant row. NO companion attachment
+      // row — the bytes were discarded in memory by the dispatcher and
+      // the §15.4 invariant is "flagged bytes never touch the bucket,
+      // not even the user's own".
+      const { data: aRow, error: aErr } = await supabaseAdmin
+        .from("chat_messages")
+        .insert({
+          user_id: userId,
+          thread_id: data.threadId,
+          role: "assistant",
+          content: IMAGE_BLOCKED_PLACEHOLDER_TEXT,
+          badge,
+          provider,
+          model: data.adapter,
+          fallback_depth: 0,
+          context_used:
+            data.contextUsed && data.contextUsed.categories.length > 0
+              ? data.contextUsed
+              : null,
+          trait_sheet_version: data.traitSheetVersion,
+          in_reply_to_id: data.userMessageId,
+        } as never)
+        .select("id")
+        .single();
+      if (aErr) {
+        // Concurrent finalize won the unique partial index race —
+        // re-fetch the winner and return it.
+        const code = (aErr as { code?: string }).code;
+        if (code === "23505") {
+          const { data: winner } = await supabaseAdmin
+            .from("chat_messages")
+            .select("id")
+            .eq("in_reply_to_id" as never, data.userMessageId as never)
+            .maybeSingle();
+          if (winner) return { assistantMessageId: winner.id };
+        }
+        throw aErr;
+      }
+
+      // Finalize the reserved usage row to status='error' with
+      // error_class='image_blocked'. `error` rows are excluded from the
+      // cap-counting query (reserve_inference_slot only counts ok+pending),
+      // so the user is not debited for the blocked turn — same effective
+      // accounting as the prior `releaseReservedUsage` path, but with a
+      // visible telemetry trail.
+      const finalized = await finalizeReservedUsage({
+        usageId: data.reservedUsageId,
+        userId,
+        status: "error",
+        providerUsed: provider,
+        modelUsed: data.adapter,
+        fallbackDepth: 0,
+        latencyMs: 0,
+        errorClass: "image_blocked",
+        messageId: aRow.id,
+      });
+      if (!finalized) {
+        console.warn(
+          `[finalizeOnDeviceImageGenBlockedTurn] reservation ${data.reservedUsageId} no longer pending`,
+        );
+      }
+
+      // Stamp `metadata.image_blocked = true`. Done as a separate
+      // direct update (gated by user_id) rather than extending the RPC
+      // signature — keeps the existing finalize_inference_usage contract
+      // stable for hosted-tier callers. Service-role bypasses RLS so the
+      // explicit user_id filter is the authorization check.
+      const { error: metaErr } = await supabaseAdmin
+        .from("inference_usage")
+        .update({ metadata: { image_blocked: true } } as never)
+        .eq("id", data.reservedUsageId)
+        .eq("user_id", userId);
+      if (metaErr) {
+        // Telemetry is non-blocking — the placeholder is already in the
+        // thread and the cap slot is correctly returned. Log and move on.
+        console.warn(
+          `[finalizeOnDeviceImageGenBlockedTurn] metadata stamp failed:`,
+          metaErr.message,
+        );
+      }
+
+      // Broker audit row for parity with the success path.
+      await logContextDecision({
+        userId,
+        messageId: aRow.id,
+        badge,
+        strictestTier: -1,
+        contextUsed: (data.contextUsed ?? {
+          categories: [],
+          trait_paths: [],
+        }) as ContextUsed,
+        fragmentLength: 0,
+        scrubBlocked: false,
+        traitSheetVersion: data.traitSheetVersion,
+      });
+
+      await supabaseAdmin
+        .from("chat_threads")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", data.threadId)
+        .eq("user_id", userId);
+
+      return { assistantMessageId: aRow.id };
+    },
+  );
+
 export const finalizeOnDeviceImageGenTurn = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator(

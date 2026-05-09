@@ -149,6 +149,9 @@ const finalizeSpy = vi.fn(async () => ({
   assistantMessageId: "amsg-1",
   signedUrl: "",
 }));
+const finalizeBlockedSpy = vi.fn(async () => ({
+  assistantMessageId: "amsg-blocked-1",
+}));
 vi.mock("@/lib/chat.functions", () => ({
   prepareOnDeviceTurn: vi.fn(async () => ({
     threadId: "thread-1",
@@ -160,6 +163,7 @@ vi.mock("@/lib/chat.functions", () => ({
     traitSheetVersion: null,
   })),
   finalizeOnDeviceImageGenTurn: finalizeSpy,
+  finalizeOnDeviceImageGenBlockedTurn: finalizeBlockedSpy,
   releaseOnDeviceReservation: releaseSpy,
 }));
 
@@ -223,6 +227,7 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
   beforeEach(() => {
     releaseSpy.mockClear();
     finalizeSpy.mockClear();
+    finalizeBlockedSpy.mockClear();
     uploadSpy.mockClear();
     __setNsfwClassifierForTests(null);
     __resetNsfwClassifierCache();
@@ -259,12 +264,15 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
     expect(errEvt?.message).toMatch(/too small/i);
 
     expect(uploadSpy).not.toHaveBeenCalled();
-    expect(releaseSpy).toHaveBeenCalledTimes(1);
+    // Task #32: deny verdict now writes a placeholder via the blocked-
+    // finalize fn instead of silently releasing the cap slot.
+    expect(finalizeBlockedSpy).toHaveBeenCalledTimes(1);
+    expect(releaseSpy).not.toHaveBeenCalled();
     expect(finalizeSpy).not.toHaveBeenCalled();
     expect(events.some((e) => e.kind === "done")).toBe(false);
   });
 
-  it("classifier flags the image → no upload, reservation released, §15.4 toast surfaced", async () => {
+  it("classifier flags the image → no upload, placeholder written, §15.4 toast surfaced", async () => {
     // Adapter returns structurally-valid bytes (so the classifier IS
     // reached), and the injected classifier flags them as nsfw.
     tooSmallAdapterMock.streamOnDeviceImageGen = async function* () {
@@ -304,8 +312,26 @@ describe("Phase 2.9b — dispatcher honours NSFW deny verdict", () => {
 
     // §15.4: flagged bytes never touch the bucket, even the user's own.
     expect(uploadSpy).not.toHaveBeenCalled();
-    expect(releaseSpy).toHaveBeenCalledTimes(1);
+    // Task #32: deny → placeholder via blocked-finalize, not raw release.
+    expect(finalizeBlockedSpy).toHaveBeenCalledTimes(1);
+    expect(releaseSpy).not.toHaveBeenCalled();
     expect(finalizeSpy).not.toHaveBeenCalled();
     expect(events.some((e) => e.kind === "done")).toBe(false);
+
+    // The blocked-finalize call carries the same prep ids the success
+    // path would have used — so the chat-row + telemetry-row link back
+    // to the original user prompt.
+    const callArg = finalizeBlockedSpy.mock.calls[0]?.[0] as {
+      data: {
+        threadId: string;
+        userMessageId: string;
+        reservedUsageId: string;
+        adapter: string;
+      };
+    };
+    expect(callArg.data.threadId).toBe("thread-1");
+    expect(callArg.data.userMessageId).toBe("msg-1");
+    expect(callArg.data.reservedUsageId).toBe("usage-1");
+    expect(callArg.data.adapter).toBe("webgpu-sd-turbo");
   });
 });

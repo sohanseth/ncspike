@@ -50,6 +50,7 @@ import { classifyGeneratedImage } from "./imagegen-safety";
 import {
   prepareOnDeviceTurn,
   finalizeOnDeviceImageGenTurn,
+  finalizeOnDeviceImageGenBlockedTurn,
   releaseOnDeviceReservation,
 } from "./chat.functions";
 import type { ChatStreamEvent, StreamChatInput } from "./chat-stream";
@@ -256,12 +257,33 @@ export async function* streamOnDevicePrivateImage(
   // on PRIVATE per docs/12 §15.4.
   const verdict = await classifyGeneratedImage(bytes, mime);
   if (!verdict.allow) {
+    // Task #32 / docs/12 §15.4: instead of silently releasing the cap
+    // slot, write a placeholder assistant chat row so the user can see,
+    // on scroll-back, that an image WAS generated but blocked. The
+    // server-fn also flips the reserved telemetry row to status='error'
+    // with `metadata.image_blocked = true` (cap-equivalent to release —
+    // 'error' rows don't count toward the daily cap). Best-effort: if
+    // the placeholder write fails, fall back to the old release path so
+    // the user is still not debited.
     try {
-      await releaseOnDeviceReservation({
-        data: { reservedUsageId: prep.reservedUsageId },
+      await finalizeOnDeviceImageGenBlockedTurn({
+        data: {
+          threadId: prep.threadId,
+          userMessageId: prep.userMessageId,
+          reservedUsageId: prep.reservedUsageId,
+          adapter: adapterId,
+          contextUsed: prep.contextUsed,
+          traitSheetVersion: prep.traitSheetVersion,
+        },
       });
     } catch {
-      /* noop */
+      try {
+        await releaseOnDeviceReservation({
+          data: { reservedUsageId: prep.reservedUsageId },
+        });
+      } catch {
+        /* noop */
+      }
     }
     yield {
       kind: "error",
