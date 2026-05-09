@@ -398,12 +398,8 @@ function TopBar({
         <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>NeuralConnexions</span>
       </button>
 
-      <div className="w-px h-6 bg-border mx-1 hidden md:block"/>
-
-      {/* Domain tiles */}
-      <div className="hidden md:flex">
-        <DomainTiles onDomain={onDomain}/>
-      </div>
+      {/* Domain tiles moved out of the header — they now live under the
+          greeting on the home canvas, where they have room to breathe. */}
 
       {/* Primary actions — Search, Voice, Chat, Compose */}
       <div className="ml-auto flex items-center gap-2">
