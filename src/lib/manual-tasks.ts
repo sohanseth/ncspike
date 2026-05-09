@@ -190,5 +190,5 @@ export function useManualTasks() {
     setTasks(next);
   }, []);
 
-  return { tasks, addTask, removeTask, toggleDone };
+  return { tasks, addTask, addTasks, removeTask, toggleDone };
 }
