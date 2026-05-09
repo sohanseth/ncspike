@@ -35,6 +35,7 @@ export type ImageGenTurnArgs = {
 export type ImageGenTurnResult = {
   text: string;
   storagePath: string;
+  signedUrl: string;
   mime: string;
   bytes: number;
   provider: ProviderId;
