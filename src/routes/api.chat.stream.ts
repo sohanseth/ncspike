@@ -334,6 +334,74 @@ export const Route = createFileRoute("/api/chat/stream")({
               send("init", { threadId, userMessageId: userRow.id });
               const t0 = Date.now();
               try {
+                const wantsImageEdit =
+                  effectiveBadge !== "private" &&
+                  detectImageIntent({ text: v.content, hasAttachments: true });
+                if (wantsImageEdit) {
+                  const imgGenAtts: ImageGenAttachment[] = visionAttachments.map(
+                    (a) => ({ bytes: a.bytes, mime: a.mime }),
+                  );
+                  const ig = await runImageGenTurn({
+                    badge: effectiveBadge,
+                    userId,
+                    history: visionHistory,
+                    userText: v.content,
+                    attachments: imgGenAtts,
+                    signal: request.signal ?? undefined,
+                  });
+                  send("meta", { provider: ig.provider, fallbackDepth: 0 });
+                  send("delta", { text: ig.text });
+                  const { data: aRow } = await supabaseAdmin
+                    .from("chat_messages")
+                    .insert({
+                      user_id: userId,
+                      thread_id: threadId,
+                      role: "assistant",
+                      content: ig.text,
+                      badge: effectiveBadge,
+                      provider: ig.provider,
+                      model: ig.model,
+                      fallback_depth: 0,
+                    } as never)
+                    .select("id")
+                    .single();
+                  if (aRow?.id) {
+                    await supabaseAdmin.from("chat_message_attachments").insert({
+                      message_id: aRow.id,
+                      user_id: userId,
+                      storage_path: ig.storagePath,
+                      mime: ig.mime,
+                      bytes: ig.bytes,
+                    });
+                  }
+                  await supabaseAdmin.from("inference_usage").insert({
+                    user_id: userId,
+                    thread_id: threadId,
+                    badge: effectiveBadge,
+                    provider_chain: [ig.provider],
+                    provider_used: ig.provider,
+                    model_used: ig.model,
+                    fallback_depth: 0,
+                    latency_ms: Date.now() - t0,
+                    status: "ok",
+                  });
+                  await supabaseAdmin
+                    .from("chat_threads")
+                    .update({ updated_at: new Date().toISOString() })
+                    .eq("id", threadId)
+                    .eq("user_id", userId);
+                  send("done", {
+                    messageId: aRow?.id ?? null,
+                    provider: ig.provider,
+                    model: ig.model,
+                    fallbackDepth: 0,
+                    inputTokens: null,
+                    outputTokens: null,
+                    contextUsed: null,
+                    traitSheetVersion: null,
+                  });
+                  return;
+                }
                 const result = await runVisionTurn({
                   badge: effectiveBadge,
                   history: visionHistory,
