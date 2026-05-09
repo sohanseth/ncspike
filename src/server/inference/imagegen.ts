@@ -196,10 +196,14 @@ export async function runImageGenTurn(
   if (up.error) {
     throw new Error(`Image upload failed: ${up.error.message}`);
   }
+  const sign = await supabaseAdmin.storage
+    .from("chat-attachments")
+    .createSignedUrl(storagePath, 60 * 60 * 24);
 
   return {
     text: caption,
     storagePath,
+    signedUrl: sign.data?.signedUrl ?? "",
     mime,
     bytes: bytes.length,
     provider: "google" as ProviderId,
