@@ -3805,10 +3805,18 @@ function AddTaskButton() {
   const { addTasks } = useManualTasks();
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // SpeechRecognition is a browser API not in TS lib types; cast loosely.
+  const recogRef = useRef<any>(null);
 
-  // Live per-line preview — one entry per non-empty line so users can see
-  // exactly how each task in a bulk paste will be categorised.
+  // Web Speech API support — Chrome/Edge/Safari expose it on window under
+  // different prefixes. We feature-detect once on mount.
+  const speechSupported =
+    typeof window !== "undefined" &&
+    !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
   const previews = useMemo(() => {
     return text
       .split(/\r?\n/)
@@ -3833,7 +3841,76 @@ function AddTaskButton() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // Stop recognition when the modal closes.
+  useEffect(() => {
+    if (!open && recogRef.current) {
+      try { recogRef.current.stop(); } catch { /* noop */ }
+      recogRef.current = null;
+      setListening(false);
+    }
+  }, [open]);
+
+  const startListening = () => {
+    if (!speechSupported) {
+      setVoiceError("Voice input isn't supported in this browser. Try Chrome or Safari.");
+      return;
+    }
+    setVoiceError(null);
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recog = new Ctor();
+    recog.continuous = true;       // keep listening across pauses
+    recog.interimResults = true;   // show partial transcripts as they arrive
+    recog.lang = navigator.language || "en-US";
+
+    // Track the text we had when dictation started so we can append cleanly
+    // and keep what the user already typed.
+    const baseText = text.endsWith("\n") || text === "" ? text : text + "\n";
+    let finalAddition = "";
+
+    recog.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0].transcript;
+        if (result.isFinal) {
+          // Treat each final phrase as a new task line.
+          finalAddition += transcript.trim() + "\n";
+        } else {
+          interim += transcript;
+        }
+      }
+      setText(baseText + finalAddition + interim);
+    };
+    recog.onerror = (e: any) => {
+      const msg = e?.error === "not-allowed"
+        ? "Microphone access denied. Enable it in your browser settings."
+        : `Voice error: ${e?.error || "unknown"}`;
+      setVoiceError(msg);
+      setListening(false);
+    };
+    recog.onend = () => {
+      setListening(false);
+      recogRef.current = null;
+    };
+
+    try {
+      recog.start();
+      recogRef.current = recog;
+      setListening(true);
+    } catch {
+      setVoiceError("Couldn't start the microphone. Try again.");
+    }
+  };
+
+  const stopListening = () => {
+    if (recogRef.current) {
+      try { recogRef.current.stop(); } catch { /* noop */ }
+    }
+    setListening(false);
+  };
+
   const submit = () => {
+    stopListening();
     const created = addTasks(text);
     if (!created.length) return;
     setText("");
@@ -3854,7 +3931,7 @@ function AddTaskButton() {
         icon={<ListTodo size={14}/>}
         label="Add tasks"
         accent="#fbbf24"
-        title="Add tasks"
+        title="Add tasks (type or dictate)"
         onClick={() => setOpen(true)}
       />
 
@@ -3871,7 +3948,7 @@ function AddTaskButton() {
             <div className="flex items-center gap-2 mb-3">
               <ListTodo size={14} className="text-primary" />
               <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add tasks</h2>
-              <span className="text-[10.5px] font-mono text-muted-foreground/60">one per line</span>
+              <span className="text-[10.5px] font-mono text-muted-foreground/60">type or dictate · one per line</span>
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close"
@@ -3881,22 +3958,49 @@ function AddTaskButton() {
               </button>
             </div>
 
-            <textarea
-              ref={inputRef}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                // Cmd/Ctrl+Enter submits; plain Enter inserts a new line so
-                // users can keep adding tasks.
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              rows={5}
-              placeholder={"Reply to Sarah about the partnership terms\nPick up kids from ballet at 5\nFinish chapter 3 of the design book"}
-              className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.06] resize-none font-mono leading-relaxed"
-            />
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={5}
+                placeholder={"Type or tap the mic to dictate…\nReply to Sarah about partnership terms\nPick up kids from ballet at 5"}
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 pr-12 text-[13px] outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.06] resize-none font-mono leading-relaxed"
+              />
+
+              {/* Mic button — toggles dictation. Pulses red while listening so
+                  it's visually obvious the mic is hot. */}
+              <button
+                type="button"
+                onClick={listening ? stopListening : startListening}
+                title={listening ? "Stop dictation" : speechSupported ? "Dictate tasks" : "Voice not supported in this browser"}
+                aria-label={listening ? "Stop dictation" : "Start dictation"}
+                disabled={!speechSupported}
+                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                  listening
+                    ? "border-rose-400/50 bg-rose-500/15 text-rose-300 animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
+                    : "border-white/10 bg-white/[0.04] text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10"
+                }`}
+              >
+                <Mic size={14}/>
+              </button>
+            </div>
+
+            {voiceError && (
+              <div className="mt-2 text-[11px] text-rose-300/90 font-mono">{voiceError}</div>
+            )}
+            {listening && !voiceError && (
+              <div className="mt-2 text-[11px] text-rose-300/90 font-mono flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"/>
+                Listening — pause between tasks; each phrase becomes a new line.
+              </div>
+            )}
 
             {previews.length > 0 && (
               <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
