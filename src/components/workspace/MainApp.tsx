@@ -2524,6 +2524,9 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   fallbackDepth: evt.fallbackDepth,
                 },
                 contextUsed: evt.contextUsed,
+                ...(evt.assistantImages && evt.assistantImages.length > 0
+                  ? { images: [...(last.images ?? []), ...evt.assistantImages] }
+                  : {}),
               };
             }
             return next;
@@ -2675,7 +2678,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                       <Zap size={10} style={{color:"#ddd6fe"}}/>
                     </div>
-                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]">
+                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px] flex flex-col gap-2">
                       {isStreamingPlaceholder ? (
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Assistant is responding" role="status">
                           <div className="h-2 w-32 rounded bg-white/[0.08] animate-pulse"/>
@@ -2683,7 +2686,18 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                           <div className="h-2 w-20 rounded bg-white/[0.05] animate-pulse" style={{animationDelay:"240ms"}}/>
                         </div>
                       ) : (
-                        <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                        <>
+                          {msg.images && msg.images.length > 0 && (
+                            <div className="grid grid-cols-1 gap-1.5">
+                              {msg.images.map((src, k) => (
+                                <img key={k} src={src} alt="" className="rounded-lg max-h-80 object-contain w-full border border-white/10" />
+                              ))}
+                            </div>
+                          )}
+                          {msg.text && (
+                            <p className="text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>

@@ -36,6 +36,11 @@ import {
   type AssembleResult,
 } from "@/server/context-broker";
 import { runVisionTurn, type VisionAttachment } from "@/server/inference/vision";
+import {
+  runImageGenTurn,
+  detectImageIntent,
+  type ImageGenAttachment,
+} from "@/server/inference/imagegen";
 
 const HISTORY_WINDOW = 20;
 const VALID_BADGES: readonly Badge[] = ["flash", "pro", "genius", "private"] as const;
@@ -105,6 +110,112 @@ function validateBody(raw: unknown): RequestBody | string {
 
 function sseEvent(name: string, data: unknown): string {
   return `event: ${name}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+async function imageGenSseResponse(args: {
+  userId: string;
+  threadId: string;
+  badge: Badge;
+  history: InferenceMessage[];
+  userText: string;
+  attachments: ImageGenAttachment[];
+  userMessageId: string;
+  signal?: AbortSignal;
+}): Promise<Response> {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (name: string, data: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(sseEvent(name, data)));
+        } catch {
+          /* closed */
+        }
+      };
+      send("init", { threadId: args.threadId, userMessageId: args.userMessageId });
+      const t0 = Date.now();
+      try {
+        const history = args.history.filter(
+          (m): m is { role: "user" | "assistant"; content: string } =>
+            m.role === "user" || m.role === "assistant",
+        );
+        const ig = await runImageGenTurn({
+          badge: args.badge,
+          userId: args.userId,
+          history,
+          userText: args.userText,
+          attachments: args.attachments,
+          signal: args.signal,
+        });
+        send("meta", { provider: ig.provider, fallbackDepth: 0 });
+        send("delta", { text: ig.text });
+        const { data: aRow } = await supabaseAdmin
+          .from("chat_messages")
+          .insert({
+            user_id: args.userId,
+            thread_id: args.threadId,
+            role: "assistant",
+            content: ig.text,
+            badge: args.badge,
+            provider: ig.provider,
+            model: ig.model,
+            fallback_depth: 0,
+          } as never)
+          .select("id")
+          .single();
+        if (aRow?.id) {
+          await supabaseAdmin.from("chat_message_attachments").insert({
+            message_id: aRow.id,
+            user_id: args.userId,
+            storage_path: ig.storagePath,
+            mime: ig.mime,
+            bytes: ig.bytes,
+          });
+        }
+        await supabaseAdmin.from("inference_usage").insert({
+          user_id: args.userId,
+          thread_id: args.threadId,
+          badge: args.badge,
+          provider_chain: [ig.provider],
+          provider_used: ig.provider,
+          model_used: ig.model,
+          fallback_depth: 0,
+          latency_ms: Date.now() - t0,
+          status: "ok",
+        });
+        await supabaseAdmin
+          .from("chat_threads")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", args.threadId)
+          .eq("user_id", args.userId);
+        send("done", {
+          messageId: aRow?.id ?? null,
+          provider: ig.provider,
+          model: ig.model,
+          fallbackDepth: 0,
+          inputTokens: null,
+          outputTokens: null,
+          contextUsed: null,
+          traitSheetVersion: null,
+          assistantImages: ig.signedUrl ? [ig.signedUrl] : [],
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Image generation failed";
+        send("error", { kind: "internal", message: msg });
+      } finally {
+        try { controller.close(); } catch { /* already */ }
+      }
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no",
+      Connection: "keep-alive",
+    },
+  });
 }
 
 export const Route = createFileRoute("/api/chat/stream")({
@@ -220,15 +331,46 @@ export const Route = createFileRoute("/api/chat/stream")({
           .select("id")
           .single();
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
-<<<<<<< HEAD
-=======
 
         // ─────────────────────────────────────────────────────────────
-        // Vision branch: when the turn has image attachments, persist
-        // attachment rows and bypass the chain runner. PRIVATE keeps
-        // its fail-closed contract because runVisionTurn routes PRIVATE
-        // exclusively to Cloudflare. Other badges go through the
-        // Lovable AI Gateway directly with a vision-capable model.
+        // Image generation branch (no attachments). PRIVATE refuses —
+        // there is no on-device image model in this build.
+        // ─────────────────────────────────────────────────────────────
+        if (
+          v.attachments.length === 0 &&
+          detectImageIntent({ text: v.content, hasAttachments: false })
+        ) {
+          if (effectiveBadge === "private") {
+            const frame = sseEvent("error", {
+              kind: "internal",
+              message:
+                "Image generation isn't available on the PRIVATE badge. Switch to Flash, Pro, or Genius.",
+            });
+            return new Response(frame, {
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache, no-transform",
+                connection: "keep-alive",
+              },
+            });
+          }
+          return imageGenSseResponse({
+            userId,
+            threadId: threadId!,
+            badge: effectiveBadge,
+            history: historyMessages,
+            userText: v.content,
+            attachments: [],
+            userMessageId: userRow.id,
+            signal: request.signal ?? undefined,
+          });
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Vision / image-edit branch: when the turn has image attachments.
+        // If the user's text reads like an image edit we route to the
+        // image-out model; otherwise we describe via the vision model.
         // ─────────────────────────────────────────────────────────────
         if (v.attachments.length > 0) {
           // Validate all attachment paths belong to this user (path prefix
@@ -298,6 +440,75 @@ export const Route = createFileRoute("/api/chat/stream")({
               send("init", { threadId, userMessageId: userRow.id });
               const t0 = Date.now();
               try {
+                const wantsImageEdit =
+                  effectiveBadge !== "private" &&
+                  detectImageIntent({ text: v.content, hasAttachments: true });
+                if (wantsImageEdit) {
+                  const imgGenAtts: ImageGenAttachment[] = visionAttachments.map(
+                    (a) => ({ bytes: a.bytes, mime: a.mime }),
+                  );
+                  const ig = await runImageGenTurn({
+                    badge: effectiveBadge,
+                    userId,
+                    history: visionHistory,
+                    userText: v.content,
+                    attachments: imgGenAtts,
+                    signal: request.signal ?? undefined,
+                  });
+                  send("meta", { provider: ig.provider, fallbackDepth: 0 });
+                  send("delta", { text: ig.text });
+                  const { data: aRow } = await supabaseAdmin
+                    .from("chat_messages")
+                    .insert({
+                      user_id: userId,
+                      thread_id: threadId,
+                      role: "assistant",
+                      content: ig.text,
+                      badge: effectiveBadge,
+                      provider: ig.provider,
+                      model: ig.model,
+                      fallback_depth: 0,
+                    } as never)
+                    .select("id")
+                    .single();
+                  if (aRow?.id) {
+                    await supabaseAdmin.from("chat_message_attachments").insert({
+                      message_id: aRow.id,
+                      user_id: userId,
+                      storage_path: ig.storagePath,
+                      mime: ig.mime,
+                      bytes: ig.bytes,
+                    });
+                  }
+                  await supabaseAdmin.from("inference_usage").insert({
+                    user_id: userId,
+                    thread_id: threadId,
+                    badge: effectiveBadge,
+                    provider_chain: [ig.provider],
+                    provider_used: ig.provider,
+                    model_used: ig.model,
+                    fallback_depth: 0,
+                    latency_ms: Date.now() - t0,
+                    status: "ok",
+                  });
+                  await supabaseAdmin
+                    .from("chat_threads")
+                    .update({ updated_at: new Date().toISOString() })
+                    .eq("id", threadId)
+                    .eq("user_id", userId);
+                  send("done", {
+                    messageId: aRow?.id ?? null,
+                    provider: ig.provider,
+                    model: ig.model,
+                    fallbackDepth: 0,
+                    inputTokens: null,
+                    outputTokens: null,
+                    contextUsed: null,
+                    traitSheetVersion: null,
+                    assistantImages: ig.signedUrl ? [ig.signedUrl] : [],
+                  });
+                  return;
+                }
                 const result = await runVisionTurn({
                   badge: effectiveBadge,
                   history: visionHistory,
@@ -366,8 +577,6 @@ export const Route = createFileRoute("/api/chat/stream")({
           });
         }
 
-        const paidTier = await getPaidTier(userId);
->>>>>>> bfc3542f0f2d2c455c0cef4bb48ea78590ab12a9
         const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
         let broker: AssembleResult = {
