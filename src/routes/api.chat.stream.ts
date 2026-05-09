@@ -364,8 +364,6 @@ export const Route = createFileRoute("/api/chat/stream")({
           });
         }
 
-        const paidTier = await getPaidTier(userId);
->>>>>>> bfc3542f0f2d2c455c0cef4bb48ea78590ab12a9
         const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
         let broker: AssembleResult = {
