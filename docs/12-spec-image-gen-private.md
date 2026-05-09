@@ -767,15 +767,26 @@ output:
   v1 is single-input edit only.
 - Animation / short video — out of scope for Phase 2.9.
 
-### 15.6 Open question that remains
+### 15.6 Storage budget — locked
 
-**v1 storage budget.** A user who runs every platform path could
-end up with ~3 GB of model weights cached locally (Core ML SD +
-ControlNet on iOS, or SDXL + IP2P on web). The §14 answer "no
-toggle, download whenever" works for the first model but will
-feel rude for the second. **Proposed default:** download the
-text-to-image model whenever, but require a one-time "Enable
-on-device image editing (~1.5 GB more)" tap before the img2img
-model loads. This is not a per-request prompt; it's a one-time
-opt-in for the heavier capability. Confirm or override this
-before implementation begins.
+User chose **same no-toggle policy for both models**: download
+the text-to-image model when the user first hits a text-to-image
+turn, download the img2img edit model when the user first hits
+an attached-image edit turn. No opt-in dialog either time.
+Total on-device cache after both: ~2.5 GB on iOS / Android,
+up to ~5.5 GB on web (SDXL + IP2P). Implementation must:
+
+- Show a clear progress UI on first download of each model
+  (reuses the load-progress event wiring already shipped in
+  Phase 2.8).
+- Surface total cache size + a "Clear on-device image models"
+  button in `/workspace/settings/privacy` so a user who regrets
+  the storage cost has a one-tap reclaim path.
+- Fail closed if the device has less free disk than the model
+  being downloaded — never partial-write.
+
+Spec is now fully locked. Ready for implementation as a
+multi-day phase (native plugins on iOS + Android, WebGPU
+pipelines on web, NSFW classifier integration, capability
+detection, persistence, telemetry). That is its own task; this
+session does not start it.
