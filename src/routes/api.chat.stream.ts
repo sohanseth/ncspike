@@ -505,6 +505,7 @@ export const Route = createFileRoute("/api/chat/stream")({
                     outputTokens: null,
                     contextUsed: null,
                     traitSheetVersion: null,
+                    assistantImages: ig.signedUrl ? [ig.signedUrl] : [],
                   });
                   return;
                 }
