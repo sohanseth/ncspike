@@ -3904,13 +3904,22 @@ function AddTaskButton() {
     // Track the text we had when dictation started so we can append cleanly
     // and keep what the user already typed.
     const baseText = text.endsWith("\n") || text === "" ? text : text + "\n";
-    // Buffer of completed phrases that share the *current* line. We only break
-    // to a new line on a long silence, sentence-ending punctuation, or an
-    // explicit "new task" / "next task" cue — so a mid-sentence pause like
-    // "buy shoes for … kids" stays on one line.
+    // Buffer of completed phrases that share the *current* line. We prefer
+    // sentence boundaries over raw pauses, so a mid-thought pause like
+    // "pick up tickets from … ballet at five" stays on one line.
     const lines: string[] = [""]; // lines[lines.length-1] is the active line
     let silenceTimer: ReturnType<typeof setTimeout> | null = null;
     const SILENCE_MS = 1600;
+    const CONTINUATION_WORDS = new Set([
+      "a", "an", "the", "and", "or", "but", "so", "because", "if", "then",
+      "than", "that", "which", "who", "whom", "whose", "when", "while", "until",
+      "to", "for", "from", "of", "in", "on", "at", "by", "with", "about", "into",
+      "over", "under", "after", "before", "between", "through", "during", "without",
+      "within", "around", "near", "as", "is", "are", "was", "were", "be", "been",
+      "being", "have", "has", "had", "do", "does", "did", "can", "could", "should",
+      "would", "will", "just", "my", "your", "our", "their", "his", "her", "its",
+      "this", "these", "those",
+    ]);
 
     const render = (interim = "") => {
       const joined = lines.join("\n").replace(/\s+$/g, "");
@@ -3920,6 +3929,23 @@ function AddTaskButton() {
 
     const breakLine = () => {
       if (lines[lines.length - 1].trim()) lines.push("");
+    };
+
+    const shouldBreakOnSilence = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (/[.!?]$/.test(trimmed)) return true;
+
+      const words = trimmed.split(/\s+/);
+      const lastWord = words[words.length - 1]?.replace(/[^\p{L}\p{N}:']/gu, "").toLowerCase();
+      if (!lastWord) return false;
+      if (CONTINUATION_WORDS.has(lastWord)) return false;
+
+      const tail = words.slice(-3).join(" ").toLowerCase();
+      if (/\b(at|by|before|after)\s+\d/.test(tail)) return true;
+      if (/\b(am|pm|tomorrow|today|tonight)\b/.test(tail)) return true;
+
+      return words.length >= 4;
     };
 
     recog.onresult = (event: any) => {
@@ -3944,9 +3970,13 @@ function AddTaskButton() {
           }
           // Sentence-ending punctuation → new line for the next phrase.
           if (/[.!?]$/.test(phrase)) breakLine();
-          // Reset silence timer — a long pause after this commits a line break.
+          // Reset silence timer — a long pause only commits a line break when
+          // the current line already looks like a complete sentence/task.
           if (silenceTimer) clearTimeout(silenceTimer);
-          silenceTimer = setTimeout(() => { breakLine(); render(); }, SILENCE_MS);
+          silenceTimer = setTimeout(() => {
+            if (shouldBreakOnSilence(lines[lines.length - 1] ?? "")) breakLine();
+            render();
+          }, SILENCE_MS);
         } else {
           interim += (interim ? " " : "") + transcript;
         }
