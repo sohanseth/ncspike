@@ -13,6 +13,7 @@ import {
   ShieldAlert,
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
+import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
 import {
   makePending,
   revokePending,
@@ -2747,6 +2748,21 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             // placeholder string written by `finalizeOnDeviceImageGenBlockedTurn`
             // (pinned by the leak suite via IMAGE_BLOCKED_PLACEHOLDER_TEXT).
             const isImageBlocked = msg.role === "assistant" && msg.text === IMAGE_BLOCKED_PLACEHOLDER_TEXT;
+            // Task #55 — recover the original user prompt that triggered the
+            // block so the "Try a different prompt" action can repopulate the
+            // input. We walk backwards from the blocked assistant turn to the
+            // nearest preceding user message; this works for both the live
+            // flow (assistant immediately after the user) and historical rows
+            // on reload (where the order is preserved by `loadThread`).
+            let blockedPromptText = "";
+            if (isImageBlocked) {
+              for (let j = i - 1; j >= 0; j--) {
+                if (messages[j].role === "user") {
+                  blockedPromptText = messages[j].text ?? "";
+                  break;
+                }
+              }
+            }
             return (
             <div key={i} className={`flex ${msg.role==="user"?"justify-end":"justify-start"}`}>
               {msg.role==="assistant" ? (
@@ -2812,6 +2828,28 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                                 : "text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap"}
                               style={{fontFamily:"'DM Sans',sans-serif"}}
                             >{msg.text}</p>
+                          )}
+                          {isImageBlocked && blockedPromptText && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setInput(blockedPromptText);
+                                // Defer focus a tick so the input has the new
+                                // value before the cursor lands at the end.
+                                setTimeout(() => {
+                                  const el = inputRef.current;
+                                  if (!el) return;
+                                  el.focus();
+                                  const len = blockedPromptText.length;
+                                  try { el.setSelectionRange(len, len); } catch { /* non-text input */ }
+                                }, 0);
+                              }}
+                              className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-200/90 bg-amber-500/[0.12] hover:bg-amber-500/20 border border-amber-500/30 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400/60"
+                              aria-label={IMAGE_BLOCKED_RETRY_ACTION_LABEL}
+                            >
+                              <RotateCcw size={11} aria-hidden="true"/>
+                              {IMAGE_BLOCKED_RETRY_ACTION_LABEL}
+                            </button>
                           )}
                         </>
                       )}
