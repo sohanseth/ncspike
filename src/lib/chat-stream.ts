@@ -180,6 +180,9 @@ function parseSseBlock(block: string): ChatStreamEvent | null {
               trait_paths: cu.trait_paths.filter((p): p is string => typeof p === "string"),
             }
           : null;
+      const assistantImagesRaw = Array.isArray(data.assistantImages)
+        ? data.assistantImages.filter((u): u is string => typeof u === "string" && u.length > 0)
+        : undefined;
       return {
         kind: "done",
         messageId: data.messageId ? String(data.messageId) : null,
@@ -191,6 +194,9 @@ function parseSseBlock(block: string): ChatStreamEvent | null {
         contextUsed,
         traitSheetVersion:
           data.traitSheetVersion == null ? null : Number(data.traitSheetVersion),
+        ...(assistantImagesRaw && assistantImagesRaw.length > 0
+          ? { assistantImages: assistantImagesRaw }
+          : {}),
       };
     }
     case "error": {
