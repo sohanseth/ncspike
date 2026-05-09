@@ -838,12 +838,35 @@ stays green at every step.
   - Tests: `phase29b-webgpu-capability`, `phase29b-pick-adapter`,
     `phase29b-image-out-no-egress`, `phase29b-nsfw-gate`.
 
-- **Slice c — img2img edit (NOT YET SHIPPED)**
-  - WebGPU SDXL + InstructPix2Pix (desktop), WebGPU SD 1.5 +
-    ControlNet (mid-tier), Apple Core ML SD 1.5 + ControlNet
-    plugin (iOS), MediaPipe ControlNet plugin (Android).
-  - Wires the `hasAttachments` branch of `detectImageIntent`
-    into the on-device dispatcher.
+- **Slice c — img2img edit (shipped, Phase 2.9c — WebGPU only)**
+  - `detectImageEditCapability()` in `src/lib/image-gen-capability.ts`
+    returns the new img2img-tier ids — `webgpu-sdxl-ip2p` (≥ 2 GB
+    VRAM) or `webgpu-sd15-controlnet` (≥ 1 GB VRAM) — with their
+    own `IMAGE_EDIT_REASONS` set so refusal copy reads naturally
+    for "edit my photo" rather than "generate from text".
+  - Adapters in `src/lib/imagegen-adapters/webgpu-sdxl-ip2p.ts`
+    (SDXL + InstructPix2Pix) and
+    `src/lib/imagegen-adapters/webgpu-sd15-controlnet.ts` (SD 1.5
+    + ControlNet). Both registered in `pickAdapter()` so the
+    runner reaches them; native ids stay `null` (Apple Core ML
+    SD 1.5 + ControlNet plugin and MediaPipe ControlNet plugin
+    are still toolchain-blocked, follow-up tasks per §15.3).
+  - `chat-stream.ts` now forks PRIVATE + edit-intent + attachments
+    to the on-device dispatcher; the dispatcher downloads source
+    bytes via the user's own Supabase JWT (RLS enforces ownership)
+    and passes them straight to the WebGPU adapter — bytes never
+    transit our server or any hosted provider.
+  - `streamOnDeviceImageGen` routes via `detectImageEditCapability`
+    when `sourceImages` are present, so the picker resolves to an
+    img2img-capable adapter instead of SD-Turbo (which rejects
+    source images).
+  - `finalizeOnDeviceImageGenTurn` accepts the two new adapter ids
+    in its `IMAGE_GEN_ADAPTERS` allow-list so telemetry rows
+    (`provider_used = 'onDeviceWebGpuImage'`, `model = 'webgpu-...'`)
+    persist correctly.
+  - Tests: `phase29b-pick-adapter` extended with the two new
+    wired ids; `phase29c-img2img-no-egress` covers the new
+    PRIVATE + image + attachment leak invariant.
 
 - **Slice d — hosted FLASH/PRO/Genius image-gen** (separate from
   the PRIVATE path — see §8). Status: not started.

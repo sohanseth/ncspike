@@ -19,10 +19,13 @@
  *   - User cancels → `error` event with `kind: 'cancelled'`.
  */
 import {
+  detectImageEditCapability,
   detectImageGenCapability,
   type ImageGenAdapterId,
 } from "./image-gen-capability";
 import { webgpuSdTurboAdapter } from "./imagegen-adapters/webgpu-sd-turbo";
+import { webgpuSdxlIp2pAdapter } from "./imagegen-adapters/webgpu-sdxl-ip2p";
+import { webgpuSd15ControlNetAdapter } from "./imagegen-adapters/webgpu-sd15-controlnet";
 
 /** Public input the UI hands the runner per turn. */
 export type StreamImageGenInput = {
@@ -116,7 +119,16 @@ export async function* streamOnDeviceImageGen(
   }
 
   // ─── 2. Capability detection (memoised) ─────────────────────────────────
-  const cap = await detectImageGenCapability();
+  // Slice c: a turn carrying source images is an img2img EDIT — probe
+  // the edit capability so the picker routes to an img2img-capable
+  // adapter (InstructPix2Pix / SD 1.5 + ControlNet) instead of the
+  // text-to-image SD-Turbo adapter, which explicitly rejects source
+  // images. Pure text-to-image keeps using `detectImageGenCapability`.
+  const isEdit =
+    !!input.sourceImages && input.sourceImages.length > 0;
+  const cap = await (isEdit
+    ? detectImageEditCapability()
+    : detectImageGenCapability());
   if (!cap.available) {
     yield {
       kind: "error",
@@ -169,6 +181,12 @@ export function pickAdapter(id: ImageGenAdapterId): ImageGenAdapter | null {
   switch (id) {
     case "webgpu-sd-turbo":
       return webgpuSdTurboAdapter;
+    case "webgpu-sdxl-ip2p":
+      // Slice c — desktop WebGPU img2img (InstructPix2Pix).
+      return webgpuSdxlIp2pAdapter;
+    case "webgpu-sd15-controlnet":
+      // Slice c — mid-tier WebGPU img2img (SD 1.5 + ControlNet).
+      return webgpuSd15ControlNetAdapter;
     case "apple-ip":
     case "mediapipe":
     case "webgpu-sdxl":

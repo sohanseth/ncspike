@@ -71,21 +71,24 @@ export async function* streamChatMessage(
   // runner BEFORE the text path so a "draw a cat" prompt under the
   // PRIVATE badge doesn't get answered with a textual hallucination
   // about a cat (the WebLLM text model has no image-out capability).
-  // img2img is deferred per docs/12 §15.5 — attachments still hit the
-  // text dispatcher, which has its own fail-closed for them.
+  //
+  // Phase 2.9c: PRIVATE + attachments + edit-intent ALSO forks to the
+  // on-device dispatcher (img2img). The dispatcher downloads the bytes
+  // from the user's own chat-attachments prefix and runs the WebGPU
+  // InstructPix2Pix / SD 1.5 + ControlNet adapter — the bytes never
+  // transit our server or any hosted provider. Non-edit attachment
+  // turns (e.g. "what is in this photo?") are vision-in, which has no
+  // PRIVATE on-device path yet, so they fall through to the text
+  // on-device runner which fail-closes on attachments.
   if (input.badge === "private") {
     const hasAttachments = (input.attachments?.length ?? 0) > 0;
-    if (!hasAttachments) {
-      const { detectImageIntent } = await import("./image-intent");
-      if (
-        detectImageIntent({ text: input.content, hasAttachments: false })
-      ) {
-        const { streamOnDevicePrivateImage } = await import(
-          "./on-device-private-image"
-        );
-        yield* streamOnDevicePrivateImage(input);
-        return;
-      }
+    const { detectImageIntent } = await import("./image-intent");
+    if (detectImageIntent({ text: input.content, hasAttachments })) {
+      const { streamOnDevicePrivateImage } = await import(
+        "./on-device-private-image"
+      );
+      yield* streamOnDevicePrivateImage(input);
+      return;
     }
     const { streamOnDeviceChat } = await import("./on-device-chat");
     yield* streamOnDeviceChat(input);

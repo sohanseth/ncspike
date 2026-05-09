@@ -1,10 +1,19 @@
 /**
- * Phase 2.9b — PRIVATE + image-out client-side dispatcher.
+ * Phase 2.9b/c — PRIVATE + image-out client-side dispatcher.
  *
  * When the chat-stream client detects badge='private' AND the user's
- * prompt looks like an image-generation request (no attachments — img2img
- * is deferred per docs/12 §15.5), it routes to this runner instead of the
- * text on-device path. The runner:
+ * prompt looks like an image-generation request, it routes to this runner
+ * instead of the text on-device path. The runner handles two cases:
+ *
+ *   - **Text-to-image** (slice b — no attachments): SD-Turbo via WebGPU.
+ *   - **img2img edit** (slice c — has attachments): InstructPix2Pix
+ *     (desktop ≥ 2 GB VRAM) or SD 1.5 + ControlNet (mid-tier ≥ 1 GB).
+ *     Source-image bytes are downloaded from the user's own
+ *     `chat-attachments` bucket via their Supabase JWT (RLS enforces
+ *     ownership) and passed straight to the WebGPU adapter; they NEVER
+ *     transit a hosted provider.
+ *
+ * The runner:
  *
  *   1. Caps + persist via prepareOnDeviceTurn (re-used from text path —
  *      the user-message persist and broker-audit are identical; only
@@ -32,7 +41,10 @@
  * so MainApp doesn't need to know whether a PRIVATE turn was text or
  * image. The `done` event carries the signed URL in `assistantImages`.
  */
-import { detectImageGenCapability } from "./image-gen-capability";
+import {
+  detectImageEditCapability,
+  detectImageGenCapability,
+} from "./image-gen-capability";
 import { streamOnDeviceImageGen } from "./on-device-imagegen";
 import { classifyGeneratedImage } from "./imagegen-safety";
 import {
@@ -56,7 +68,14 @@ export async function* streamOnDevicePrivateImage(
   // If the device can't run on-device image gen, refuse without debiting
   // the user's daily PRIVATE cap. This matches docs/12 §15: PRIVATE is
   // fail-closed — never fall back to a hosted image provider.
-  const cap = await detectImageGenCapability();
+  // Slice c: a turn carrying attachments is an img2img EDIT, so we probe
+  // the edit capability (which resolves to InstructPix2Pix / SD 1.5 +
+  // ControlNet on capable WebGPU devices). A pure text-to-image turn
+  // keeps using the slice-b text-to-image probe.
+  const isEdit = (input.attachments?.length ?? 0) > 0;
+  const cap = await (isEdit
+    ? detectImageEditCapability()
+    : detectImageGenCapability());
   if (!cap.available) {
     yield { kind: "error", type: "validation", message: cap.reason };
     return;
@@ -106,6 +125,72 @@ export async function* streamOnDevicePrivateImage(
   };
   yield { kind: "meta", provider: "onDeviceWebGpuImage", fallbackDepth: 0 };
 
+  // ─── 1b. Slice c — download source-image bytes for an img2img edit ──────
+  // The dispatcher pulls the bytes from the user's own chat-attachments
+  // prefix using their Supabase JWT (RLS enforces ownership). The bytes
+  // go from Supabase storage → memory → WebGPU adapter and never leave
+  // the device. We refuse anything that doesn't live under the signed-in
+  // user's prefix — defense-in-depth against a crafted client passing
+  // someone else's storage path. On any download failure we release the
+  // reservation and surface a precise error rather than degrading to
+  // text-to-image (silent degradation would be a fail-open per
+  // replit.md §"No silent fallbacks").
+  const sourceImages: { bytes: Uint8Array; mime: string }[] = [];
+  if (isEdit) {
+    const { data: authForSrc } = await supabase.auth.getUser();
+    const srcUserId = authForSrc.user?.id;
+    if (!srcUserId) {
+      try {
+        await releaseOnDeviceReservation({
+          data: { reservedUsageId: prep.reservedUsageId },
+        });
+      } catch {
+        /* noop */
+      }
+      yield { kind: "error", type: "internal", message: "Not signed in" };
+      return;
+    }
+    for (const path of input.attachments ?? []) {
+      if (!path.startsWith(`${srcUserId}/`)) {
+        try {
+          await releaseOnDeviceReservation({
+            data: { reservedUsageId: prep.reservedUsageId },
+          });
+        } catch {
+          /* noop */
+        }
+        yield {
+          kind: "error",
+          type: "validation",
+          message: "Attachment path doesn't belong to this user.",
+        };
+        return;
+      }
+      const dl = await supabase.storage
+        .from("chat-attachments")
+        .download(path);
+      if (dl.error || !dl.data) {
+        try {
+          await releaseOnDeviceReservation({
+            data: { reservedUsageId: prep.reservedUsageId },
+          });
+        } catch {
+          /* noop */
+        }
+        yield {
+          kind: "error",
+          type: "internal",
+          message: `Couldn't read your photo: ${dl.error?.message ?? "unknown error"}`,
+        };
+        return;
+      }
+      const blob = dl.data;
+      const srcMime = blob.type || "application/octet-stream";
+      const srcBytes = new Uint8Array(await blob.arrayBuffer());
+      sourceImages.push({ bytes: srcBytes, mime: srcMime });
+    }
+  }
+
   // ─── 2. Run on-device image generation ──────────────────────────────────
   let bytes: Uint8Array | null = null;
   let mime = "image/png";
@@ -118,6 +203,7 @@ export async function* streamOnDevicePrivateImage(
     for await (const ev of streamOnDeviceImageGen({
       prompt: input.content,
       signal: input.signal,
+      ...(sourceImages.length > 0 ? { sourceImages } : {}),
     })) {
       if (ev.kind === "load_progress") {
         yield { kind: "load_progress", pct: Math.round(ev.pct * 100) };

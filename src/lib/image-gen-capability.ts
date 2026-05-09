@@ -32,14 +32,25 @@
  * numbers.
  */
 
-/** Adapter identifiers — the union the picker resolves to once a probe wins. */
+/** Adapter identifiers — the union the picker resolves to once a probe wins.
+ *
+ *  Slice c adds two img2img-tier ids:
+ *    - `webgpu-sdxl-ip2p` — WebGPU SDXL + InstructPix2Pix (~4 GB), desktop.
+ *    - `webgpu-sd15-controlnet` — WebGPU SD 1.5 + ControlNet (~1.5 GB), mid-tier.
+ *  Both are returned by `detectImageEditCapability()` (NOT
+ *  `detectImageGenCapability()`, which keeps emitting text-to-image ids only)
+ *  so the picker can route a PRIVATE-with-attachment turn to the edit adapter
+ *  while a plain text-to-image turn still uses SD-Turbo.
+ */
 export type ImageGenAdapterId =
   | "apple-ip"
   | "mediapipe"
   | "webgpu-sdxl"
   | "webgpu-sd15"
   | "webgpu-sd-turbo"
-  | "webgpu-janus-1b";
+  | "webgpu-janus-1b"
+  | "webgpu-sdxl-ip2p"
+  | "webgpu-sd15-controlnet";
 
 export type ImageGenCapability =
   | { available: false; reason: string }
@@ -49,6 +60,33 @@ export type ImageGenCapability =
  *  without coupling to copy. They are also the strings shown verbatim to
  *  the user when the badge is unavailable, so they must read as plain
  *  English. */
+/** Slice c — separate reason set for img2img edits. The capability shape is
+ *  the same; the strings differ slightly because the user-visible failure
+ *  context is "I attached a photo and asked to edit it", not "I asked to
+ *  generate from text". Keeping the strings distinct stops the UI from
+ *  showing the generic generate-only reason for an edit refusal. */
+export const IMAGE_EDIT_REASONS = {
+  /** Native iOS path matched but the Core ML SD 1.5 + ControlNet plugin
+   *  isn't shipped yet (Xcode 16 toolchain gap — see image-gen reasons). */
+  appleEditNotWired:
+    "On-device photo editing isn't enabled yet on this iPhone. We're shipping it in the next update.",
+  /** Native Android path matched but the MediaPipe ControlNet plugin task
+   *  isn't shipped yet. */
+  mediapipeEditNotWired:
+    "On-device photo editing isn't enabled yet on this Android device. We're shipping it in the next update.",
+  /** WebGPU adapter present but `maxBufferSize` below the SD 1.5 +
+   *  ControlNet floor (~1 GB). The text-to-image floor is the same number
+   *  but we keep a distinct reason because the user is here for editing. */
+  webgpuInsufficientVram:
+    "On-device photo editing needs more video memory than this browser can offer.",
+  /** WebGPU not supported by the browser at all. */
+  webgpuUnsupported:
+    "Your browser doesn't support the WebGPU features needed for on-device photo editing.",
+  /** Neither native bridge nor WebGPU were reachable. */
+  noPathAvailable:
+    "On-device photo editing isn't available on this device.",
+} as const;
+
 export const IMAGE_GEN_REASONS = {
   /** Native path matched (iOS A17 Pro+ / M-series), but the slice-b
    *  Apple Image Playground bridge isn't shipped yet. Slice b ships the
@@ -210,4 +248,76 @@ async function probeWebGpu(): Promise<WebGpuProbe> {
 /** Reset the cache. Test-only and "settings → re-probe" use. */
 export function resetImageGenCapabilityCache(): void {
   _cached = null;
+  _cachedEdit = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slice c — img2img edit capability
+//
+// Same probe ordering as `detectImageGenCapability` (native first, then
+// WebGPU), but the WebGPU branch resolves to the slice-c img2img adapter ids
+// — `webgpu-sdxl-ip2p` for SDXL-class GPUs (≥ 2 GB) and
+// `webgpu-sd15-controlnet` for SD15-class GPUs (≥ 1 GB) — instead of
+// SD-Turbo, which is text-to-image only and explicitly rejects source
+// images. Native (Apple Core ML SD 1.5 + ControlNet, MediaPipe ControlNet
+// plugin) stays fail-closed in this slice — same Xcode 16 / Android Studio
+// toolchain gap as text-to-image.
+//
+// Memoised separately from text-to-image: a future native-edit bridge that
+// only the iOS Image Wand plugin satisfies must not be cached against the
+// text-to-image probe result.
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _cachedEdit: Promise<ImageGenCapability> | null = null;
+
+/** Detect the best available on-device img2img edit path. Memoised. Pass
+ *  `force: true` to re-probe (settings → re-check after install / update). */
+export async function detectImageEditCapability(
+  opts?: { force?: boolean },
+): Promise<ImageGenCapability> {
+  if (_cachedEdit && !opts?.force) return _cachedEdit;
+  _cachedEdit = runEditProbes();
+  return _cachedEdit;
+}
+
+async function runEditProbes(): Promise<ImageGenCapability> {
+  // 1. Native bridge (iOS Core ML SD 1.5 + ControlNet / Android MediaPipe
+  //    ControlNet plugin). Same fail-closed semantics as text-to-image —
+  //    we know which slot to fill but the plugin source isn't shipped from
+  //    this container.
+  const native = await probeNative();
+  if (native?.available) {
+    if (native.platform === "ios") {
+      return { available: false, reason: IMAGE_EDIT_REASONS.appleEditNotWired };
+    }
+    if (native.platform === "android") {
+      return {
+        available: false,
+        reason: IMAGE_EDIT_REASONS.mediapipeEditNotWired,
+      };
+    }
+    return { available: false, reason: IMAGE_EDIT_REASONS.noPathAvailable };
+  }
+
+  // 2. WebGPU. SDXL-class (≥ 2 GB) → InstructPix2Pix; SD15-class (≥ 1 GB) →
+  //    ControlNet. Both adapters are wired in slice c.
+  const webgpu = await probeWebGpu();
+  if (webgpu.kind === "unsupported") {
+    return { available: false, reason: IMAGE_EDIT_REASONS.webgpuUnsupported };
+  }
+  if (webgpu.kind === "insufficient") {
+    return {
+      available: false,
+      reason: IMAGE_EDIT_REASONS.webgpuInsufficientVram,
+    };
+  }
+  if (webgpu.kind === "sdxl") {
+    return { available: true, adapter: "webgpu-sdxl-ip2p" };
+  }
+  if (webgpu.kind === "sd15") {
+    return { available: true, adapter: "webgpu-sd15-controlnet" };
+  }
+
+  // 3. No reachable path.
+  return { available: false, reason: IMAGE_EDIT_REASONS.noPathAvailable };
 }

@@ -820,6 +820,9 @@ const IMAGE_GEN_ADAPTERS = new Set([
   "webgpu-janus-1b",
   "apple-ip",
   "mediapipe",
+  // Slice c — img2img edit adapters.
+  "webgpu-sdxl-ip2p",
+  "webgpu-sd15-controlnet",
 ]);
 
 const ALLOWED_IMAGE_OUT_MIMES = new Set([
