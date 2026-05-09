@@ -402,82 +402,62 @@ function TopBar({
           greeting on the home canvas, where they have room to breathe. */}
 
       {/* Primary actions — Search, Voice, Chat, Compose */}
-      <div className="ml-auto flex items-center gap-2">
-        {/* Google search — opens results in a new tab (uses the OS default browser from native shells) */}
-        <button
+      <div className="ml-auto flex items-center gap-1.5">
+        {/* Search — opens Google in a new tab */}
+        <ActionPill
+          icon={<Search size={14}/>}
+          label="Search"
+          accent="#38bdf8"
+          title="Search Google"
           onClick={() => {
             const q = window.prompt("Search Google for:")?.trim();
             if (!q) return;
-            // Use an <a target="_blank"> click so the new tab opens at the top
-            // level — `window.open` from inside the Lovable preview iframe can
-            // get trapped by the iframe's frame-ancestors policy and Google
-            // refuses to render inside an iframe (ERR_BLOCKED_BY_RESPONSE).
             const a = document.createElement("a");
-            // Google search. In the published app, target="_blank" opens a real
-            // top-level browser tab (Chrome/Safari/etc) so this loads normally.
-            // Inside the Lovable preview iframe, Google's X-Frame-Options will
-            // block embedding — that's a preview-only artifact.
             a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+            a.target = "_blank"; a.rel = "noopener noreferrer";
+            document.body.appendChild(a); a.click(); a.remove();
           }}
-          title="Search Google"
-          aria-label="Search Google"
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <Search size={13}/>
-          <span className="hidden sm:block">Search</span>
-        </button>
+        />
 
         {/* Add task — manual entry, auto-categorised into a bento box */}
         <AddTaskButton/>
 
-        {/* Chat — combined text + voice. Mic glyph stacked on the bubble
-            signals both modes; the panel itself has a text/voice toggle. */}
-        <button onClick={()=>setTool(tool==="chat"?null:"chat")}
+        {/* Chat / Voice — both icons shown so it's obvious the panel handles
+            text and voice. The panel itself has a text/voice toggle. */}
+        <ActionPill
+          icon={
+            <span className="inline-flex items-center gap-1">
+              <MessageCircle size={13}/>
+              <span className="opacity-40 text-[10px] leading-none">/</span>
+              <Mic size={12}/>
+            </span>
+          }
+          label="Chat"
+          accent="#9b6dfa"
+          active={tool==="chat"}
           title="Chat or talk"
-          aria-label="Chat or talk"
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="chat"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <span className="relative inline-flex items-center justify-center" style={{width:13,height:13}}>
-            <MessageCircle size={13}/>
-            <Mic size={7} className="absolute -bottom-0.5 -right-1 bg-background rounded-full p-px" strokeWidth={2.5}/>
-          </span>
-          <span className="hidden sm:block">Chat</span>
-        </button>
+          onClick={()=>setTool(tool==="chat"?null:"chat")}
+        />
 
         {/* Compose */}
-        <button onClick={()=>setTool(tool==="compose"?null:"compose")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="compose"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <PenLine size={13}/>
-          <span className="hidden sm:block">Compose</span>
-        </button>
+        <ActionPill
+          icon={<PenLine size={14}/>}
+          label="Compose"
+          accent="#fb7185"
+          active={tool==="compose"}
+          onClick={()=>setTool(tool==="compose"?null:"compose")}
+        />
 
         <div className="w-px h-5 bg-border mx-1"/>
 
         {/* You */}
-        <button onClick={onExplore}
-          className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            ["mindmap","memory","signals"].includes(mapView??"")
-              ? "bg-white/[0.08] text-foreground/90 border-white/[0.15]"
-              : "border-white/[0.08] text-muted-foreground hover:text-foreground hover:border-white/15 hover:bg-white/[0.04]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <User size={13}/>
-          <span className="hidden sm:block">You</span>
-        </button>
+        <ActionPill
+          icon={<User size={14}/>}
+          label="You"
+          accent="#34d399"
+          active={["mindmap","memory","signals"].includes(mapView??"")}
+          onClick={onExplore}
+        />
 
         {/* Briefings — overnight research queue */}
         <BriefingsButton/>
