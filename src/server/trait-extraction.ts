@@ -26,6 +26,7 @@ import { cloudflareProvider, embedTexts } from "@/server/inference/cloudflare";
 import {
   CATEGORY_PATCH_SCHEMAS,
   TRAIT_CATEGORIES,
+  TRAIT_DECAY_DAYS,
   TraitSheetSchema,
   type SourceRef,
   type TraitCategory,
@@ -37,10 +38,6 @@ import { scrub } from "@/server/pii-scrub";
 const MEMORY_WINDOW_DAYS = 30;
 const MAX_MEMORY_NODES = 400; // truncate input to keep prompts under the budget
 const MAX_PATCH_TOKENS = 600;
-// Spec §B9: a trait whose source memories haven't been touched (read,
-// updated, or re-confirmed by similar new memory) in 90 days drops out of
-// the next sheet version.
-const TRAIT_DECAY_DAYS = 90;
 // Spec §B9: "Re-confirmed" means a new in-window memory embeds within 0.4
 // cosine of the existing trait's source memories. We compare against the
 // prior category embedding as the per-category proxy for that signal.

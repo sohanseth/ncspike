@@ -21,6 +21,15 @@
  */
 import { z } from "zod";
 
+/**
+ * Per-leaf decay window. A trait whose source memories haven't been touched
+ * (re-extracted or re-confirmed) within this many days is dropped on the
+ * extractor's next run. Single source of truth shared by the extractor (which
+ * enforces the cut) and the personalization UI (which displays the
+ * "expires in N days" countdown). Spec §B9.
+ */
+export const TRAIT_DECAY_DAYS = 90;
+
 // ─── String safety ──────────────────────────────────────────────────────────
 // Sentinels that, if found inside a trait value, would let a poisoned memory
 // hijack the assembled system prompt. List from §13 plus a few common variants.

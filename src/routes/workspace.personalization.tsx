@@ -6,6 +6,7 @@ import {
   applyPersonalizationPreset,
   blockProviderCategory,
   unblockProviderCategory,
+  forgetTrait,
   removeTraitBlock,
   exportTraitSheet,
   deleteTraitSheet,
@@ -14,7 +15,7 @@ import {
 } from "@/lib/personalization.functions";
 import { TRAIT_CATEGORIES, type TraitCategory } from "@/lib/trait-schema";
 import { cn } from "@/lib/utils";
-import { Loader, Download, Trash2, RefreshCw, ShieldOff } from "lucide-react";
+import { Loader, Download, Trash2, RefreshCw, ShieldOff, X } from "lucide-react";
 import { PersonalizationDisclosure } from "@/components/workspace/PersonalizationDisclosure";
 
 export const Route = createFileRoute("/workspace/personalization")({
@@ -49,6 +50,49 @@ const PRESETS: { id: PersonalizationPreset; name: string; copy: string }[] = [
   },
 ];
 
+// ─── Freshness label helpers ───────────────────────────────────────────────
+// Pure formatting — given a `last_seen_at` / `expires_at` ISO string from
+// `trait_meta`, produce the small human labels rendered next to each leaf.
+// Server-side fallback chain (trait_meta → category_meta → derived_at) lives
+// in personalization.functions.ts; here we just render whatever it handed us.
+
+function formatRelativeDays(iso: string | null): { days: number; label: string } | null {
+  if (iso == null) return null;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const days = Math.round((Date.now() - t) / (24 * 60 * 60 * 1000));
+  if (days < 0) return { days, label: `in ${-days}d` };
+  if (days === 0) return { days, label: "today" };
+  if (days === 1) return { days, label: "1 day ago" };
+  return { days, label: `${days} days ago` };
+}
+
+function formatLastSeen(iso: string | null): string {
+  const rel = formatRelativeDays(iso);
+  return rel == null ? "no timestamp" : `re-confirmed ${rel.label}`;
+}
+
+function formatExpiry(iso: string | null): string {
+  if (iso == null) return "expiry unknown";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "expiry unknown";
+  const days = Math.round((t - Date.now()) / (24 * 60 * 60 * 1000));
+  if (days < 0) return `expired ${-days}d ago`;
+  if (days === 0) return "expires today";
+  if (days === 1) return "expires in 1 day";
+  return `expires in ${days} days`;
+}
+
+function expiryClass(iso: string | null): string {
+  if (iso == null) return "";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "";
+  const days = Math.round((t - Date.now()) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "text-red-400/80";
+  if (days <= 14) return "text-amber-400/80";
+  return "";
+}
+
 const TIERS: { tier: 0 | 1 | 2 | 3; label: string; sub: string }[] = [
   { tier: 0, label: "T0", sub: "On-device (Cloudflare)" },
   { tier: 1, label: "T1", sub: "Open weights, ZDR (Groq)" },
@@ -65,6 +109,7 @@ function PersonalizationPage() {
   const [exporting, setExporting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [reextracting, setReextracting] = useState(false);
+  const [forgetBusy, setForgetBusy] = useState<string | null>(null);
 
   if (authLoading || !user) {
     return (
@@ -107,6 +152,18 @@ function PersonalizationPage() {
   const onUnforget = async (category: TraitCategory, traitPath: string) => {
     await removeTraitBlock({ data: { category, traitPath } });
     await state.refresh();
+  };
+
+  const onForgetLeaf = async (category: TraitCategory, traitPath: string) => {
+    if (forgetBusy) return;
+    const key = `${category}:${traitPath}`;
+    setForgetBusy(key);
+    try {
+      await forgetTrait({ data: { category, traitPath } });
+      await state.refresh();
+    } finally {
+      setForgetBusy(null);
+    }
   };
 
   const onExport = async () => {
@@ -259,14 +316,73 @@ function PersonalizationPage() {
             </div>
           </div>
           {state.sheet?.exists && state.sheet.categories.length > 0 && (
-            <ul className="text-xs text-muted-foreground space-y-1.5 pt-2">
-              {state.sheet.categories.map(({ category, paths }) => (
-                <li key={category}>
-                  <span className="capitalize text-foreground/80">{category}</span>
-                  <span className="opacity-60"> — {paths.length} traits</span>
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-3 pt-2">
+              {state.sheet.categories.map(({ category, leaves }) => {
+                // Hide leaves the user has just blocked via "Forget" so the row
+                // disappears immediately on click — the actual removal from the
+                // sheet only happens on the next extraction run, but the broker
+                // is already honouring the block.
+                const blockedPaths = new Set(
+                  state.traitBlocks
+                    .filter((b) => b.category === category)
+                    .map((b) => b.traitPath),
+                );
+                const visibleLeaves = leaves.filter((l) => !blockedPaths.has(l.path));
+                if (visibleLeaves.length === 0) return null;
+                return (
+                <div key={category} className="space-y-1.5">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="capitalize text-foreground/80">{category}</span>
+                    <span className="opacity-60"> — {visibleLeaves.length} traits</span>
+                  </div>
+                  <ul className="space-y-1">
+                    {visibleLeaves.map((leaf) => {
+                      const key = `${category}:${leaf.path}`;
+                      // The path includes the category prefix (e.g. "preferences.diet"
+                      // or "household.child_1.interests"); strip it so the row is
+                      // readable.
+                      const display = leaf.path.startsWith(`${category}.`)
+                        ? leaf.path.slice(category.length + 1)
+                        : leaf.path;
+                      return (
+                        <li
+                          key={key}
+                          className="flex items-center justify-between gap-3 rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-1.5"
+                        >
+                          <span className="font-mono text-xs text-foreground/80 truncate">
+                            {display}
+                          </span>
+                          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <span title={leaf.lastSeenAt ?? "no timestamp"}>
+                              {formatLastSeen(leaf.lastSeenAt)}
+                            </span>
+                            <span className={cn("opacity-70", expiryClass(leaf.expiresAt))}>
+                              · {formatExpiry(leaf.expiresAt)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onForgetLeaf(category, leaf.path)}
+                              disabled={forgetBusy === key}
+                              className="ml-1 inline-flex items-center gap-1 rounded border border-red-500/30 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300 hover:bg-red-500/20 disabled:opacity-50"
+                              title={`Forget ${display}`}
+                              aria-label={`Forget ${category} ${display}`}
+                            >
+                              {forgetBusy === key ? (
+                                <Loader size={9} className="animate-spin" />
+                              ) : (
+                                <X size={9} />
+                              )}
+                              Forget
+                            </button>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+                );
+              })}
+            </div>
           )}
         </section>
 

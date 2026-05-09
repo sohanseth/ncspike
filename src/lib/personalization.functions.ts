@@ -24,6 +24,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import {
   TRAIT_CATEGORIES,
+  TRAIT_DECAY_DAYS,
   TraitSheetSchema,
   type TraitCategory,
   type TraitSheet,
@@ -31,13 +32,33 @@ import {
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
+/**
+ * One leaf in the user's trait sheet, surfaced to the personalization UI.
+ *
+ * `lastSeenAt` / `expiresAt` come from per-leaf `trait_meta` (task #28). For
+ * sheets written before #28 we fall back to:
+ *   - the v1 `category_meta[cat].last_seen_at` (task #24 cross-night carry),
+ *   - then to the sheet's top-level `derived_at`,
+ *   - and finally to `null` if even that is missing (oldest sheets).
+ *
+ * `expiresAt` is `lastSeenAt + TRAIT_DECAY_DAYS` so the UI can render a
+ * "expires in N days" countdown matching the extractor's actual decay cut.
+ */
+export type TraitLeafView = {
+  /** Broker-format path, e.g. "preferences.diet" or "household.child_1.interests".
+   *  Stable join key against `forgetTrait` / `removeTraitBlock`. */
+  path: string;
+  lastSeenAt: string | null;
+  expiresAt: string | null;
+};
+
 export type TraitSheetView = {
   exists: boolean;
   version: number | null;
   derivedAt: string | null;
   sourceCount: number;
-  /** Categories present + their leaf paths (for the settings viewer / footer). */
-  categories: Array<{ category: TraitCategory; paths: string[] }>;
+  /** Categories present + their leaves with per-leaf freshness. */
+  categories: Array<{ category: TraitCategory; leaves: TraitLeafView[] }>;
 };
 
 export type TraitBlockRow = {
@@ -69,24 +90,62 @@ function isTier(x: unknown): x is 0 | 1 | 2 | 3 {
   return x === 0 || x === 1 || x === 2 || x === 3;
 }
 
-function collectCategoryPaths(category: TraitCategory, payload: unknown): string[] {
-  const out: string[] = [];
+/**
+ * Walk a category payload and emit one leaf per renderable trait, attaching
+ * its per-leaf freshness from `trait_meta` (or the v1 `category_meta`
+ * fallback, or the sheet's `derived_at` as a last resort).
+ *
+ * Path format MATCHES `context-broker.ts:collectTraitPaths` so the UI's
+ * delete button can pass it straight to `forgetTrait`.
+ *
+ * For household, `trait_meta.household` is keyed by member `ref`
+ * (e.g. "child_1") rather than per-(ref, sub-key) — every sub-leaf of a given
+ * member shares the member's `last_seen_at`.
+ */
+function collectCategoryLeaves(
+  category: TraitCategory,
+  payload: unknown,
+  sheet: TraitSheet,
+): TraitLeafView[] {
+  const out: TraitLeafView[] = [];
   if (payload == null) return out;
+  const perTrait = sheet.trait_meta?.[category];
+  const categoryFallback =
+    sheet.category_meta?.[category]?.last_seen_at ?? sheet.derived_at ?? null;
+
+  const decayMs = TRAIT_DECAY_DAYS * 24 * 60 * 60 * 1000;
+  const computeExpiry = (lastSeenAt: string | null): string | null => {
+    if (lastSeenAt == null) return null;
+    const t = Date.parse(lastSeenAt);
+    if (Number.isNaN(t)) return null;
+    return new Date(t + decayMs).toISOString();
+  };
+
   if (Array.isArray(payload)) {
     for (const item of payload) {
-      if (item && typeof item === "object") {
-        const ref = (item as { ref?: string }).ref ?? "_";
-        for (const k of Object.keys(item as Record<string, unknown>)) {
-          if (k === "ref") continue;
-          out.push(`${category}.${ref}.${k}`);
-        }
+      if (!item || typeof item !== "object") continue;
+      const ref = (item as { ref?: string }).ref ?? "_";
+      const memberLastSeen = perTrait?.[ref]?.last_seen_at ?? categoryFallback;
+      for (const k of Object.keys(item as Record<string, unknown>)) {
+        if (k === "ref") continue;
+        out.push({
+          path: `${category}.${ref}.${k}`,
+          lastSeenAt: memberLastSeen,
+          expiresAt: computeExpiry(memberLastSeen),
+        });
       }
     }
     return out;
   }
+
   if (typeof payload === "object") {
     for (const k of Object.keys(payload as Record<string, unknown>)) {
-      out.push(`${category}.${k}`);
+      const leafLastSeen = perTrait?.[k]?.last_seen_at ?? categoryFallback;
+      out.push({
+        path: `${category}.${k}`,
+        lastSeenAt: leafLastSeen,
+        expiresAt: computeExpiry(leafLastSeen),
+      });
     }
   }
   return out;
@@ -107,16 +166,16 @@ export const getTraitSheet = createServerFn({ method: "POST" })
       return { exists: false, version: null, derivedAt: null, sourceCount: 0, categories: [] };
     }
     const parsed = TraitSheetSchema.safeParse(data.sheet);
-    const categories: Array<{ category: TraitCategory; paths: string[] }> = [];
+    const categories: Array<{ category: TraitCategory; leaves: TraitLeafView[] }> = [];
     if (parsed.success) {
       const sheet: TraitSheet = parsed.data;
       for (const cat of TRAIT_CATEGORIES) {
         const payload = sheet.categories[cat];
         if (payload == null) continue;
         if (Array.isArray(payload) && payload.length === 0) continue;
-        const paths = collectCategoryPaths(cat, payload);
-        if (paths.length === 0) continue;
-        categories.push({ category: cat, paths });
+        const leaves = collectCategoryLeaves(cat, payload, sheet);
+        if (leaves.length === 0) continue;
+        categories.push({ category: cat, leaves });
       }
     }
     return {
