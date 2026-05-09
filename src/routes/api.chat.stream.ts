@@ -249,7 +249,7 @@ export const Route = createFileRoute("/api/chat/stream")({
               },
             });
           }
-          return runImageGenSseResponse({
+          return imageGenSseResponse({
             userId,
             threadId: threadId!,
             badge: effectiveBadge,
