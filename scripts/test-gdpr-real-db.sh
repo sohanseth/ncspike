@@ -52,6 +52,9 @@ PSQL=(psql -h "$SOCKDIR" -U postgres -d "$DBNAME" -v ON_ERROR_STOP=1 --quiet)
 echo "[gdpr-real-db] applying auth-schema shim"
 "${PSQL[@]}" -f "$ROOT/tests/leak-suite/fixtures/auth-shim.sql"
 
+echo "[gdpr-real-db] applying storage-schema shim"
+"${PSQL[@]}" -f "$ROOT/tests/leak-suite/fixtures/storage-shim.sql"
+
 echo "[gdpr-real-db] applying $(ls "$ROOT/supabase/migrations/" | wc -l) migrations under ON_ERROR_STOP=1"
 # Migrations are applied with strict ON_ERROR_STOP so a real regression in
 # delete_user_data() or any per-user table fails loudly. Migrations are
@@ -89,6 +92,9 @@ done
 ENC_SOCK="$(printf '%s' "$SOCKDIR" | sed 's|/|%2F|g')"
 export GDPR_REAL_DB_URL="postgresql://postgres@/$DBNAME?host=$ENC_SOCK"
 
-echo "[gdpr-real-db] running vitest (gdpr-roundtrip-realdb)"
+echo "[gdpr-real-db] running vitest (gdpr-roundtrip-realdb + cap-race-realdb)"
 cd "$ROOT"
-exec npx vitest run tests/leak-suite/gdpr-roundtrip-realdb.test.ts "$@"
+exec npx vitest run \
+  tests/leak-suite/gdpr-roundtrip-realdb.test.ts \
+  tests/leak-suite/cap-race-realdb.test.ts \
+  "$@"
