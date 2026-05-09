@@ -373,7 +373,54 @@ function DomainTiles({ onDomain }: { onDomain:(id:DomainId)=>void }) {
   );
 }
 
+// ─── Action pill (header buttons: Search / Add tasks / Chat / Compose / You) ─
+//
+// Glassmorphic pill with a per-button accent colour applied to the icon and
+// glow halo. Active state lights the whole pill with the accent. Designed so
+// the row of header actions feels like a connected set rather than five
+// neutral grey buttons.
+
+function ActionPill({
+  icon, label, accent, active, onClick, title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  accent: string;
+  active?: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={title ?? label}
+      className={`group relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 hover:-translate-y-px ${
+        active
+          ? "text-foreground/95 border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.4)]"
+          : "border-white/[0.08] text-foreground/70 hover:text-foreground hover:border-white/20"
+      }`}
+      style={{
+        fontFamily: "'DM Sans',sans-serif",
+        background: active
+          ? `linear-gradient(135deg, ${accent}33, ${accent}10)`
+          : "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+        boxShadow: active ? `0 0 18px ${accent}55, inset 0 0 0 1px ${accent}55` : undefined,
+      }}
+    >
+      <span
+        className="inline-flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ color: accent, filter: `drop-shadow(0 0 6px ${accent}99)` }}
+      >
+        {icon}
+      </span>
+      <span className="hidden sm:block">{label}</span>
+    </button>
+  );
+}
+
 // ─── Top bar ──────────────────────────────────────────────────────────────────
+
 
 function TopBar({
   mapView, setMapView, tool, setTool, onDomain, onVoice, onExplore, onTest,
@@ -398,90 +445,66 @@ function TopBar({
         <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>NeuralConnexions</span>
       </button>
 
-      <div className="w-px h-6 bg-border mx-1 hidden md:block"/>
-
-      {/* Domain tiles */}
-      <div className="hidden md:flex">
-        <DomainTiles onDomain={onDomain}/>
-      </div>
+      {/* Domain tiles moved out of the header — they now live under the
+          greeting on the home canvas, where they have room to breathe. */}
 
       {/* Primary actions — Search, Voice, Chat, Compose */}
-      <div className="ml-auto flex items-center gap-2">
-        {/* Google search — opens results in a new tab (uses the OS default browser from native shells) */}
-        <button
+      <div className="ml-auto flex items-center gap-1.5">
+        {/* Search — opens Google in a new tab */}
+        <ActionPill
+          icon={<Search size={14}/>}
+          label="Search"
+          accent="#38bdf8"
+          title="Search Google"
           onClick={() => {
             const q = window.prompt("Search Google for:")?.trim();
             if (!q) return;
-            // Use an <a target="_blank"> click so the new tab opens at the top
-            // level — `window.open` from inside the Lovable preview iframe can
-            // get trapped by the iframe's frame-ancestors policy and Google
-            // refuses to render inside an iframe (ERR_BLOCKED_BY_RESPONSE).
             const a = document.createElement("a");
-            // Google search. In the published app, target="_blank" opens a real
-            // top-level browser tab (Chrome/Safari/etc) so this loads normally.
-            // Inside the Lovable preview iframe, Google's X-Frame-Options will
-            // block embedding — that's a preview-only artifact.
             a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-            a.target = "_blank";
-            a.rel = "noopener noreferrer";
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
+            a.target = "_blank"; a.rel = "noopener noreferrer";
+            document.body.appendChild(a); a.click(); a.remove();
           }}
-          title="Search Google"
-          aria-label="Search Google"
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <Search size={13}/>
-          <span className="hidden sm:block">Search</span>
-        </button>
+        />
 
         {/* Add task — manual entry, auto-categorised into a bento box */}
         <AddTaskButton/>
 
-        {/* Chat — combined text + voice. Mic glyph stacked on the bubble
-            signals both modes; the panel itself has a text/voice toggle. */}
-        <button onClick={()=>setTool(tool==="chat"?null:"chat")}
+        {/* Chat / Voice — both icons shown so it's obvious the panel handles
+            text and voice. The panel itself has a text/voice toggle. */}
+        <ActionPill
+          icon={
+            <span className="inline-flex items-center gap-1">
+              <MessageCircle size={13}/>
+              <span className="opacity-40 text-[10px] leading-none">/</span>
+              <Mic size={12}/>
+            </span>
+          }
+          label="Chat"
+          accent="#9b6dfa"
+          active={tool==="chat"}
           title="Chat or talk"
-          aria-label="Chat or talk"
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="chat"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <span className="relative inline-flex items-center justify-center" style={{width:13,height:13}}>
-            <MessageCircle size={13}/>
-            <Mic size={7} className="absolute -bottom-0.5 -right-1 bg-background rounded-full p-px" strokeWidth={2.5}/>
-          </span>
-          <span className="hidden sm:block">Chat</span>
-        </button>
+          onClick={()=>setTool(tool==="chat"?null:"chat")}
+        />
 
         {/* Compose */}
-        <button onClick={()=>setTool(tool==="compose"?null:"compose")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="compose"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <PenLine size={13}/>
-          <span className="hidden sm:block">Compose</span>
-        </button>
+        <ActionPill
+          icon={<PenLine size={14}/>}
+          label="Compose"
+          accent="#fb7185"
+          active={tool==="compose"}
+          onClick={()=>setTool(tool==="compose"?null:"compose")}
+        />
 
         <div className="w-px h-5 bg-border mx-1"/>
 
         {/* You */}
-        <button onClick={onExplore}
-          className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            ["mindmap","memory","signals"].includes(mapView??"")
-              ? "bg-white/[0.08] text-foreground/90 border-white/[0.15]"
-              : "border-white/[0.08] text-muted-foreground hover:text-foreground hover:border-white/15 hover:bg-white/[0.04]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <User size={13}/>
-          <span className="hidden sm:block">You</span>
-        </button>
+        <ActionPill
+          icon={<User size={14}/>}
+          label="You"
+          accent="#34d399"
+          active={["mindmap","memory","signals"].includes(mapView??"")}
+          onClick={onExplore}
+        />
 
         {/* Briefings — overnight research queue */}
         <BriefingsButton/>
@@ -1943,6 +1966,12 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
           </span>
         )}
         <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
+      </div>
+
+      {/* Domain tiles — moved here from the header so they sit right under the
+          greeting, giving the bento entry-points more visual weight. */}
+      <div className="flex-shrink-0 flex justify-center md:justify-start px-1">
+        <DomainTiles onDomain={onDomain}/>
       </div>
 
       {inboxErr && (
@@ -3821,16 +3850,13 @@ function AddTaskButton() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
+      <ActionPill
+        icon={<ListTodo size={14}/>}
+        label="Add tasks"
+        accent="#fbbf24"
         title="Add tasks"
-        aria-label="Add tasks"
-        className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-        style={{ fontFamily: "'DM Sans',sans-serif" }}
-      >
-        <ListTodo size={13} />
-        <span className="hidden sm:block">Add tasks</span>
-      </button>
+        onClick={() => setOpen(true)}
+      />
 
       {open && (
         <div
