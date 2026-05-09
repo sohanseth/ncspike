@@ -2359,6 +2359,9 @@ type LiveChatMsg = {
   meta?: { provider: string | null; model: string | null; fallbackDepth: number | null };
   /** Personalization context the broker injected for this turn (D8 Day 5). */
   contextUsed?: { categories: string[]; trait_paths: string[] } | null;
+  /** On-device PRIVATE: WebLLM model-load progress in [0,100]. Cleared
+   *  when the first real delta arrives. Never persisted to the DB. */
+  loadProgressPct?: number | null;
 };
 
 function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
@@ -2499,6 +2502,18 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             }
             return next;
           });
+        } else if (evt.kind === "load_progress") {
+          // On-device PRIVATE first-run download. Render as a separate
+          // status indicator on the assistant bubble; do NOT append to
+          // .text (which would persist into the message body).
+          setMessages(prev => {
+            const next = prev.slice();
+            const last = next[next.length - 1];
+            if (last && last.role === "assistant") {
+              next[next.length - 1] = { ...last, loadProgressPct: evt.pct };
+            }
+            return next;
+          });
         } else if (evt.kind === "delta") {
           gotAnyDelta = true;
           assistantText += evt.text;
@@ -2506,7 +2521,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             const next = prev.slice();
             const last = next[next.length - 1];
             if (last && last.role === "assistant") {
-              next[next.length - 1] = { ...last, text: last.text + evt.text };
+              // First real delta clears any load-progress indicator.
+              next[next.length - 1] = {
+                ...last,
+                text: last.text + evt.text,
+                loadProgressPct: null,
+              };
             }
             return next;
           });
@@ -2678,8 +2698,26 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                       <Zap size={10} style={{color:"#ddd6fe"}}/>
                     </div>
+<<<<<<< HEAD
                     <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px] flex flex-col gap-2">
                       {isStreamingPlaceholder ? (
+=======
+                    <div className="rounded-2xl rounded-tl-sm px-3.5 py-2.5 border border-border bg-card/80 min-w-[140px]">
+                      {typeof msg.loadProgressPct === "number" && msg.text.length === 0 ? (
+                        <div className="flex flex-col gap-1.5 py-0.5" aria-label="Loading on-device model" role="status">
+                          <p className="text-[11px] text-muted-foreground/70 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                            Loading on-device model{msg.loadProgressPct < 100 ? ` — first run downloads ~700 MB` : ""}…
+                          </p>
+                          <div className="h-1 w-40 rounded-full bg-white/[0.06] overflow-hidden">
+                            <div
+                              className="h-full bg-primary/60 transition-[width] duration-200 ease-out"
+                              style={{ width: `${Math.max(2, Math.min(100, msg.loadProgressPct))}%` }}
+                            />
+                          </div>
+                          <p className="text-[10px] font-mono text-muted-foreground/45">{msg.loadProgressPct}%</p>
+                        </div>
+                      ) : isStreamingPlaceholder ? (
+>>>>>>> 1e45def (Fix WebLLM load-progress pollution + GDPR coverage for chat_message_attachments)
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Assistant is responding" role="status">
                           <div className="h-2 w-32 rounded bg-white/[0.08] animate-pulse"/>
                           <div className="h-2 w-24 rounded bg-white/[0.06] animate-pulse" style={{animationDelay:"120ms"}}/>

@@ -23,6 +23,10 @@ export type ChatStreamEvent =
   | { kind: "init"; threadId: string; userMessageId: string }
   | { kind: "meta"; provider: string; fallbackDepth: number }
   | { kind: "delta"; text: string }
+  /** On-device PRIVATE only: WebLLM weights downloading on first run.
+   *  pct in [0,100]. Consumers should render a loading indicator and
+   *  NEVER append this to the assistant message text. */
+  | { kind: "load_progress"; pct: number }
   | {
       kind: "done";
       messageId: string | null;

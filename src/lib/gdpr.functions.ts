@@ -53,6 +53,7 @@ export const EXPORT_TABLES = [
   "memory_edges",
   "chat_threads",
   "chat_messages",
+  "chat_message_attachments",
   "inference_usage",
   "inference_usage_daily",
   "user_settings",
@@ -114,6 +115,7 @@ export type AccountDeleteResult = {
 /** Map RPC return columns → human-readable table names for the UI. */
 export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   chat_messages_deleted: "chat_messages",
+  chat_message_attachments_deleted: "chat_message_attachments",
   chat_threads_deleted: "chat_threads",
   chat_context_log_deleted: "chat_context_log",
   pii_scrub_events_deleted: "pii_scrub_events",

@@ -577,6 +577,10 @@ export const Route = createFileRoute("/api/chat/stream")({
           });
         }
 
+<<<<<<< HEAD
+=======
+        // paidTier was already resolved above for the pre-flight cap check.
+>>>>>>> 1e45def (Fix WebLLM load-progress pollution + GDPR coverage for chat_message_attachments)
         const cfg = chainFor(effectiveBadge);
         const tier = strictestTierInChain(cfg.chain);
         let broker: AssembleResult = {

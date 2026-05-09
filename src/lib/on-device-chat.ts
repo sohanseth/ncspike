@@ -99,14 +99,13 @@ export async function* streamOnDeviceChat(
   try {
     for await (const ev of stream) {
       if (ev.kind === "load_progress") {
-        // WebLLM-only: surface as a delta into the assistant bubble so the
-        // user knows the first-run download is happening. The MainApp
-        // consumer treats this as ordinary delta text.
+        // WebLLM-only: forward as a structured load_progress event so the
+        // UI can show a download indicator. MUST NOT be yielded as a delta
+        // (which would pollute the assistant message text — see the bug
+        // where chats were prefixed with [loading model: 0%] [loading model:
+        // 2%] ... before the real reply).
         const pct = Math.round((ev.progress ?? 0) * 100);
-        yield {
-          kind: "delta",
-          text: assistantText.length === 0 ? `[loading model: ${pct}%] ` : "",
-        };
+        yield { kind: "load_progress", pct };
       } else if (ev.kind === "delta") {
         assistantText += ev.text;
         yield { kind: "delta", text: ev.text };

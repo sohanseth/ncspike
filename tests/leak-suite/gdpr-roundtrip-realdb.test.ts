@@ -93,6 +93,13 @@ const SEEDS: Record<string, SeedRow> = {
     columns: ["user_id", "thread_id", "role", "content"],
     values: [userId, ctx.threadId, "user", "hello"],
   }),
+  chat_message_attachments: (userId, ctx) => ({
+    // Lovable's vision feature (migration 20260508221834_*). Requires a real
+    // chat_messages row to point at — the fixture seeds chat_messages first
+    // and pins messageId in ctx so this can FK-reference it.
+    columns: ["user_id", "message_id", "storage_path", "mime"],
+    values: [userId, ctx.messageId, `${userId}/seed.png`, "image/png"],
+  }),
   chat_context_log: (userId, ctx) => ({
     columns: ["user_id", "message_id", "badge", "strictest_tier"],
     values: [userId, ctx.messageId, "flash", 1],
@@ -215,6 +222,20 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
        values ($1, $2, 'flash', 1)`,
       [userId, messageId],
     );
+
+    // chat_message_attachments — depends on chat_messages.id (FK cascade).
+    // Seeded explicitly so the pre-delete count is 1 and the post-delete
+    // assertion validates the new explicit `delete from
+    // public.chat_message_attachments` in 20260516_phase28_*.sql, not just
+    // the cascade.
+    {
+      const seed = SEEDS.chat_message_attachments(userId, { threadId, messageId });
+      await client.query(
+        `insert into public.chat_message_attachments (${seed.columns.join(",")})
+         values (${seed.columns.map((_, i) => `$${i + 1}`).join(",")})`,
+        seed.values,
+      );
+    }
 
     // 3. Everything else — order-independent, no per-row FK to siblings.
     const independent = [
