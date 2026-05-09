@@ -47,13 +47,24 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 px-3 h-9 rounded-lg glass text-sm text-muted-foreground w-72">
-            <Search className="size-4" />
-            <span className="flex-1">Ask anything…</span>
-            <kbd className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/5 ring-1 ring-white/10 inline-flex items-center gap-1 font-mono">
-              <Command className="size-3" />K
+          <form
+            onSubmit={handleSearch}
+            className="hidden md:flex items-center gap-2 px-3 h-9 rounded-lg glass text-sm w-72 focus-within:ring-1 focus-within:ring-primary/40"
+          >
+            <Search className="size-4 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search Google…"
+              aria-label="Search Google"
+              className="flex-1 bg-transparent outline-none placeholder:text-muted-foreground"
+            />
+            <kbd className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-white/5 ring-1 ring-white/10 font-mono text-muted-foreground">
+              ⌘K
             </kbd>
-          </div>
+          </form>
           <button
             onClick={handleSignOut}
             title="Sign out"
