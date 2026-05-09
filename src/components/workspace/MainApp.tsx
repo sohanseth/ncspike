@@ -3930,6 +3930,17 @@ function AddTaskButton() {
       "would", "will", "just", "my", "your", "our", "their", "his", "her", "its",
       "this", "these", "those",
     ]);
+    const TASK_ACTION_WORDS = new Set([
+      "add", "ask", "book", "bring", "buy", "call", "check", "clean", "confirm",
+      "drop", "draft", "email", "finish", "fix", "follow", "get", "go", "grab",
+      "make", "message", "order", "pack", "pay", "pick", "plan", "prepare", "reply",
+      "schedule", "send", "shop", "submit", "take", "text", "update", "visit", "watch",
+      "write",
+    ]);
+    const NON_COMMAND_STARTERS = new Set([
+      "i", "i'm", "im", "ive", "i've", "we", "we're", "were", "you", "you're",
+      "he", "she", "they", "it", "there",
+    ]);
 
     const render = (interim = "") => {
       const joined = lines.join("\n").replace(/\s+$/g, "");
@@ -3947,6 +3958,7 @@ function AddTaskButton() {
       if (/[.!?]$/.test(trimmed)) return true;
 
       const words = trimmed.split(/\s+/);
+      const firstWord = words[0]?.replace(/[^\p{L}\p{N}:']/gu, "").toLowerCase();
       const lastWord = words[words.length - 1]?.replace(/[^\p{L}\p{N}:']/gu, "").toLowerCase();
       if (!lastWord) return false;
       if (CONTINUATION_WORDS.has(lastWord)) return false;
@@ -3954,6 +3966,15 @@ function AddTaskButton() {
       const tail = words.slice(-3).join(" ").toLowerCase();
       if (/\b(at|by|before|after)\s+\d/.test(tail)) return true;
       if (/\b(am|pm|tomorrow|today|tonight)\b/.test(tail)) return true;
+      if (
+        words.length >= 3 &&
+        words.length <= 5 &&
+        firstWord &&
+        TASK_ACTION_WORDS.has(firstWord) &&
+        !NON_COMMAND_STARTERS.has(firstWord)
+      ) {
+        return true;
+      }
 
       return words.length >= 4;
     };
