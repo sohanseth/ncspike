@@ -790,3 +790,60 @@ multi-day phase (native plugins on iOS + Android, WebGPU
 pipelines on web, NSFW classifier integration, capability
 detection, persistence, telemetry). That is its own task; this
 session does not start it.
+
+### 15.7 Implementation status (slice tracking)
+
+The locked spec ships in slices, smallest-first, so each
+landing is independently reviewable and the broker leak suite
+stays green at every step.
+
+- **Slice a — modality fork + capability detection (shipped, Phase 2.9a)**
+  - `detectImageIntent` lives in `src/lib/image-intent.ts` and is
+    re-exported from `src/server/inference/imagegen.ts` so client
+    and server agree on classification.
+  - `chat_message_attachments.attachment_kind` (`'image_in' |
+    'image_out'`) — see migration `20260518000000_phase29a_attachment_kind.sql`.
+  - `detectImageGenCapability()` returns `{ available, adapter }`
+    or `{ available:false, reason }` per device.
+  - Tests: `phase29a-image-gen-capability`, `phase29a-modality-fork`,
+    `phase29a-attachment-kind-migration`.
+
+- **Slice b — PRIVATE on-device WebGPU image-gen end-to-end (shipped, Phase 2.9b)**
+  - `@huggingface/transformers` installed; WebGPU SD-Turbo
+    adapter in `src/lib/imagegen-adapters/webgpu-sd-turbo.ts`.
+  - `pickAdapter('webgpu-sd-turbo')` resolves to the SD-Turbo
+    adapter; every other adapter id returns null (fail-closed,
+    no silent fallback to a hosted provider).
+  - Client dispatcher `src/lib/on-device-private-image.ts`:
+    capability probe → `prepareOnDeviceTurn` (cap + persist) →
+    WebGPU adapter → `classifyGeneratedImage` gate → user-token
+    Supabase upload to `${userId}/imagegen/${uuid}.${ext}` →
+    `finalizeOnDeviceImageGenTurn` (assistant row + attachment
+    row tagged `attachment_kind='image_out'` + zero-cost
+    telemetry row in `inference_usage`).
+  - The finalize server-fn takes the **storage path**, never the
+    bytes — preserving the on-device promise (no image bytes ever
+    transit our server).
+  - Routing: `chat-stream.ts` forks PRIVATE + image-intent +
+    no-attachments to the on-device dispatcher BEFORE the
+    text on-device path so "draw a cat" doesn't get answered by
+    a textual hallucination from the WebLLM text model.
+  - Provider IDs `onDeviceWebGpuImage` / `onDeviceAppleImage` /
+    `onDeviceAndroidImage` added to `PROVIDER_TIERS` at tier -1
+    so `inference_usage.provider_used` carries a meaningful label.
+  - PRIVATE + image + attachments (img2img) is still deferred to
+    Slice c per §15.5 — the dispatcher only handles
+    text-to-image in Slice b. The text on-device path's
+    fail-closed-on-attachment behaviour is unchanged.
+  - Tests: `phase29b-webgpu-capability`, `phase29b-pick-adapter`,
+    `phase29b-image-out-no-egress`, `phase29b-nsfw-gate`.
+
+- **Slice c — img2img edit (NOT YET SHIPPED)**
+  - WebGPU SDXL + InstructPix2Pix (desktop), WebGPU SD 1.5 +
+    ControlNet (mid-tier), Apple Core ML SD 1.5 + ControlNet
+    plugin (iOS), MediaPipe ControlNet plugin (Android).
+  - Wires the `hasAttachments` branch of `detectImageIntent`
+    into the on-device dispatcher.
+
+- **Slice d — hosted FLASH/PRO/Genius image-gen** (separate from
+  the PRIVATE path — see §8). Status: not started.

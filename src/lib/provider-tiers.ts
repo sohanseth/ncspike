@@ -27,6 +27,16 @@ export const PROVIDER_TIERS = {
   onDeviceApple: -1,
   onDeviceAndroid: -1,
   onDeviceWebLLM: -1,
+  // T-1 — on-device IMAGE generation providers (Phase 2.9b). These never
+  // appear in a chat-routing chain (the chat router only picks text
+  // providers); they exist as ProviderIds purely so `inference_usage.
+  // provider_used` can carry a meaningful telemetry label for the
+  // PRIVATE+image dispatcher and for future native plugins. They share
+  // tier -1 with their text counterparts because the data lives in the
+  // same place (the user's device) and obeys the same broker policy.
+  onDeviceWebGpuImage: -1,
+  onDeviceAppleImage: -1,
+  onDeviceAndroidImage: -1,
   // T0 — Cloudflare Workers AI. Now used by FLASH chain only; the PRIVATE
   // badge no longer routes here, because "data leaves the device" is not
   // what users expect from the word "private".

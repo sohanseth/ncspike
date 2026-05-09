@@ -791,3 +791,294 @@ export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
 
     return { assistantMessageId: aRow.id };
   });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// On-device IMAGE generation finalize (Phase 2.9b — see docs/12 §15.3).
+//
+// Mirrors finalizeOnDeviceTurn but additionally:
+//   - inserts a `chat_message_attachments` row with `attachment_kind='image_out'`
+//     (set by phase-29a migration 20260518000000) pointing at the
+//     storage path the client uploaded to under {userId}/imagegen/.
+//   - returns a fresh signed URL the client uses to render the bubble
+//     without a separate round-trip.
+//
+// The bytes themselves are uploaded by the client via supabase.storage
+// (user-token / RLS), NOT through this fn — keeping the on-device path
+// faithful to its name (no image bytes ever transit the server). This fn
+// only handles persistence + telemetry.
+//
+// IDOR defense: the storage path MUST start with `${userId}/` (every
+// chat-attachments object lives under that prefix per the bucket policy).
+// A crafted client passing another user's path is rejected before the
+// attachment row would ever be written.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const IMAGE_GEN_ADAPTERS = new Set([
+  "webgpu-sd-turbo",
+  "webgpu-sdxl",
+  "webgpu-sd15",
+  "webgpu-janus-1b",
+  "apple-ip",
+  "mediapipe",
+]);
+
+const ALLOWED_IMAGE_OUT_MIMES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+]);
+
+/** Map adapter id → telemetry provider id. The provider id lands in
+ *  `inference_usage.provider_used` so dashboards can split the cost-zero
+ *  on-device image rows from hosted image-gen rows. */
+function adapterToProvider(
+  adapter: string,
+): "onDeviceWebGpuImage" | "onDeviceAppleImage" | "onDeviceAndroidImage" {
+  if (adapter === "apple-ip") return "onDeviceAppleImage";
+  if (adapter === "mediapipe") return "onDeviceAndroidImage";
+  return "onDeviceWebGpuImage";
+}
+
+export type FinalizeOnDeviceImageGenTurnInput = {
+  threadId: string;
+  userMessageId: string;
+  reservedUsageId: string;
+  /** Caption text persisted as the assistant message body (chat_messages.content
+   *  is NOT NULL). The image bytes themselves render via the attachment row;
+   *  the caption is what shows above the thumbnail. */
+  caption: string;
+  /** Path inside the chat-attachments bucket, ALREADY uploaded by the
+   *  client. Must start with `${userId}/` — defense-in-depth against IDOR. */
+  storagePath: string;
+  mime: string;
+  bytes: number;
+  width: number;
+  height: number;
+  /** Adapter id the on-device runner used. Mapped to a provider id for
+   *  telemetry; kept as the model name so dashboards can split per adapter. */
+  adapter: string;
+  contextUsed: { categories: string[]; trait_paths: string[] } | null;
+  traitSheetVersion: number | null;
+};
+
+export type FinalizeOnDeviceImageGenTurnResult = {
+  assistantMessageId: string;
+  /** 24-hour signed URL for the just-persisted attachment so the UI can
+   *  render the thumbnail immediately without re-fetching the thread. */
+  signedUrl: string;
+};
+
+export const finalizeOnDeviceImageGenTurn = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator(
+    (d: FinalizeOnDeviceImageGenTurnInput): FinalizeOnDeviceImageGenTurnInput => {
+      if (!d || typeof d !== "object") throw new Error("Invalid input");
+      if (typeof d.threadId !== "string") throw new Error("threadId required");
+      if (typeof d.userMessageId !== "string") {
+        throw new Error("userMessageId required");
+      }
+      if (typeof d.reservedUsageId !== "string") {
+        throw new Error("reservedUsageId required");
+      }
+      if (typeof d.caption !== "string" || d.caption.length === 0) {
+        throw new Error("caption required");
+      }
+      if (d.caption.length > 1000) {
+        throw new Error("caption too long (max 1000 chars)");
+      }
+      if (typeof d.storagePath !== "string" || d.storagePath.length === 0) {
+        throw new Error("storagePath required");
+      }
+      if (d.storagePath.length > 512) throw new Error("storagePath too long");
+      if (!ALLOWED_IMAGE_OUT_MIMES.has(d.mime)) {
+        throw new Error(`Unsupported image mime "${d.mime}"`);
+      }
+      if (!Number.isFinite(d.bytes) || d.bytes <= 0 || d.bytes > 25 * 1024 * 1024) {
+        throw new Error("Invalid byte size");
+      }
+      if (!Number.isFinite(d.width) || !Number.isFinite(d.height)) {
+        throw new Error("width/height must be numbers");
+      }
+      if (!IMAGE_GEN_ADAPTERS.has(d.adapter)) {
+        throw new Error(`Unknown adapter "${d.adapter}"`);
+      }
+      return d;
+    },
+  )
+  .handler(
+    async ({ data, context }): Promise<FinalizeOnDeviceImageGenTurnResult> => {
+      const userId = context.userId;
+      const badge: Badge = "private";
+      const provider = adapterToProvider(data.adapter);
+
+      // IDOR guard #1: the storage path must live under this user's prefix.
+      // The chat-attachments bucket policy already enforces this at the
+      // storage layer (see migrations); double-check here so a crafted
+      // client can't link the row to someone else's existing object.
+      if (!data.storagePath.startsWith(`${userId}/`)) {
+        throw new Error("storagePath does not belong to this user");
+      }
+
+      // IDOR guard #2: thread + user-message ownership. Mirrors
+      // finalizeOnDeviceTurn — service-role bypasses RLS so we MUST
+      // verify by hand.
+      const { data: userMsg, error: umErr } = await supabaseAdmin
+        .from("chat_messages")
+        .select("id, thread_id, user_id")
+        .eq("id", data.userMessageId)
+        .eq("user_id", userId)
+        .eq("thread_id", data.threadId)
+        .maybeSingle();
+      if (umErr) throw umErr;
+      if (!userMsg) throw new Error("User message not found");
+
+      // Idempotency: if a prior finalize already wrote an assistant row
+      // for this user message, return it (and its existing attachment row).
+      const { data: existingAssistant } = await supabaseAdmin
+        .from("chat_messages")
+        .select("id")
+        .match({
+          user_id: userId,
+          thread_id: data.threadId,
+          role: "assistant",
+        } as never)
+        .eq("in_reply_to_id" as never, data.userMessageId as never)
+        .maybeSingle();
+      if (existingAssistant) {
+        await finalizeReservedUsage({
+          usageId: data.reservedUsageId,
+          userId,
+          status: "ok",
+          providerUsed: provider,
+          modelUsed: data.adapter,
+          fallbackDepth: 0,
+          latencyMs: 0,
+          messageId: existingAssistant.id,
+        }).catch(() => {});
+        const sign = await supabaseAdmin.storage
+          .from("chat-attachments")
+          .createSignedUrl(data.storagePath, 60 * 60 * 24);
+        return {
+          assistantMessageId: existingAssistant.id,
+          signedUrl: sign.data?.signedUrl ?? "",
+        };
+      }
+
+      // Persist assistant row.
+      const { data: aRow, error: aErr } = await supabaseAdmin
+        .from("chat_messages")
+        .insert({
+          user_id: userId,
+          thread_id: data.threadId,
+          role: "assistant",
+          content: data.caption,
+          badge,
+          provider,
+          model: data.adapter,
+          fallback_depth: 0,
+          context_used:
+            data.contextUsed && data.contextUsed.categories.length > 0
+              ? data.contextUsed
+              : null,
+          trait_sheet_version: data.traitSheetVersion,
+          in_reply_to_id: data.userMessageId,
+        } as never)
+        .select("id")
+        .single();
+      if (aErr) {
+        const code = (aErr as { code?: string }).code;
+        if (code === "23505") {
+          const { data: winner } = await supabaseAdmin
+            .from("chat_messages")
+            .select("id")
+            .eq("in_reply_to_id" as never, data.userMessageId as never)
+            .maybeSingle();
+          if (winner) {
+            const sign = await supabaseAdmin.storage
+              .from("chat-attachments")
+              .createSignedUrl(data.storagePath, 60 * 60 * 24);
+            return {
+              assistantMessageId: winner.id,
+              signedUrl: sign.data?.signedUrl ?? "",
+            };
+          }
+        }
+        throw aErr;
+      }
+
+      // Persist attachment row tagged image_out (phase 2.9a discriminator).
+      // attachment_kind isn't yet in the regenerated types.ts so the cast
+      // matches the pattern used elsewhere in this file.
+      const { error: attErr } = await supabaseAdmin
+        .from("chat_message_attachments")
+        .insert({
+          message_id: aRow.id,
+          user_id: userId,
+          storage_path: data.storagePath,
+          mime: data.mime,
+          bytes: data.bytes,
+          width: data.width,
+          height: data.height,
+          attachment_kind: "image_out",
+        } as never);
+      if (attErr) {
+        // Roll back the assistant row so the thread doesn't develop a
+        // caption with no image. The reserved usage row gets released
+        // by the throw — release_inference_slot is idempotent.
+        await supabaseAdmin
+          .from("chat_messages")
+          .delete()
+          .eq("id", aRow.id)
+          .eq("user_id", userId);
+        await releaseReservedUsage(data.reservedUsageId, userId).catch(() => {});
+        throw attErr;
+      }
+
+      // Telemetry. Cost is zero — bytes never left the device.
+      const finalized = await finalizeReservedUsage({
+        usageId: data.reservedUsageId,
+        userId,
+        status: "ok",
+        providerUsed: provider,
+        modelUsed: data.adapter,
+        fallbackDepth: 0,
+        latencyMs: 0,
+        messageId: aRow.id,
+      });
+      if (!finalized) {
+        console.warn(
+          `[finalizeOnDeviceImageGenTurn] reservation ${data.reservedUsageId} no longer pending`,
+        );
+      }
+
+      // Broker audit row. Same shape as the text on-device path.
+      await logContextDecision({
+        userId,
+        messageId: aRow.id,
+        badge,
+        strictestTier: -1,
+        contextUsed: (data.contextUsed ?? {
+          categories: [],
+          trait_paths: [],
+        }) as ContextUsed,
+        fragmentLength: 0,
+        scrubBlocked: false,
+        traitSheetVersion: data.traitSheetVersion,
+      });
+
+      await supabaseAdmin
+        .from("chat_threads")
+        .update({ updated_at: new Date().toISOString() })
+        .eq("id", data.threadId)
+        .eq("user_id", userId);
+
+      const sign = await supabaseAdmin.storage
+        .from("chat-attachments")
+        .createSignedUrl(data.storagePath, 60 * 60 * 24);
+
+      return {
+        assistantMessageId: aRow.id,
+        signedUrl: sign.data?.signedUrl ?? "",
+      };
+    },
+  );

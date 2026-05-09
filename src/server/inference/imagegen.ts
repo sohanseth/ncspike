@@ -47,32 +47,11 @@ function pickModel(badge: Badge): string {
   return "google/gemini-3.1-flash-image-preview";
 }
 
-/** Heuristic: does this turn look like an image generation/edit request? */
-export function detectImageIntent(args: {
-  text: string;
-  hasAttachments: boolean;
-}): boolean {
-  const t = args.text.toLowerCase();
-  // Edit case: attachment + a verb that implies modification.
-  const editVerbs =
-    /\b(edit|modify|change|alter|add|remove|replace|recolor|colou?r|turn (it|this) into|make (it|this|him|her|them)|put|give (it|him|her|them)|swap|crop|rotate|enhance|upscale|restyle|redraw|render)\b/;
-  if (args.hasAttachments && editVerbs.test(t)) return true;
-
-  // Generate case: explicit verbs + image/picture/photo/etc nouns.
-  const genVerbs =
-    /\b(generate|create|make|draw|paint|design|render|produce|illustrate|sketch|imagine|visualize|visualise|show me)\b/;
-  const visualNouns =
-    /\b(image|picture|photo|photograph|illustration|drawing|painting|sketch|logo|icon|poster|wallpaper|portrait|render|artwork|art|scene|comic|meme|avatar|sticker|graphic|banner|thumbnail|mockup)\b/;
-  if (genVerbs.test(t) && visualNouns.test(t)) return true;
-
-  // Direct phrasings.
-  if (
-    /\b(image of|picture of|photo of|drawing of|painting of|illustration of)\b/.test(t)
-  )
-    return true;
-
-  return false;
-}
+// detectImageIntent moved to `src/lib/image-intent.ts` so the client-side
+// dispatcher (PRIVATE on-device image-gen fork) can run it without pulling
+// the server-only Lovable gateway code into the browser bundle. Re-exported
+// here so existing server callers don't need touch-ups.
+export { detectImageIntent } from "@/lib/image-intent";
 
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";

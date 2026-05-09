@@ -28,6 +28,12 @@ export const PRICING: Record<ProviderId, Price> = {
   onDeviceApple: { input: 0, output: 0 },
   onDeviceAndroid: { input: 0, output: 0 },
   onDeviceWebLLM: { input: 0, output: 0 },
+  // Phase 2.9b — on-device image providers. Same zero-cost rationale as
+  // text on-device. The token fields are unused for image gen; the
+  // provider only logs `provider_used` + `model_used` rows.
+  onDeviceWebGpuImage: { input: 0, output: 0 },
+  onDeviceAppleImage: { input: 0, output: 0 },
+  onDeviceAndroidImage: { input: 0, output: 0 },
 };
 
 /** Compute cost in micro-USD from token counts. Either count may be undefined. */

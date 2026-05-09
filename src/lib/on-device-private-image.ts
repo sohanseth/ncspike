@@ -1,0 +1,264 @@
+/**
+ * Phase 2.9b — PRIVATE + image-out client-side dispatcher.
+ *
+ * When the chat-stream client detects badge='private' AND the user's
+ * prompt looks like an image-generation request (no attachments — img2img
+ * is deferred per docs/12 §15.5), it routes to this runner instead of the
+ * text on-device path. The runner:
+ *
+ *   1. Caps + persist via prepareOnDeviceTurn (re-used from text path —
+ *      the user-message persist and broker-audit are identical; only
+ *      the inference modality differs).
+ *   2. Capability detection — refuses with a plain-English reason if the
+ *      device can't run on-device image gen (no WebGPU, insufficient
+ *      VRAM, native-only paths still unwired). PRIVATE is fail-closed
+ *      (replit.md "no silent fallbacks") — never silently fall back to a
+ *      hosted image-gen provider.
+ *   3. WebGPU SD-Turbo (or whichever adapter pickAdapter selects). Bytes
+ *      stay in the user's GPU until the model returns.
+ *   4. NSFW gate via `classifyGeneratedImage`. A deny verdict discards
+ *      the bytes in memory before any upload — they NEVER touch the
+ *      chat-attachments bucket.
+ *   5. Client-side upload to chat-attachments under
+ *      `${userId}/imagegen/${uuid}.${ext}` using the user's Supabase
+ *      session JWT (RLS + bucket-path-policy enforce ownership).
+ *   6. Server-side persist of the assistant message + attachment row
+ *      (with `attachment_kind = 'image_out'`) + zero-cost telemetry via
+ *      `finalizeOnDeviceImageGenTurn`. The server-fn takes the storage
+ *      path, NOT the bytes — preserving the no-image-egress invariant.
+ *
+ * Wire-compatible with `streamOnDeviceChat`: emits the same
+ * `ChatStreamEvent` shape the UI consumer in MainApp.tsx already handles,
+ * so MainApp doesn't need to know whether a PRIVATE turn was text or
+ * image. The `done` event carries the signed URL in `assistantImages`.
+ */
+import { detectImageGenCapability } from "./image-gen-capability";
+import { streamOnDeviceImageGen } from "./on-device-imagegen";
+import { classifyGeneratedImage } from "./imagegen-safety";
+import {
+  prepareOnDeviceTurn,
+  finalizeOnDeviceImageGenTurn,
+  releaseOnDeviceReservation,
+} from "./chat.functions";
+import type { ChatStreamEvent, StreamChatInput } from "./chat-stream";
+import { supabase } from "@/integrations/supabase/client";
+
+function extOf(mime: string): string {
+  if (mime === "image/png") return "png";
+  if (mime === "image/webp") return "webp";
+  return "jpg";
+}
+
+export async function* streamOnDevicePrivateImage(
+  input: StreamChatInput,
+): AsyncGenerator<ChatStreamEvent, void, void> {
+  // ─── 0. Capability probe BEFORE the cap reservation ─────────────────────
+  // If the device can't run on-device image gen, refuse without debiting
+  // the user's daily PRIVATE cap. This matches docs/12 §15: PRIVATE is
+  // fail-closed — never fall back to a hosted image provider.
+  const cap = await detectImageGenCapability();
+  if (!cap.available) {
+    yield { kind: "error", type: "validation", message: cap.reason };
+    return;
+  }
+
+  // ─── 1. Server-side prepare (cap-check + user-row persist + broker) ─────
+  // Re-uses the text on-device prepare fn — semantics are identical
+  // (PRIVATE badge, tier=-1 broker, atomic cap reservation).
+  let prep: Awaited<ReturnType<typeof prepareOnDeviceTurn>>;
+  try {
+    prep = await prepareOnDeviceTurn({
+      data: { threadId: input.threadId, content: input.content },
+    });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Couldn't prepare on-device image turn";
+    if (msg.startsWith("SCRUB_BLOCKED:")) {
+      yield {
+        kind: "error",
+        type: "validation",
+        message:
+          "Personalization context blocked by safety scrub. Try rephrasing or open Privacy → Forget a trait.",
+      };
+      return;
+    }
+    if (msg.startsWith("CAP_EXCEEDED:")) {
+      const parts = msg.slice("CAP_EXCEEDED:".length).split("|");
+      const used = Number(parts[0]);
+      const capN = Number(parts[1]);
+      yield {
+        kind: "error",
+        type: "cap_exceeded",
+        badge: "private",
+        message: msg,
+        used: Number.isFinite(used) ? used : undefined,
+        cap: Number.isFinite(capN) ? capN : undefined,
+      };
+      return;
+    }
+    yield { kind: "error", type: "internal", message: msg };
+    return;
+  }
+
+  yield {
+    kind: "init",
+    threadId: prep.threadId,
+    userMessageId: prep.userMessageId,
+  };
+  yield { kind: "meta", provider: "onDeviceWebGpuImage", fallbackDepth: 0 };
+
+  // ─── 2. Run on-device image generation ──────────────────────────────────
+  let bytes: Uint8Array | null = null;
+  let mime = "image/png";
+  let width = 0;
+  let height = 0;
+  let adapterId: string = cap.adapter;
+  let errored = false;
+
+  try {
+    for await (const ev of streamOnDeviceImageGen({
+      prompt: input.content,
+      signal: input.signal,
+    })) {
+      if (ev.kind === "load_progress") {
+        yield { kind: "load_progress", pct: Math.round(ev.pct * 100) };
+      } else if (ev.kind === "done") {
+        bytes = ev.bytes;
+        mime = ev.mime;
+        width = ev.width;
+        height = ev.height;
+        adapterId = ev.adapter;
+      } else if (ev.kind === "error") {
+        errored = true;
+        // Map adapter event types to the ChatStreamEvent error union.
+        // 'unsupported' / 'cancelled' / 'validation' all surface as the
+        // closest existing class so MainApp's toast logic doesn't need
+        // a new branch. 'internal' stays internal.
+        const errType =
+          ev.type === "unsupported" || ev.type === "validation"
+            ? "validation"
+            : "internal";
+        yield { kind: "error", type: errType, message: ev.message };
+        break;
+      }
+      // 'init' and 'step' are diagnostic — not surfaced to the UI yet.
+    }
+  } catch (e) {
+    errored = true;
+    yield {
+      kind: "error",
+      type: "internal",
+      message: e instanceof Error ? e.message : "On-device image generation failed",
+    };
+  }
+
+  if (errored || !bytes) {
+    // Release the reservation so the cap slot is returned. Best-effort —
+    // the 5-minute sweep is the backstop.
+    try {
+      await releaseOnDeviceReservation({
+        data: { reservedUsageId: prep.reservedUsageId },
+      });
+    } catch {
+      /* noop */
+    }
+    return;
+  }
+
+  // ─── 3. Output-side safety gate (NSFW + structural check) ───────────────
+  // Fail-closed: a thrown classifier returns deny by contract. Bytes are
+  // discarded in memory if denied — they NEVER touch the storage bucket
+  // on PRIVATE per docs/12 §15.4.
+  const verdict = await classifyGeneratedImage(bytes, mime);
+  if (!verdict.allow) {
+    try {
+      await releaseOnDeviceReservation({
+        data: { reservedUsageId: prep.reservedUsageId },
+      });
+    } catch {
+      /* noop */
+    }
+    yield {
+      kind: "error",
+      type: "validation",
+      message: verdict.reason,
+    };
+    return;
+  }
+
+  // ─── 4. Client-side upload of the bytes ─────────────────────────────────
+  // The bytes go from the GPU → memory → user-token Supabase upload.
+  // The server NEVER sees the bytes (the finalize fn takes the storage
+  // path only), preserving the on-device promise.
+  const { data: auth } = await supabase.auth.getUser();
+  const userId = auth.user?.id;
+  if (!userId) {
+    try {
+      await releaseOnDeviceReservation({
+        data: { reservedUsageId: prep.reservedUsageId },
+      });
+    } catch {
+      /* noop */
+    }
+    yield { kind: "error", type: "internal", message: "Not signed in" };
+    return;
+  }
+
+  const storagePath = `${userId}/imagegen/${crypto.randomUUID()}.${extOf(mime)}`;
+  const blob = new Blob([new Uint8Array(bytes)], { type: mime });
+  const up = await supabase.storage
+    .from("chat-attachments")
+    .upload(storagePath, blob, { contentType: mime, upsert: false });
+  if (up.error) {
+    try {
+      await releaseOnDeviceReservation({
+        data: { reservedUsageId: prep.reservedUsageId },
+      });
+    } catch {
+      /* noop */
+    }
+    yield {
+      kind: "error",
+      type: "internal",
+      message: `Image upload failed: ${up.error.message}`,
+    };
+    return;
+  }
+
+  // ─── 5. Server-side finalize (assistant row + attachment row + telemetry)
+  try {
+    const fin = await finalizeOnDeviceImageGenTurn({
+      data: {
+        threadId: prep.threadId,
+        userMessageId: prep.userMessageId,
+        reservedUsageId: prep.reservedUsageId,
+        caption: "Generated on your device.",
+        storagePath,
+        mime,
+        bytes: bytes.length,
+        width,
+        height,
+        adapter: adapterId,
+        contextUsed: prep.contextUsed,
+        traitSheetVersion: prep.traitSheetVersion,
+      },
+    });
+    yield {
+      kind: "done",
+      messageId: fin.assistantMessageId,
+      provider: "onDeviceWebGpuImage",
+      model: adapterId,
+      fallbackDepth: 0,
+      inputTokens: null,
+      outputTokens: null,
+      contextUsed: prep.contextUsed,
+      traitSheetVersion: prep.traitSheetVersion,
+      ...(fin.signedUrl ? { assistantImages: [fin.signedUrl] } : {}),
+    };
+  } catch (e) {
+    yield {
+      kind: "error",
+      type: "internal",
+      message: e instanceof Error ? e.message : "Failed to save on-device image",
+    };
+  }
+}

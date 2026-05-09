@@ -56,6 +56,14 @@ const PROVIDER_LOADERS: Record<ProviderId, () => Promise<InferenceProvider>> = {
   onDeviceApple: async () => onDeviceServerStub("onDeviceApple"),
   onDeviceAndroid: async () => onDeviceServerStub("onDeviceAndroid"),
   onDeviceWebLLM: async () => onDeviceServerStub("onDeviceWebLLM"),
+  // Phase 2.9b — on-device IMAGE providers. Server-side execution is a
+  // hard error for the same reason as the text on-device providers:
+  // these only run in the user's browser/native shell. The chat router
+  // never composes them into a chain, so this stub exists purely so the
+  // ProviderId record stays exhaustive.
+  onDeviceWebGpuImage: async () => onDeviceServerStub("onDeviceWebGpuImage"),
+  onDeviceAppleImage: async () => onDeviceServerStub("onDeviceAppleImage"),
+  onDeviceAndroidImage: async () => onDeviceServerStub("onDeviceAndroidImage"),
 };
 
 const _cache = new Map<ProviderId, Promise<InferenceProvider>>();

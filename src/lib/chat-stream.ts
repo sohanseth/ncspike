@@ -66,7 +66,27 @@ export async function* streamChatMessage(
   // PRIVATE badge runs entirely on-device — never POST to /api/chat/stream.
   // The on-device runner emits the same ChatStreamEvent shape so the UI
   // consumer in MainApp.tsx is unchanged. See docs/11.
+  //
+  // Phase 2.9b: PRIVATE + image-intent forks to the on-device image-gen
+  // runner BEFORE the text path so a "draw a cat" prompt under the
+  // PRIVATE badge doesn't get answered with a textual hallucination
+  // about a cat (the WebLLM text model has no image-out capability).
+  // img2img is deferred per docs/12 §15.5 — attachments still hit the
+  // text dispatcher, which has its own fail-closed for them.
   if (input.badge === "private") {
+    const hasAttachments = (input.attachments?.length ?? 0) > 0;
+    if (!hasAttachments) {
+      const { detectImageIntent } = await import("./image-intent");
+      if (
+        detectImageIntent({ text: input.content, hasAttachments: false })
+      ) {
+        const { streamOnDevicePrivateImage } = await import(
+          "./on-device-private-image"
+        );
+        yield* streamOnDevicePrivateImage(input);
+        return;
+      }
+    }
     const { streamOnDeviceChat } = await import("./on-device-chat");
     yield* streamOnDeviceChat(input);
     return;
