@@ -4108,6 +4108,65 @@ function AddTaskButton() {
             {voiceError && (
               <div className="mt-2 text-[11px] text-rose-300/90 font-mono">{voiceError}</div>
             )}
+
+            {/* Voice language picker — accent/locale hint dramatically improves
+                recognition for non-native English speakers. Persisted locally. */}
+            {speechSupported && (
+              <div className="mt-2 flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
+                <Mic size={11} className="opacity-60"/>
+                <span>Voice language</span>
+                <select
+                  value={voiceLang}
+                  onChange={(e) => setVoiceLang(e.target.value)}
+                  disabled={listening}
+                  className="bg-white/[0.04] border border-white/10 rounded-md px-1.5 py-0.5 text-foreground/80 text-[11px] outline-none focus:border-primary/40 disabled:opacity-50"
+                >
+                  <optgroup label="English">
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-IN">English (India)</option>
+                    <option value="en-AU">English (Australia)</option>
+                    <option value="en-CA">English (Canada)</option>
+                    <option value="en-IE">English (Ireland)</option>
+                    <option value="en-ZA">English (South Africa)</option>
+                    <option value="en-NG">English (Nigeria)</option>
+                    <option value="en-PH">English (Philippines)</option>
+                    <option value="en-SG">English (Singapore)</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="es-ES">Español (España)</option>
+                    <option value="es-MX">Español (México)</option>
+                    <option value="fr-FR">Français</option>
+                    <option value="de-DE">Deutsch</option>
+                    <option value="it-IT">Italiano</option>
+                    <option value="pt-BR">Português (Brasil)</option>
+                    <option value="pt-PT">Português (Portugal)</option>
+                    <option value="nl-NL">Nederlands</option>
+                    <option value="pl-PL">Polski</option>
+                    <option value="sv-SE">Svenska</option>
+                    <option value="tr-TR">Türkçe</option>
+                    <option value="ru-RU">Русский</option>
+                    <option value="ar-SA">العربية</option>
+                    <option value="hi-IN">हिन्दी</option>
+                    <option value="bn-IN">বাংলা</option>
+                    <option value="ta-IN">தமிழ்</option>
+                    <option value="te-IN">తెలుగు</option>
+                    <option value="mr-IN">मराठी</option>
+                    <option value="ur-PK">اردو</option>
+                    <option value="zh-CN">中文 (简体)</option>
+                    <option value="zh-TW">中文 (繁體)</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="ko-KR">한국어</option>
+                    <option value="vi-VN">Tiếng Việt</option>
+                    <option value="th-TH">ไทย</option>
+                    <option value="id-ID">Bahasa Indonesia</option>
+                    <option value="fil-PH">Filipino</option>
+                  </optgroup>
+                </select>
+                <span className="text-muted-foreground/50">tip: pick your accent for better accuracy</span>
+              </div>
+            )}
+
             {listening && !voiceError && (
               <div className="mt-2 text-[11px] text-rose-300/90 font-mono flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"/>
