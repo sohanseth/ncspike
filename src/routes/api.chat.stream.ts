@@ -227,11 +227,44 @@ export const Route = createFileRoute("/api/chat/stream")({
         if (uErr) return new Response("Failed to persist user message", { status: 500 });
 
         // ─────────────────────────────────────────────────────────────
-        // Vision branch: when the turn has image attachments, persist
-        // attachment rows and bypass the chain runner. PRIVATE keeps
-        // its fail-closed contract because runVisionTurn routes PRIVATE
-        // exclusively to Cloudflare. Other badges go through the
-        // Lovable AI Gateway directly with a vision-capable model.
+        // Image generation branch (no attachments). PRIVATE refuses —
+        // there is no on-device image model in this build.
+        // ─────────────────────────────────────────────────────────────
+        if (
+          v.attachments.length === 0 &&
+          detectImageIntent({ text: v.content, hasAttachments: false })
+        ) {
+          if (effectiveBadge === "private") {
+            const frame = sseEvent("error", {
+              kind: "internal",
+              message:
+                "Image generation isn't available on the PRIVATE badge. Switch to Flash, Pro, or Genius.",
+            });
+            return new Response(frame, {
+              status: 200,
+              headers: {
+                "content-type": "text/event-stream",
+                "cache-control": "no-cache, no-transform",
+                connection: "keep-alive",
+              },
+            });
+          }
+          return runImageGenSseResponse({
+            userId,
+            threadId: threadId!,
+            badge: effectiveBadge,
+            history: historyMessages,
+            userText: v.content,
+            attachments: [],
+            userMessageId: userRow.id,
+            signal: request.signal ?? undefined,
+          });
+        }
+
+        // ─────────────────────────────────────────────────────────────
+        // Vision / image-edit branch: when the turn has image attachments.
+        // If the user's text reads like an image edit we route to the
+        // image-out model; otherwise we describe via the vision model.
         // ─────────────────────────────────────────────────────────────
         if (v.attachments.length > 0) {
           // Validate all attachment paths belong to this user (path prefix
