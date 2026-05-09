@@ -121,35 +121,30 @@ const DEFAULT_SYSTEM_PROMPT =
   "if you don't know something, say so. No filler, no preamble.";
 
 /**
- * Count today's successful inference_usage rows for (user, badge).
- * "Today" is wall-clock UTC date. Cap reset is implicit via this query.
- */
-async function countTodayUsage(userId: string, badge: Badge): Promise<number> {
-  const startOfDay = new Date();
-  startOfDay.setUTCHours(0, 0, 0, 0);
-  const { count, error } = await supabaseAdmin
-    .from("inference_usage")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("badge", badge)
-    .eq("status", "ok")
-    .gte("started_at", startOfDay.toISOString());
-  if (error) throw error;
-  return count ?? 0;
-}
-
-/**
- * Pre-flight cap + paidOnly check. Throws CapExceededError (and writes the
- * `cap_exceeded` usage row) before any side-effect — callers MUST run this
- * BEFORE persisting the user `chat_messages` row, or a blocked send leaves
- * an orphan user bubble in the thread on next page load (spec §C6 ordering).
+ * Pre-flight cap + paidOnly check. Throws CapExceededError before any
+ * side-effect — callers MUST run this BEFORE persisting the user
+ * `chat_messages` row, or a blocked send leaves an orphan user bubble in
+ * the thread on next page load (spec §C6 ordering).
+ *
+ * Race-proof (task #8): the read-then-write path was replaced by a single
+ * `reserve_inference_slot` RPC that takes a per-(user,badge) advisory lock,
+ * counts existing ok+pending rows for today, and either inserts a `pending`
+ * reservation row or a `cap_exceeded` row in the same transaction. Two
+ * concurrent requests at the cap edge therefore serialize on the lock and
+ * exactly `cap` reservations succeed.
+ *
+ * Returns the reserved `usageId` so the caller can pass it to runChain;
+ * the chain runner finalizes the row to `ok` on success or releases the
+ * reservation on chain exhaustion. Without a reservation handoff, chain
+ * runners would write an additional `ok` row on success and the reserved
+ * `pending` row would linger until the 5-minute sweep.
  */
 export async function assertCap(args: {
   userId: string;
   threadId: string | null;
   badge: Badge;
   paidTier: boolean;
-}): Promise<void> {
+}): Promise<{ usageId: string }> {
   const { badge } = args;
   const cfg = chainFor(badge);
 
@@ -170,21 +165,106 @@ export async function assertCap(args: {
   }
 
   const cap = capFor(badge, args.paidTier);
-  const used = await countTodayUsage(args.userId, badge);
-  if (used >= cap) {
-    await writeUsage({
-      userId: args.userId,
-      threadId: args.threadId,
-      badge,
-      chain: cfg.chain,
-      providerUsed: cfg.chain[0],
-      modelUsed: null,
-      fallbackDepth: 0,
-      latencyMs: 0,
-      status: "cap_exceeded",
-    });
-    throw new CapExceededError(badge, used, cap);
+  const { data, error } = await (supabaseAdmin as unknown as {
+    rpc: (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: Array<{ usage_id: string; used_count: number; accepted: boolean }> | null; error: { message: string } | null }>;
+  }).rpc("reserve_inference_slot", {
+    p_user_id: args.userId,
+    p_thread_id: args.threadId,
+    p_badge: badge,
+    p_provider_chain: cfg.chain,
+    p_cap: cap,
+  });
+  if (error) throw new Error(`reserve_inference_slot failed: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row) throw new Error("reserve_inference_slot returned no row");
+  if (!row.accepted) {
+    throw new CapExceededError(badge, row.used_count, cap);
   }
+  return { usageId: row.usage_id };
+}
+
+/**
+ * Update the reserved (pending) usage row to its terminal status. Returns
+ * true when the update hit a row — false means the reservation was
+ * already finalized or released (concurrent retry / sweep). Callers
+ * should treat false as a no-op rather than an error.
+ */
+export async function finalizeReservedUsage(args: {
+  usageId: string;
+  userId: string;
+  status: "ok" | "rate_limited" | "error" | "user_abort";
+  providerUsed: ProviderId;
+  modelUsed: string | null;
+  fallbackDepth: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  latencyMs: number;
+  errorClass?: string;
+  messageId?: string;
+}): Promise<boolean> {
+  const cost =
+    args.status === "ok"
+      ? Number(costMicroUsd(args.providerUsed, args.inputTokens, args.outputTokens))
+      : 0;
+  const { data, error } = await (supabaseAdmin as unknown as {
+    rpc: (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: boolean | null; error: { message: string } | null }>;
+  }).rpc("finalize_inference_usage", {
+    p_usage_id: args.usageId,
+    p_user_id: args.userId,
+    p_status: args.status,
+    p_provider_used: args.providerUsed,
+    p_model_used: args.modelUsed,
+    p_fallback_depth: args.fallbackDepth,
+    p_input_tokens: args.inputTokens ?? null,
+    p_output_tokens: args.outputTokens ?? null,
+    p_cost_micro_usd: cost,
+    p_latency_ms: args.latencyMs,
+    p_error_class: args.errorClass ?? null,
+    p_message_id: args.messageId ?? null,
+  });
+  if (error) {
+    // Mirrors the rationale in `writeUsage` below — caps are derived from
+    // ok+pending rows, so a finalize failure leaves the slot consumed
+    // (fail-closed against the user) until the 5-min sweep. Shout loudly.
+    console.error(
+      `[finalize_inference_usage] CAP-CRITICAL update failure (status=${args.status}):`,
+      error.message,
+    );
+    return false;
+  }
+  return Boolean(data);
+}
+
+/**
+ * Delete a reserved (pending) usage row. Used when the chain exhausts
+ * before any provider produced a response — the user shouldn't be debited
+ * for a request that didn't yield a reply. Returns true if a row was
+ * deleted; false when nothing was pending (already finalized / swept).
+ */
+export async function releaseReservedUsage(
+  usageId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await (supabaseAdmin as unknown as {
+    rpc: (
+      name: string,
+      args: Record<string, unknown>,
+    ) => Promise<{ data: boolean | null; error: { message: string } | null }>;
+  }).rpc("release_inference_slot", {
+    p_usage_id: usageId,
+    p_user_id: userId,
+  });
+  if (error) {
+    console.error(`[release_inference_slot] failed:`, error.message);
+    return false;
+  }
+  return Boolean(data);
 }
 
 type WriteUsageArgs = {
@@ -260,10 +340,20 @@ export type RunChainArgs = {
    * persisting the user `chat_messages` row. Skips the inner re-check
    * so a TOCTOU race (concurrent send) cannot throw `CapExceededError`
    * after the user row is on disk, which would orphan it. Default
-   * false keeps any future caller safe (re-checks; may orphan but
-   * never overspends).
+   * false keeps any future caller safe (re-checks; may overspend if
+   * the inner reservation is not threaded through, but never orphans).
    */
   assumeCapChecked?: boolean;
+  /**
+   * The `usageId` returned by the caller's pre-flight `assertCap()`. When
+   * provided, the chain runner finalizes this reserved (pending) row to
+   * its terminal status instead of inserting a fresh `ok` row, and
+   * releases it on chain exhaustion. REQUIRED whenever assumeCapChecked
+   * is true so the cap accounting closes the loop; without it a
+   * successful run would leave the pending reservation to be swept by
+   * the 5-minute janitor and double-count against the next request.
+   */
+  reservedUsageId?: string;
 };
 
 export async function runChain(args: RunChainArgs): Promise<ChainResult> {
@@ -278,13 +368,26 @@ export async function runChain(args: RunChainArgs): Promise<ChainResult> {
   }
   assertNoOnDeviceProviders(badge, cfg.chain);
 
+  let reservedUsageId = args.reservedUsageId;
   if (!args.assumeCapChecked) {
-    await assertCap({
+    const r = await assertCap({
       userId: args.userId,
       threadId: args.threadId,
       badge,
       paidTier: args.paidTier,
     });
+    reservedUsageId = r.usageId;
+  } else if (!reservedUsageId) {
+    // Defense-in-depth (task #8): a caller that pre-checked the cap MUST
+    // also thread the reservedUsageId, or the chain runner would write a
+    // fresh `ok` row on success and the pre-flight `pending` reservation
+    // would linger until the 5-min sweep — double-counting one slot
+    // against the daily cap. Shout loudly so the bug surfaces in the
+    // operator log feed instead of silently overspending the user.
+    console.error(
+      "[runChain] CAP-CRITICAL: assumeCapChecked=true without reservedUsageId — " +
+        "caller must pass the usageId returned by assertCap() to close the cap-accounting loop.",
+    );
   }
 
   const fullMessages: InferenceMessage[] = [
@@ -292,72 +395,104 @@ export async function runChain(args: RunChainArgs): Promise<ChainResult> {
     ...args.messages,
   ];
 
+  // Wrap the chain in try/catch so any failure path (per-provider non-retriable,
+  // fail-closed re-throw, chain exhaustion) releases the reserved cap slot.
+  // Success returns from inside the loop and skips the catch.
   let lastErrorClass = "unknown";
-  for (let i = 0; i < cfg.chain.length; i++) {
-    const providerId = cfg.chain[i];
-    const t0 = Date.now();
-    try {
-      const provider = await getProvider(providerId);
-      const result = await provider.generate({
-        messages: fullMessages,
-        maxTokens: args.maxTokens,
-        temperature: args.temperature,
-      });
-      const latencyMs = Date.now() - t0;
-      await writeUsage({
-        userId: args.userId,
-        threadId: args.threadId,
-        badge,
-        chain: cfg.chain,
-        providerUsed: providerId,
-        modelUsed: result.model,
-        fallbackDepth: i,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-        latencyMs,
-        status: "ok",
-      });
-      return {
-        text: result.text,
-        provider: providerId,
-        model: result.model,
-        fallbackDepth: i,
-        inputTokens: result.inputTokens,
-        outputTokens: result.outputTokens,
-      };
-    } catch (e) {
-      const latencyMs = Date.now() - t0;
-      const errClass = e instanceof InferenceError ? e.errorClass : "unknown";
-      lastErrorClass = errClass;
-      const status =
-        errClass === "provider_429" ? "rate_limited" : "error";
-      await writeUsage({
-        userId: args.userId,
-        threadId: args.threadId,
-        badge,
-        chain: cfg.chain,
-        providerUsed: providerId,
-        modelUsed: null,
-        fallbackDepth: i,
-        latencyMs,
-        status,
-        errorClass: errClass,
-      });
+  try {
+    for (let i = 0; i < cfg.chain.length; i++) {
+      const providerId = cfg.chain[i];
+      const t0 = Date.now();
+      try {
+        const provider = await getProvider(providerId);
+        const result = await provider.generate({
+          messages: fullMessages,
+          maxTokens: args.maxTokens,
+          temperature: args.temperature,
+        });
+        const latencyMs = Date.now() - t0;
+        if (reservedUsageId) {
+          await finalizeReservedUsage({
+            usageId: reservedUsageId,
+            userId: args.userId,
+            status: "ok",
+            providerUsed: providerId,
+            modelUsed: result.model,
+            fallbackDepth: i,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            latencyMs,
+          });
+        } else {
+          await writeUsage({
+            userId: args.userId,
+            threadId: args.threadId,
+            badge,
+            chain: cfg.chain,
+            providerUsed: providerId,
+            modelUsed: result.model,
+            fallbackDepth: i,
+            inputTokens: result.inputTokens,
+            outputTokens: result.outputTokens,
+            latencyMs,
+            status: "ok",
+          });
+        }
+        return {
+          text: result.text,
+          provider: providerId,
+          model: result.model,
+          fallbackDepth: i,
+          inputTokens: result.inputTokens,
+          outputTokens: result.outputTokens,
+        };
+      } catch (e) {
+        const latencyMs = Date.now() - t0;
+        const errClass = e instanceof InferenceError ? e.errorClass : "unknown";
+        lastErrorClass = errClass;
+        const status =
+          errClass === "provider_429" ? "rate_limited" : "error";
+        // Per-provider error rows are separate telemetry inserts (status
+        // != ok/pending so they don't count against the cap). The reserved
+        // pending row stays open until the loop succeeds (finalize) or the
+        // outer catch releases it.
+        await writeUsage({
+          userId: args.userId,
+          threadId: args.threadId,
+          badge,
+          chain: cfg.chain,
+          providerUsed: providerId,
+          modelUsed: null,
+          fallbackDepth: i,
+          latencyMs,
+          status,
+          errorClass: errClass,
+        });
 
-      // Fail-closed badges (PRIVATE) MUST NOT silently fall through to a
-      // less-private provider. Re-throw immediately.
-      if (cfg.failClosed) throw e;
-      // Per §C4: only fall through on retriable errors (429/5xx/timeout/
-      // network). Non-retriable errors (bad request shape, missing creds,
-      // bad response shape) indicate adapter or config bugs that further
-      // providers won't fix, and silently retrying wastes spend.
-      const retriable = e instanceof InferenceError ? e.retriable : false;
-      if (!retriable) throw e;
-      // Otherwise advance to next provider.
+        // Fail-closed badges (PRIVATE) MUST NOT silently fall through to a
+        // less-private provider. Re-throw immediately.
+        if (cfg.failClosed) throw e;
+        // Per §C4: only fall through on retriable errors (429/5xx/timeout/
+        // network). Non-retriable errors (bad request shape, missing creds,
+        // bad response shape) indicate adapter or config bugs that further
+        // providers won't fix, and silently retrying wastes spend.
+        const retriable = e instanceof InferenceError ? e.retriable : false;
+        if (!retriable) throw e;
+        // Otherwise advance to next provider.
+      }
     }
-  }
 
-  throw new ChainExhaustedError(badge, cfg.chain, lastErrorClass);
+    throw new ChainExhaustedError(badge, cfg.chain, lastErrorClass);
+  } catch (e) {
+    // Release the reserved cap slot — the user produced no successful
+    // response so they should not be debited. Best-effort: a release
+    // failure leaves the slot pending until the 5-min sweep, which is
+    // strictly fail-closed (slightly under-counted future cap, never over).
+    if (reservedUsageId) {
+      await releaseReservedUsage(reservedUsageId, args.userId).catch(() => {});
+    }
+    throw e;
+  }
 }
 
 /**
@@ -400,13 +535,26 @@ export async function* runChainStream(
   }
   assertNoOnDeviceProviders(badge, cfg.chain);
 
+  let reservedUsageId = args.reservedUsageId;
   if (!args.assumeCapChecked) {
-    await assertCap({
+    const r = await assertCap({
       userId: args.userId,
       threadId: args.threadId,
       badge,
       paidTier: args.paidTier,
     });
+    reservedUsageId = r.usageId;
+  } else if (!reservedUsageId) {
+    // Defense-in-depth (task #8): a caller that pre-checked the cap MUST
+    // also thread the reservedUsageId, or the chain runner would write a
+    // fresh `ok` row on success and the pre-flight `pending` reservation
+    // would linger until the 5-min sweep — double-counting one slot
+    // against the daily cap. Shout loudly so the bug surfaces in the
+    // operator log feed instead of silently overspending the user.
+    console.error(
+      "[runChain] CAP-CRITICAL: assumeCapChecked=true without reservedUsageId — " +
+        "caller must pass the usageId returned by assertCap() to close the cap-accounting loop.",
+    );
   }
 
   const fullMessages: InferenceMessage[] = [
@@ -415,6 +563,13 @@ export async function* runChainStream(
   ];
 
   let lastErrorClass = "unknown";
+  // Outer try ensures any failure path (chain exhaustion, mid-stream
+  // ChainExhaustedError, fail-closed re-throw, non-retriable throw)
+  // releases the reserved cap slot. UserAbortError is rethrown WITHOUT
+  // releasing — the route catches it and finalizes the reservation to
+  // user_abort via the in-stream finalize call (see api.chat.stream.ts
+  // finalizeAbort), so the row stays for the audit trail.
+  try {
   for (let i = 0; i < cfg.chain.length; i++) {
     const providerId = cfg.chain[i];
     const t0 = Date.now();
@@ -477,19 +632,33 @@ export async function* runChainStream(
       }
 
       const latencyMs = Date.now() - t0;
-      await writeUsage({
-        userId: args.userId,
-        threadId: args.threadId,
-        badge,
-        chain: cfg.chain,
-        providerUsed: providerId,
-        modelUsed,
-        fallbackDepth: i,
-        inputTokens,
-        outputTokens,
-        latencyMs,
-        status: "ok",
-      });
+      if (reservedUsageId) {
+        await finalizeReservedUsage({
+          usageId: reservedUsageId,
+          userId: args.userId,
+          status: "ok",
+          providerUsed: providerId,
+          modelUsed,
+          fallbackDepth: i,
+          inputTokens,
+          outputTokens,
+          latencyMs,
+        });
+      } else {
+        await writeUsage({
+          userId: args.userId,
+          threadId: args.threadId,
+          badge,
+          chain: cfg.chain,
+          providerUsed: providerId,
+          modelUsed,
+          fallbackDepth: i,
+          inputTokens,
+          outputTokens,
+          latencyMs,
+          status: "ok",
+        });
+      }
 
       yield {
         kind: "done",
@@ -541,4 +710,14 @@ export async function* runChainStream(
   }
 
   throw new ChainExhaustedError(badge, cfg.chain, lastErrorClass);
+  } catch (e) {
+    // Release the reservation on any failure path EXCEPT user-abort, which
+    // is finalized to status='user_abort' by the route's finalizeAbort()
+    // (it has the partial assistant text and message_id we need to keep
+    // for the audit trail).
+    if (reservedUsageId && !(e instanceof UserAbortError)) {
+      await releaseReservedUsage(reservedUsageId, args.userId).catch(() => {});
+    }
+    throw e;
+  }
 }

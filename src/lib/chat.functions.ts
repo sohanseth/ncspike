@@ -17,7 +17,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { runChain, CapExceededError, ChainExhaustedError, assertCap } from "@/server/inference/chat";
+import { runChain, CapExceededError, ChainExhaustedError, assertCap, finalizeReservedUsage, releaseReservedUsage } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
 import { resolveBadgeForUser } from "@/server/personalization-routing";
 import { strictestTierInChain } from "@/lib/provider-tiers";
@@ -244,12 +244,19 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     //    writes the `cap_exceeded` usage row and throws CapExceededError,
     //    which the caller catches and surfaces as a Sonner toast.
     const paidTierForCap = await getPaidTier(userId);
-    await assertCap({
+    const { usageId: reservedUsageId } = await assertCap({
       userId,
       threadId,
       badge: effectiveBadge,
       paidTier: paidTierForCap,
     });
+
+    // From here on, any thrown error must release the reserved cap slot —
+    // otherwise the user is debited for a turn that never produced a
+    // reply. The release RPC is idempotent (returns false on rows that
+    // are no longer 'pending'), so calling it after a successful
+    // finalize inside runChain is a safe no-op. (task #8)
+    try {
 
     // 4. Persist the user message immediately so it survives chain failures.
     const { data: userRow, error: uErr } = await supabaseAdmin
@@ -297,7 +304,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     // Fail-closed when the broker scrub blocks the assembled fragment. The
     // prior behavior silently swapped to the default system prompt and let
     // inference proceed, masking what is supposed to be a privacy guard
-    // event. Surface as a typed error the client can render.
+    // event. Surface as a typed error the client can render — the outer
+    // try/catch below releases the reserved cap slot.
     if (broker.scrubBlocked) {
       throw new Error("SCRUB_BLOCKED:context");
     }
@@ -305,6 +313,9 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     // 5. Run the chain. CapExceededError and ChainExhaustedError surface to
     //    the caller as typed errors — UI shows a friendly upsell or retry.
     //    Re-uses paidTierForCap from step 3 to avoid a second auth lookup.
+    //    The reservedUsageId from step 3 is threaded through so the chain
+    //    runner finalizes the existing pending row (race-proof cap
+    //    accounting) rather than inserting a new ok row.
     const result = await runChain({
       userId,
       threadId,
@@ -312,11 +323,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       messages: [...historyMessages, { role: "user", content: data.content }],
       paidTier: paidTierForCap,
       systemPrompt: broker.fragment || undefined,
-      // Pre-flight assertCap() already ran above (step 3), BEFORE the user
-      // row was persisted. Skipping the inner re-check closes the TOCTOU
-      // window where a concurrent send could otherwise throw cap_exceeded
-      // here and orphan the just-inserted user row.
       assumeCapChecked: true,
+      reservedUsageId,
     });
 
     // 6. Persist the assistant reply with routing breadcrumb + context audit.
@@ -376,6 +384,15 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       userMessage: toPayload(userRow),
       assistantMessage: toPayload(aRow),
     };
+
+    } catch (e) {
+      // Release the reserved cap slot on any post-reservation failure
+      // (user-row persist error, broker scrub-block, runChain throw,
+      // assistant persist error). Idempotent: a no-op if runChain already
+      // finalized the row to status='ok'. (task #8)
+      await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
+      throw e;
+    }
   });
 
 // Note: typed errors (CapExceededError, ChainExhaustedError) are not re-exported
@@ -413,6 +430,12 @@ export type PrepareOnDeviceTurnInput = {
 export type PrepareOnDeviceTurnResult = {
   threadId: string;
   userMessageId: string;
+  /** Reserved (pending) `inference_usage.id` from the atomic cap RPC.
+   *  Must be passed to `finalizeOnDeviceTurn` so the slot is finalized
+   *  to status='ok' (or released if the on-device run fails). Without
+   *  this handoff the row would stay pending until the 5-min sweep and
+   *  double-count against the user's daily cap. See task #8. */
+  reservedUsageId: string;
   systemPrompt: string;
   history: { role: "user" | "assistant"; content: string }[];
   contextUsed: { categories: string[]; trait_paths: string[] } | null;
@@ -460,16 +483,25 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
 
     // 2. Cap check BEFORE persisting the user row. Convert CapExceededError
     //    into a structured error string the on-device dispatcher parses
-    //    into a typed `cap_exceeded` event.
+    //    into a typed `cap_exceeded` event. The atomic reservation is
+    //    threaded out via reservedUsageId so finalizeOnDeviceTurn can
+    //    flip the same row to status='ok' (race-proof — task #8).
     const paidTier = await getPaidTier(userId);
+    let reservedUsageId: string;
     try {
-      await assertCap({ userId, threadId, badge, paidTier });
+      const r = await assertCap({ userId, threadId, badge, paidTier });
+      reservedUsageId = r.usageId;
     } catch (e) {
       if (e instanceof CapExceededError) {
         throw new Error(`CAP_EXCEEDED:${e.used}|${e.cap}`);
       }
       throw e;
     }
+
+    // From here on, any thrown error must release the reserved cap slot
+    // — the user shouldn't be debited for a turn that never produces an
+    // assistant reply. (task #8)
+    try {
 
     // 3. Persist the user message.
     const { data: userRow, error: uErr } = await supabaseAdmin
@@ -525,10 +557,9 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
       throw new Error("SCRUB_BLOCKED:context");
     }
 
-    // Fail-closed on scrub-block, same as the hosted path. The on-device
-    // runner runs entirely on the user's hardware so there is no leak risk
-    // here, but consistency with the hosted path matters and the user
-    // should still see that something tripped the guard.
+    // Fail-closed on scrub-block, same as the hosted path. The outer
+    // try/catch below releases the reserved cap slot since no on-device
+    // generation will run.
     if (broker.scrubBlocked) {
       throw new Error("SCRUB_BLOCKED:context");
     }
@@ -536,6 +567,7 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
     return {
       threadId,
       userMessageId: userRow.id,
+      reservedUsageId,
       systemPrompt:
         broker.fragment ||
         "You are a helpful assistant running on the user's own device. Keep replies concise and practical.",
@@ -544,11 +576,44 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
         broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
       traitSheetVersion: broker.traitSheetVersion,
     };
+
+    } catch (e) {
+      // Release the reserved cap slot on any post-reservation failure
+      // (user-row persist, history load, broker scrub-block). The
+      // on-device runner only sees the reservedUsageId on the success
+      // path, so a throw here means it never gets a chance to release
+      // it itself. (task #8)
+      await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
+      throw e;
+    }
+  });
+
+/**
+ * Release a reserved (pending) `inference_usage` row when the on-device
+ * runner produces no reply (capability errored, user cancelled, empty
+ * stream). Mirrors the chain runner's release-on-failure path so the
+ * user is not debited for a turn that never completed. See task #8.
+ */
+export const releaseOnDeviceReservation = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: { reservedUsageId: string }) => {
+    if (!d || typeof d !== "object" || typeof d.reservedUsageId !== "string") {
+      throw new Error("reservedUsageId required");
+    }
+    return d;
+  })
+  .handler(async ({ data, context }): Promise<{ released: boolean }> => {
+    const released = await releaseReservedUsage(data.reservedUsageId, context.userId);
+    return { released };
   });
 
 export type FinalizeOnDeviceTurnInput = {
   threadId: string;
   userMessageId: string;
+  /** Reserved (pending) `inference_usage.id` returned from prepareOnDeviceTurn.
+   *  Required so finalize flips the SAME row to status='ok' (race-proof
+   *  cap accounting — task #8). */
+  reservedUsageId: string;
   assistantText: string;
   provider: "onDeviceApple" | "onDeviceAndroid" | "onDeviceWebLLM";
   model: string;
@@ -572,6 +637,7 @@ export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
     if (!d || typeof d !== "object") throw new Error("Invalid input");
     if (typeof d.threadId !== "string") throw new Error("threadId required");
     if (typeof d.userMessageId !== "string") throw new Error("userMessageId required");
+    if (typeof d.reservedUsageId !== "string") throw new Error("reservedUsageId required");
     if (typeof d.assistantText !== "string" || d.assistantText.length === 0) {
       throw new Error("assistantText required");
     }
@@ -613,6 +679,27 @@ export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
       .eq("in_reply_to_id" as never, data.userMessageId as never)
       .maybeSingle();
     if (existingAssistant) {
+      // Best-effort finalize even on the idempotency fast-path. Crash-window
+      // case: a prior call inserted the assistant row but crashed before
+      // calling finalizeReservedUsage, leaving the reservation 'pending'.
+      // The retry comes through here. Without this nudge, the pending row
+      // would linger until the 5-min sweep, after which the successful
+      // turn would be undercounted against the daily cap. The RPC is
+      // idempotent (returns false if already finalized/swept), so this is
+      // safe in the common case where the prior call DID finalize.
+      await finalizeReservedUsage({
+        usageId: data.reservedUsageId,
+        userId,
+        status: "ok",
+        providerUsed: data.provider,
+        modelUsed: data.model,
+        fallbackDepth: 0,
+        latencyMs: 0,
+        messageId: existingAssistant.id,
+      }).catch(() => {
+        // Telemetry-only — never fail the user-visible idempotent return
+        // on a finalize hiccup. The 5-min sweep is the backstop.
+      });
       return { assistantMessageId: existingAssistant.id };
     }
 
@@ -655,33 +742,30 @@ export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
       throw aErr;
     }
 
-    // Zero-cost telemetry row, linked to the assistant message via
-    // `message_id` (migration 20260515). Unique partial index on
-    // `inference_usage(message_id)` makes this idempotent: a duplicate
-    // insert on retry hits 23505 and we swallow it (one usage row per
-    // assistant message is the invariant).
-    const { error: usageErr } = await supabaseAdmin.from("inference_usage").insert({
-      user_id: userId,
-      thread_id: data.threadId,
-      badge,
-      provider_chain: [data.provider],
-      provider_used: data.provider,
-      model_used: data.model,
-      fallback_depth: 0,
-      input_tokens: null,
-      output_tokens: null,
-      cost_micro_usd: 0,
-      latency_ms: 0,
+    // Finalize the reserved (pending) usage row created by
+    // prepareOnDeviceTurn. Race-proof: the same row that booked a slot
+    // against the daily cap is now flipped to status='ok' with the
+    // assistant message id attached. Idempotent: a duplicate finalize
+    // call returns false (no pending row) and the existing-assistant
+    // fast path above already returned the winning message id, so we
+    // never write a second telemetry row.
+    const finalized = await finalizeReservedUsage({
+      usageId: data.reservedUsageId,
+      userId,
       status: "ok",
-      error_class: null,
-      message_id: aRow.id,
-    } as never);
-    if (usageErr) {
-      const code = (usageErr as { code?: string }).code;
-      if (code !== "23505") {
-        // 23505 = duplicate (idempotent retry); anything else is a real bug.
-        console.error("[finalizeOnDeviceTurn] inference_usage insert failed:", usageErr.message);
-      }
+      providerUsed: data.provider,
+      modelUsed: data.model,
+      fallbackDepth: 0,
+      latencyMs: 0,
+      messageId: aRow.id,
+    });
+    if (!finalized) {
+      // Reservation was already finalized or swept. The assistant row was
+      // still written (we got past the existing-assistant guard), so the
+      // request is well-formed; just note it for telemetry.
+      console.warn(
+        `[finalizeOnDeviceTurn] reservation ${data.reservedUsageId} no longer pending (already finalized or swept)`,
+      );
     }
 
     // Broker audit row. The `contextUsed` shape was hand-crafted on the

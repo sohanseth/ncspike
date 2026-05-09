@@ -24,6 +24,8 @@ import {
   ChainExhaustedError,
   UserAbortError,
   assertCap,
+  finalizeReservedUsage,
+  releaseReservedUsage,
   type ChainStreamEvent,
 } from "@/server/inference/chat";
 import { chainFor, type Badge } from "@/server/inference/router";
@@ -120,6 +122,7 @@ async function imageGenSseResponse(args: {
   userText: string;
   attachments: ImageGenAttachment[];
   userMessageId: string;
+  reservedUsageId: string;
   signal?: AbortSignal;
 }): Promise<Response> {
   const encoder = new TextEncoder();
@@ -172,16 +175,15 @@ async function imageGenSseResponse(args: {
             bytes: ig.bytes,
           });
         }
-        await supabaseAdmin.from("inference_usage").insert({
-          user_id: args.userId,
-          thread_id: args.threadId,
-          badge: args.badge,
-          provider_chain: [ig.provider],
-          provider_used: ig.provider,
-          model_used: ig.model,
-          fallback_depth: 0,
-          latency_ms: Date.now() - t0,
+        await finalizeReservedUsage({
+          usageId: args.reservedUsageId,
+          userId: args.userId,
           status: "ok",
+          providerUsed: ig.provider,
+          modelUsed: ig.model,
+          fallbackDepth: 0,
+          latencyMs: Date.now() - t0,
+          messageId: aRow?.id,
         });
         await supabaseAdmin
           .from("chat_threads")
@@ -200,6 +202,8 @@ async function imageGenSseResponse(args: {
           assistantImages: ig.signedUrl ? [ig.signedUrl] : [],
         });
       } catch (e) {
+        // Image-gen failed — release the reserved cap slot. (task #8)
+        await releaseReservedUsage(args.reservedUsageId, args.userId).catch(() => {});
         const msg = e instanceof Error ? e.message : "Image generation failed";
         send("error", { kind: "internal", message: msg });
       } finally {
@@ -287,14 +291,18 @@ export const Route = createFileRoute("/api/chat/stream")({
         // error event the in-stream catch would have emitted, so the
         // client's existing handler treats it identically.
         const paidTier = await getPaidTier(userId);
+        let reservedUsageId: string;
         try {
-          await assertCap({
+          const r = await assertCap({
             userId,
             threadId,
             badge: effectiveBadge,
             paidTier,
           });
+          reservedUsageId = r.usageId;
         } catch (e) {
+          // (assertCap throw is BEFORE any reservation lands, so no
+          // release needed here.)
           if (e instanceof CapExceededError) {
             const frame = sseEvent("error", {
               kind: "cap_exceeded",
@@ -330,7 +338,10 @@ export const Route = createFileRoute("/api/chat/stream")({
           })
           .select("id")
           .single();
-        if (uErr) return new Response("Failed to persist user message", { status: 500 });
+        if (uErr) {
+          await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
+          return new Response("Failed to persist user message", { status: 500 });
+        }
 
         // ─────────────────────────────────────────────────────────────
         // Image generation branch (no attachments). PRIVATE refuses —
@@ -341,6 +352,7 @@ export const Route = createFileRoute("/api/chat/stream")({
           detectImageIntent({ text: v.content, hasAttachments: false })
         ) {
           if (effectiveBadge === "private") {
+            await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
             const frame = sseEvent("error", {
               kind: "internal",
               message:
@@ -363,6 +375,7 @@ export const Route = createFileRoute("/api/chat/stream")({
             userText: v.content,
             attachments: [],
             userMessageId: userRow.id,
+            reservedUsageId,
             signal: request.signal ?? undefined,
           });
         }
@@ -380,6 +393,7 @@ export const Route = createFileRoute("/api/chat/stream")({
           // attachments bucket. Until an on-device vision adapter ships
           // (Phase 2.9), there is no compliant path here.
           if (effectiveBadge === "private") {
+            await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
             return new Response(
               "PRIVATE cannot process image attachments — no on-device vision adapter is shipped yet.",
               { status: 400 },
@@ -391,17 +405,20 @@ export const Route = createFileRoute("/api/chat/stream")({
           const persistRows: Array<{ storage_path: string; mime: string; bytes: number }> = [];
           for (const path of v.attachments) {
             if (!path.startsWith(`${userId}/`)) {
+              await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
               return new Response("Attachment path not owned by user", { status: 403 });
             }
             const dl = await supabaseAdmin.storage
               .from("chat-attachments")
               .download(path);
             if (dl.error || !dl.data) {
+              await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
               return new Response(`Attachment download failed: ${path}`, { status: 400 });
             }
             const blob = dl.data;
             const mime = blob.type || "application/octet-stream";
             if (!ALLOWED_MIMES.has(mime)) {
+              await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
               return new Response(`Unsupported attachment mime: ${mime}`, { status: 400 });
             }
             const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -492,16 +509,15 @@ export const Route = createFileRoute("/api/chat/stream")({
                       bytes: ig.bytes,
                     });
                   }
-                  await supabaseAdmin.from("inference_usage").insert({
-                    user_id: userId,
-                    thread_id: threadId,
-                    badge: effectiveBadge,
-                    provider_chain: [ig.provider],
-                    provider_used: ig.provider,
-                    model_used: ig.model,
-                    fallback_depth: 0,
-                    latency_ms: Date.now() - t0,
+                  await finalizeReservedUsage({
+                    usageId: reservedUsageId,
+                    userId,
                     status: "ok",
+                    providerUsed: ig.provider,
+                    modelUsed: ig.model,
+                    fallbackDepth: 0,
+                    latencyMs: Date.now() - t0,
+                    messageId: aRow?.id,
                   });
                   await supabaseAdmin
                     .from("chat_threads")
@@ -544,16 +560,15 @@ export const Route = createFileRoute("/api/chat/stream")({
                   } as never)
                   .select("id")
                   .single();
-                await supabaseAdmin.from("inference_usage").insert({
-                  user_id: userId,
-                  thread_id: threadId,
-                  badge: effectiveBadge,
-                  provider_chain: [result.provider],
-                  provider_used: result.provider,
-                  model_used: result.model,
-                  fallback_depth: 0,
-                  latency_ms: Date.now() - t0,
+                await finalizeReservedUsage({
+                  usageId: reservedUsageId,
+                  userId,
                   status: "ok",
+                  providerUsed: result.provider,
+                  modelUsed: result.model,
+                  fallbackDepth: 0,
+                  latencyMs: Date.now() - t0,
+                  messageId: aRow?.id,
                 });
                 await supabaseAdmin
                   .from("chat_threads")
@@ -571,6 +586,9 @@ export const Route = createFileRoute("/api/chat/stream")({
                   traitSheetVersion: null,
                 });
               } catch (e) {
+                // Vision/image-edit failed — release the reserved cap slot so
+                // the user isn't debited for a turn that produced no reply.
+                await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
                 const msg = e instanceof Error ? e.message : "Vision turn failed";
                 send("error", { kind: "internal", message: msg });
               } finally {
@@ -624,6 +642,10 @@ export const Route = createFileRoute("/api/chat/stream")({
         // behavior — the prior implementation silently fell back to the
         // default system prompt, which masked a privacy-guard event.
         if (broker.scrubBlocked) {
+          // Release the reserved cap slot — the request is being short-
+          // circuited before any provider call, so the user must not be
+          // debited. (task #8 race-proof caps invariant.)
+          await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
           const encErr = new TextEncoder();
           const errBody = new ReadableStream<Uint8Array>({
             start(controller) {
@@ -710,7 +732,15 @@ export const Route = createFileRoute("/api/chat/stream")({
                 return;
               }
               finalized = true;
-              if (assistantText && metaSeen && lastProvider) {
+              if (!assistantText || !metaSeen || !lastProvider) {
+                // Aborted before any tokens streamed — release the
+                // reserved cap slot so the user isn't debited for a
+                // turn that produced no reply. (task #8)
+                await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
+                try { controller.close(); } catch { /* already closed */ }
+                return;
+              }
+              {
                 // Architect Day-4 LOW fix: include context_used + trait_sheet_version
                 // on the aborted-message row so audit metadata isn't lost when a
                 // user disconnects mid-stream after the broker has already run.
@@ -743,21 +773,18 @@ export const Route = createFileRoute("/api/chat/stream")({
                     traitSheetVersion: broker.traitSheetVersion,
                   });
                 }
-                await supabaseAdmin
-                  .from("inference_usage")
-                  .insert({
-                    user_id: userId,
-                    thread_id: threadId,
-                    badge: effectiveBadge,
-                    provider_chain: [lastProvider],
-                    provider_used: lastProvider,
-                    model_used: lastModel || lastProvider,
-                    fallback_depth: lastFallbackDepth,
-                    input_tokens: inputTokens ?? null,
-                    output_tokens: outputTokens ?? null,
-                    latency_ms: 0,
-                    status: "user_abort",
-                  });
+                await finalizeReservedUsage({
+                  usageId: reservedUsageId,
+                  userId,
+                  status: "user_abort",
+                  providerUsed: lastProvider!,
+                  modelUsed: lastModel || lastProvider!,
+                  fallbackDepth: lastFallbackDepth,
+                  inputTokens,
+                  outputTokens,
+                  latencyMs: 0,
+                  messageId: abortRow?.id,
+                });
               }
               try { controller.close(); } catch { /* already closed */ }
             };
@@ -777,6 +804,10 @@ export const Route = createFileRoute("/api/chat/stream")({
                   // above. Skip the inner re-check so a TOCTOU race cannot
                   // throw cap_exceeded here and orphan the user row.
                   assumeCapChecked: true,
+                  // Hand the reserved (pending) usage row to the chain
+                  // runner so it finalizes the SAME row instead of
+                  // inserting a fresh one — the cap-debit invariant.
+                  reservedUsageId,
                 },
                 { signal: userAbort.signal },
               )) {

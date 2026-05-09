@@ -27,7 +27,11 @@
 import { detectOnDeviceCapability } from "./on-device-capability";
 import { streamNativeOnDevice } from "./native-on-device-llm";
 import { streamWebLLM } from "./on-device-webllm";
-import { prepareOnDeviceTurn, finalizeOnDeviceTurn } from "./chat.functions";
+import {
+  prepareOnDeviceTurn,
+  finalizeOnDeviceTurn,
+  releaseOnDeviceReservation,
+} from "./chat.functions";
 import type { ChatStreamEvent, StreamChatInput } from "./chat-stream";
 import type { OnDeviceProviderId } from "./provider-tiers";
 
@@ -158,7 +162,18 @@ export async function* streamOnDeviceChat(
   }
 
   if (errored || assistantText.length === 0) {
-    // Don't persist an empty assistant row.
+    // Don't persist an empty assistant row. Release the reserved cap slot
+    // so the user isn't debited for a turn that produced no reply (task
+    // #8 — race-proof caps invariant: reservations either finalize or
+    // release; never linger past the request that created them).
+    try {
+      await releaseOnDeviceReservation({
+        data: { reservedUsageId: prep.reservedUsageId },
+      });
+    } catch {
+      // Best-effort — the 5-min sweep in reserve_inference_slot is the
+      // backstop. Don't surface a release failure to the user.
+    }
     return;
   }
 
@@ -168,6 +183,7 @@ export async function* streamOnDeviceChat(
       data: {
         threadId: prep.threadId,
         userMessageId: prep.userMessageId,
+        reservedUsageId: prep.reservedUsageId,
         assistantText,
         provider: cap.providerId,
         model: String(modelUsed),
