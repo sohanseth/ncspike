@@ -64,6 +64,27 @@ export type DayBucket = {
   costByBadge: Record<Badge, number>;
   /** Per-badge ok-request count that day. */
   countByBadge: Record<Badge, number>;
+  /** Total on-device image turns blocked by the safety classifier that day. */
+  imageBlockedCount: number;
+  /**
+   * On-device image turns blocked by the safety classifier that day, split by
+   * `inference_usage.model_used` (the adapter id, e.g. `webgpu-sd-turbo`).
+   * `unknown` is used when the row's `model_used` is null.
+   */
+  imageBlockedByAdapter: Record<string, number>;
+};
+
+/**
+ * Aggregate "image blocked by the on-device safety classifier" telemetry for
+ * the same window the CPAUD report covers. Sourced from `inference_usage`
+ * rows with `status='error'` and `metadata->>'image_blocked' = 'true'` —
+ * Task #32 stamps the metadata; this surface just reads it.
+ */
+export type ImageBlockedSummary = {
+  /** Window total across all adapters. */
+  windowTotal: number;
+  /** Window totals per `model_used` (adapter id), `unknown` for null. */
+  byAdapter: Record<string, number>;
 };
 
 export type CpaudReport = {
@@ -82,6 +103,7 @@ export type CpaudReport = {
     ossSharePct: number;
   };
   buckets: DayBucket[];
+  imageBlocked: ImageBlockedSummary;
 };
 
 const EMPTY_BADGE_COST: Record<Badge, number> = {
@@ -149,6 +171,8 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
       ossSharePct: 0,
       costByBadge: { ...EMPTY_BADGE_COST },
       countByBadge: { ...EMPTY_BADGE_COUNT },
+      imageBlockedCount: 0,
+      imageBlockedByAdapter: {},
     });
   }
   const dauPerDay = new Map<string, Set<string>>();
@@ -168,6 +192,8 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
         ossSharePct: 0,
         costByBadge: { ...EMPTY_BADGE_COST },
         countByBadge: { ...EMPTY_BADGE_COUNT },
+        imageBlockedCount: 0,
+        imageBlockedByAdapter: {},
       };
       buckets.set(day, b);
     }
@@ -190,6 +216,62 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
     b.cpaudUsd = b.dau === 0 ? 0 : b.totalUsd / b.dau;
     const oss = ossUsdPerDay.get(day) ?? 0;
     b.ossSharePct = b.totalUsd === 0 ? 0 : (oss / b.totalUsd) * 100;
+  }
+
+  // Image-blocked telemetry. Same window, but pulls from the
+  // `metadata.image_blocked = true` rows that the on-device dispatcher
+  // stamps when the safety classifier refuses a generated image. These
+  // rows have `status='error'` so they're excluded from the cost-bucket
+  // pass above by design (`error` rows don't debit caps and don't count
+  // toward CPAUD). We aggregate them as a separate pass keyed by
+  // `model_used` (adapter id) so ops can spot which adapter is producing
+  // the most refusals.
+  type BlockedRow = {
+    model_used: string | null;
+    started_at: string;
+  };
+  const blockedRows: BlockedRow[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseAdmin
+      .from("inference_usage")
+      .select("model_used, started_at")
+      .eq("status", "error")
+      .eq("metadata->>image_blocked", "true")
+      .gte("started_at", since.toISOString())
+      .order("started_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw error;
+    const batch = (data ?? []) as BlockedRow[];
+    blockedRows.push(...batch);
+    if (batch.length < PAGE) break;
+  }
+
+  const imageBlocked: ImageBlockedSummary = {
+    windowTotal: blockedRows.length,
+    byAdapter: {},
+  };
+  for (const r of blockedRows) {
+    const adapter = r.model_used ?? "unknown";
+    imageBlocked.byAdapter[adapter] = (imageBlocked.byAdapter[adapter] ?? 0) + 1;
+    const day = r.started_at.slice(0, 10);
+    let b = buckets.get(day);
+    if (!b) {
+      b = {
+        day,
+        dau: 0,
+        totalUsd: 0,
+        cpaudUsd: 0,
+        ossSharePct: 0,
+        costByBadge: { ...EMPTY_BADGE_COST },
+        countByBadge: { ...EMPTY_BADGE_COUNT },
+        imageBlockedCount: 0,
+        imageBlockedByAdapter: {},
+      };
+      buckets.set(day, b);
+    }
+    b.imageBlockedCount += 1;
+    b.imageBlockedByAdapter[adapter] =
+      (b.imageBlockedByAdapter[adapter] ?? 0) + 1;
   }
 
   const orderedBuckets = [...buckets.values()].sort((a, b) => a.day.localeCompare(b.day));
@@ -221,6 +303,7 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
       ossSharePct: totalUsd === 0 ? 0 : (ossUsd / totalUsd) * 100,
     },
     buckets: orderedBuckets,
+    imageBlocked,
   };
 }
 

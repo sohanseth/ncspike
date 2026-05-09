@@ -233,6 +233,8 @@ function ReportBody({ report }: { report: CpaudReport }) {
         </div>
       </section>
 
+      <ImageBlockedSection report={report} />
+
       <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur">
         <h2 className="mb-3 font-display text-lg">Daily breakdown</h2>
         <div className="overflow-x-auto">
@@ -249,6 +251,12 @@ function ReportBody({ report }: { report: CpaudReport }) {
                     {b}
                   </th>
                 ))}
+                <th
+                  className="py-1 pr-3 font-mono"
+                  title="On-device image turns refused by the safety classifier"
+                >
+                  img⊘
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -279,6 +287,23 @@ function ReportBody({ report }: { report: CpaudReport }) {
                         : fmtUsd(b.costByBadge[badge])}
                     </td>
                   ))}
+                  <td
+                    className={cn(
+                      "py-1 pr-3 tabular-nums",
+                      b.imageBlockedCount === 0
+                        ? "text-muted-foreground"
+                        : "text-rose-300",
+                    )}
+                    title={
+                      b.imageBlockedCount === 0
+                        ? "no on-device images blocked"
+                        : Object.entries(b.imageBlockedByAdapter)
+                            .map(([a, n]) => `${a}: ${n}`)
+                            .join("\n")
+                    }
+                  >
+                    {b.imageBlockedCount === 0 ? "—" : b.imageBlockedCount}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -292,6 +317,63 @@ function ReportBody({ report }: { report: CpaudReport }) {
         client-side.
       </p>
     </>
+  );
+}
+
+function ImageBlockedSection({ report }: { report: CpaudReport }) {
+  const { imageBlocked, windowDays } = report;
+  const adapters = Object.entries(imageBlocked.byAdapter).sort(
+    (a, b) => b[1] - a[1],
+  );
+  return (
+    <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur">
+      <div className="mb-3 flex items-baseline justify-between">
+        <div>
+          <div className="font-mono text-xs uppercase tracking-wide text-muted-foreground">
+            On-device images blocked ({windowDays}d)
+          </div>
+          <div className="font-display text-3xl">
+            {imageBlocked.windowTotal.toLocaleString()}
+            <span className="text-base text-muted-foreground">
+              {" "}
+              turn{imageBlocked.windowTotal === 1 ? "" : "s"} refused by the
+              safety classifier
+            </span>
+          </div>
+        </div>
+      </div>
+      {adapters.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No on-device image turns have been blocked in this window.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm tabular-nums">
+            <thead className="text-left text-xs uppercase text-muted-foreground">
+              <tr>
+                <th className="py-1 pr-3 font-mono">Adapter (model_used)</th>
+                <th className="py-1 pr-3 font-mono">Blocked turns</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adapters.map(([adapter, count]) => (
+                <tr key={adapter} className="border-t border-border/50">
+                  <td className="py-1 pr-3 text-muted-foreground">{adapter}</td>
+                  <td className="py-1 pr-3">{count.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-3 text-xs text-muted-foreground">
+        Source: <code>inference_usage</code> rows with{" "}
+        <code>status = 'error'</code> and{" "}
+        <code>metadata-&gt;&gt;'image_blocked' = 'true'</code>. Blocked turns
+        don't debit caps or count toward CPAUD; this surface is just for
+        tuning the classifier threshold and spotting prompt-abuse spikes.
+      </p>
+    </section>
   );
 }
 
