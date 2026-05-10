@@ -604,6 +604,39 @@ export type Database = {
         }
         Relationships: []
       }
+      search_queries: {
+        Row: {
+          created_at: string
+          engine: string
+          id: string
+          metadata: Json
+          opened_url: string | null
+          query: string
+          result_count: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          engine?: string
+          id?: string
+          metadata?: Json
+          opened_url?: string | null
+          query: string
+          result_count?: number
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          engine?: string
+          id?: string
+          metadata?: Json
+          opened_url?: string | null
+          query?: string
+          result_count?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_endpoints: {
         Row: {
           db_url_encrypted: string | null
