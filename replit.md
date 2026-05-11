@@ -82,6 +82,9 @@ print, or commit their values.
 | `GOOGLE_OAUTH_CLIENT_ID` | Google sign-in (Supabase Auth provider) |
 | `GOOGLE_OAUTH_CLIENT_SECRET` | Same |
 | `ANTHROPIC_API_KEY` | (also) leak-suite synthetic-user judge in some tests |
+| `IMAGE_BLOCKED_ALERT_THRESHOLDS` | Task #50 — per-adapter rolling-24h refusal thresholds, e.g. `webgpu-sd-turbo=20,coreml-sd=10`. Adapters not listed never alert unless `IMAGE_BLOCKED_ALERT_DEFAULT_THRESHOLD` is set. |
+| `IMAGE_BLOCKED_ALERT_DEFAULT_THRESHOLD` | Optional fallback threshold for unlisted adapters in the same alert. |
+| `OPS_ALERT_WEBHOOK_URL` | Slack-compatible incoming webhook for the image-refusal spike alert. If unset, the cron computes alerts and logs them but performs no network call. |
 
 The Genius badge is currently rendered as locked for all users
 (`FREE_TIER_CAPS.genius = 0` in `src/server/inference/router.ts`);

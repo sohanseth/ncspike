@@ -17,6 +17,7 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runResearchBatch } from "@/server/research-queue";
 import { runTraitExtractionAllUsers } from "@/server/trait-extraction";
+import { runImageBlockedAlertCheck } from "@/server/cpaud-alerts";
 
 export type CronSummary = {
   users: number;
@@ -131,6 +132,19 @@ export async function runResearchBatchAllUsers(
   }
 
   await sweepRetention();
+
+  // Task #50 — push alert when on-device image refusals spike. Best-effort:
+  // never throws here, never blocks the cron summary.
+  try {
+    const r = await runImageBlockedAlertCheck();
+    if (r.alerts.length > 0) {
+      console.log(
+        `[research-cron] image-blocked alert fired for ${r.alerts.length} adapter(s); webhook attempted=${r.webhookAttempted} delivered=${r.webhookDelivered}`,
+      );
+    }
+  } catch (e) {
+    console.warn("[research-cron] image-blocked alert check threw:", e);
+  }
 
   console.log(
     `[research-cron] done: users=${summary.users} attempted=${summary.attempted} ok=${summary.succeeded} fail=${summary.failed} errs=${summary.errors.length}`,
