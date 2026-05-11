@@ -900,6 +900,22 @@ export type FinalizeOnDeviceImageGenTurnResult = {
 // ownership is verified by hand because service-role bypasses RLS.
 // ──────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Task #51 — closed-set of structured reason categories the on-device
+ * dispatcher can attach to a blocked image turn. Mirrors
+ * `ImageSafetyReason` in `imagegen-safety.ts`; duplicated here so the
+ * server-fn input validator stays self-contained (no client-only
+ * imports leaking into the server bundle). Adding a new category is a
+ * deliberate change in BOTH files.
+ */
+export const IMAGE_BLOCKED_REASONS = [
+  "nsfw",
+  "classifier_unavailable",
+  "invalid_image",
+  "other",
+] as const;
+export type ImageBlockedReason = (typeof IMAGE_BLOCKED_REASONS)[number];
+
 export type FinalizeOnDeviceImageGenBlockedTurnInput = {
   threadId: string;
   userMessageId: string;
@@ -909,6 +925,12 @@ export type FinalizeOnDeviceImageGenBlockedTurnInput = {
    *  adapter is producing the most blocked verdicts. Validated against
    *  the same allow-list as the success path. */
   adapter: string;
+  /** Task #51: the structured classifier verdict category that caused
+   *  the block (`nsfw`, `classifier_unavailable`, `invalid_image`,
+   *  `other`). Persisted to `inference_usage.metadata.image_blocked_reason`
+   *  so the CPAUD admin surface can group refusals by what triggered
+   *  them, not just by adapter. */
+  reason: ImageBlockedReason;
   contextUsed: { categories: string[]; trait_paths: string[] } | null;
   traitSheetVersion: number | null;
 };
@@ -942,6 +964,9 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
       }
       if (!IMAGE_GEN_ADAPTERS.has(d.adapter)) {
         throw new Error(`Unknown adapter "${d.adapter}"`);
+      }
+      if (!IMAGE_BLOCKED_REASONS.includes(d.reason as ImageBlockedReason)) {
+        throw new Error(`Unknown reason "${d.reason}"`);
       }
       return d;
     },
@@ -997,7 +1022,12 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
         }).catch(() => {});
         await supabaseAdmin
           .from("inference_usage")
-          .update({ metadata: { image_blocked: true } } as never)
+          .update({
+            metadata: {
+              image_blocked: true,
+              image_blocked_reason: data.reason,
+            },
+          } as never)
           .eq("id", data.reservedUsageId)
           .eq("user_id", userId);
         return { assistantMessageId: existingAssistant.id };
@@ -1072,7 +1102,18 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
       // explicit user_id filter is the authorization check.
       const { error: metaErr } = await supabaseAdmin
         .from("inference_usage")
-        .update({ metadata: { image_blocked: true } } as never)
+        .update({
+          metadata: {
+            image_blocked: true,
+            // Task #51: structured verdict category — `nsfw`,
+            // `classifier_unavailable`, `invalid_image`, or `other`.
+            // Lets the CPAUD admin surface group blocked turns by
+            // reason in addition to adapter so ops can tell whether
+            // refusals are coming from the NSFW gate vs structural
+            // checks vs a degraded classifier.
+            image_blocked_reason: data.reason,
+          },
+        } as never)
         .eq("id", data.reservedUsageId)
         .eq("user_id", userId);
       if (metaErr) {

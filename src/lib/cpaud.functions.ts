@@ -72,6 +72,15 @@ export type DayBucket = {
    * `unknown` is used when the row's `model_used` is null.
    */
   imageBlockedByAdapter: Record<string, number>;
+  /**
+   * Task #51 — same blocked turns split by the structured verdict
+   * category written to `inference_usage.metadata.image_blocked_reason`
+   * by the on-device dispatcher (e.g. `nsfw`,
+   * `classifier_unavailable`, `invalid_image`, `other`). Rows from
+   * before the reason was being recorded fall under `unknown` so the
+   * historical totals still reconcile with `imageBlockedCount`.
+   */
+  imageBlockedByReason: Record<string, number>;
 };
 
 /**
@@ -85,6 +94,13 @@ export type ImageBlockedSummary = {
   windowTotal: number;
   /** Window totals per `model_used` (adapter id), `unknown` for null. */
   byAdapter: Record<string, number>;
+  /**
+   * Task #51 — window totals per structured verdict category from
+   * `inference_usage.metadata.image_blocked_reason`. Rows that pre-date
+   * the reason being recorded count under `unknown`, so this map's
+   * values always sum to `windowTotal`.
+   */
+  byReason: Record<string, number>;
 };
 
 export type CpaudReport = {
@@ -173,6 +189,7 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
       countByBadge: { ...EMPTY_BADGE_COUNT },
       imageBlockedCount: 0,
       imageBlockedByAdapter: {},
+      imageBlockedByReason: {},
     });
   }
   const dauPerDay = new Map<string, Set<string>>();
@@ -194,6 +211,7 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
         countByBadge: { ...EMPTY_BADGE_COUNT },
         imageBlockedCount: 0,
         imageBlockedByAdapter: {},
+        imageBlockedByReason: {},
       };
       buckets.set(day, b);
     }
@@ -229,19 +247,32 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
   type BlockedRow = {
     model_used: string | null;
     started_at: string;
+    /**
+     * The full metadata jsonb is selected (not just `metadata->>'image_blocked_reason'`)
+     * because PostgREST's nested-key extraction syntax conflicts with the
+     * `metadata->>image_blocked = 'true'` filter on the same column when both
+     * appear in `select`. Pulling the column whole is one extra string per
+     * row and lets us pluck `image_blocked_reason` in JS — Task #51 needs the
+     * historical-row fallback (`unknown` for rows missing the key) anyway.
+     */
+    metadata: { image_blocked_reason?: string | null } | null;
   };
   const blockedRows: BlockedRow[] = [];
   for (let from = 0; ; from += PAGE) {
+    // `metadata` is a runtime jsonb column on `inference_usage` (added in
+    // 20260517000200_phase29b_inference_usage_metadata.sql) but isn't yet
+    // surfaced in the generated TS types — cast through `unknown` so this
+    // file isn't tied to a types regen for a one-column read.
     const { data, error } = await supabaseAdmin
       .from("inference_usage")
-      .select("model_used, started_at")
+      .select("model_used, started_at, metadata" as never)
       .eq("status", "error")
       .eq("metadata->>image_blocked", "true")
       .gte("started_at", since.toISOString())
       .order("started_at", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
-    const batch = (data ?? []) as BlockedRow[];
+    const batch = ((data ?? []) as unknown) as BlockedRow[];
     blockedRows.push(...batch);
     if (batch.length < PAGE) break;
   }
@@ -249,10 +280,16 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
   const imageBlocked: ImageBlockedSummary = {
     windowTotal: blockedRows.length,
     byAdapter: {},
+    byReason: {},
   };
   for (const r of blockedRows) {
     const adapter = r.model_used ?? "unknown";
+    // Task #51: rows that pre-date the dispatcher writing
+    // `image_blocked_reason` fall under `unknown` so the by-reason
+    // totals always reconcile with `windowTotal`.
+    const reason = r.metadata?.image_blocked_reason ?? "unknown";
     imageBlocked.byAdapter[adapter] = (imageBlocked.byAdapter[adapter] ?? 0) + 1;
+    imageBlocked.byReason[reason] = (imageBlocked.byReason[reason] ?? 0) + 1;
     const day = r.started_at.slice(0, 10);
     let b = buckets.get(day);
     if (!b) {
@@ -266,12 +303,15 @@ export async function buildCpaudReportFor(callerUserId: string): Promise<CpaudRe
         countByBadge: { ...EMPTY_BADGE_COUNT },
         imageBlockedCount: 0,
         imageBlockedByAdapter: {},
+        imageBlockedByReason: {},
       };
       buckets.set(day, b);
     }
     b.imageBlockedCount += 1;
     b.imageBlockedByAdapter[adapter] =
       (b.imageBlockedByAdapter[adapter] ?? 0) + 1;
+    b.imageBlockedByReason[reason] =
+      (b.imageBlockedByReason[reason] ?? 0) + 1;
   }
 
   const orderedBuckets = [...buckets.values()].sort((a, b) => a.day.localeCompare(b.day));

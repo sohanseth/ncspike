@@ -166,6 +166,7 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
         userMessageId: "msg-1",
         reservedUsageId: "usage-1",
         adapter: "webgpu-sd-turbo",
+        reason: "nsfw",
         contextUsed: null,
         traitSheetVersion: null,
       },
@@ -198,7 +199,13 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
     );
     expect(usageUpdates).toHaveLength(1);
     const meta = (usageUpdates[0].payload as { metadata: unknown }).metadata;
-    expect(meta).toEqual({ image_blocked: true });
+    // Task #51: the dispatcher now also stamps the structured verdict
+    // category so the CPAUD admin surface can group blocked turns by
+    // reason in addition to adapter.
+    expect(meta).toEqual({
+      image_blocked: true,
+      image_blocked_reason: "nsfw",
+    });
 
     // The reserved usage row was finalized to status='error' with
     // error_class='image_blocked'. `error` rows are excluded from the
@@ -228,6 +235,7 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
           userMessageId: "msg-99",
           reservedUsageId: "usage-1",
           adapter: "webgpu-sd-turbo",
+          reason: "nsfw",
           contextUsed: null,
           traitSheetVersion: null,
         },
@@ -254,6 +262,7 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
           userMessageId: "msg-1",
           reservedUsageId: "usage-1",
           adapter: "hosted-dalle",
+          reason: "nsfw",
           contextUsed: null,
           traitSheetVersion: null,
         },

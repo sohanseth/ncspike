@@ -272,6 +272,12 @@ export async function* streamOnDevicePrivateImage(
           userMessageId: prep.userMessageId,
           reservedUsageId: prep.reservedUsageId,
           adapter: adapterId,
+          // Task #51: forward the structured verdict category so the
+          // CPAUD admin surface can group blocked turns by reason
+          // (nsfw vs classifier_unavailable vs invalid_image vs other),
+          // not just by adapter. Persisted on
+          // `inference_usage.metadata.image_blocked_reason`.
+          reason: verdict.reasonCategory,
           contextUsed: prep.contextUsed,
           traitSheetVersion: prep.traitSheetVersion,
         },

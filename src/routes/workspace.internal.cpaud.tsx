@@ -325,6 +325,14 @@ function ImageBlockedSection({ report }: { report: CpaudReport }) {
   const adapters = Object.entries(imageBlocked.byAdapter).sort(
     (a, b) => b[1] - a[1],
   );
+  // Task #51: classifier-verdict breakdown alongside the per-adapter
+  // breakdown so ops can see whether refusals are coming from the NSFW
+  // gate, the structural pre-checks, or a degraded classifier — which
+  // is what's actually needed to tune the threshold. Rows from before
+  // the dispatcher started writing the reason fall under `unknown`.
+  const reasons = Object.entries(imageBlocked.byReason).sort(
+    (a, b) => b[1] - a[1],
+  );
   return (
     <section className="rounded-2xl border border-border bg-card/40 p-5 backdrop-blur">
       <div className="mb-3 flex items-baseline justify-between">
@@ -342,36 +350,69 @@ function ImageBlockedSection({ report }: { report: CpaudReport }) {
           </div>
         </div>
       </div>
-      {adapters.length === 0 ? (
+      {imageBlocked.windowTotal === 0 ? (
         <p className="text-sm text-muted-foreground">
           No on-device image turns have been blocked in this window.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm tabular-nums">
-            <thead className="text-left text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="py-1 pr-3 font-mono">Adapter (model_used)</th>
-                <th className="py-1 pr-3 font-mono">Blocked turns</th>
-              </tr>
-            </thead>
-            <tbody>
-              {adapters.map(([adapter, count]) => (
-                <tr key={adapter} className="border-t border-border/50">
-                  <td className="py-1 pr-3 text-muted-foreground">{adapter}</td>
-                  <td className="py-1 pr-3">{count.toLocaleString()}</td>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="overflow-x-auto">
+            <h3 className="mb-2 font-mono text-xs uppercase tracking-wide text-muted-foreground">
+              By verdict reason
+            </h3>
+            <table className="w-full text-sm tabular-nums">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-mono">Reason</th>
+                  <th className="py-1 pr-3 font-mono">Blocked turns</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {reasons.map(([reason, count]) => (
+                  <tr key={reason} className="border-t border-border/50">
+                    <td className="py-1 pr-3 text-muted-foreground">
+                      {reason}
+                    </td>
+                    <td className="py-1 pr-3">{count.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="overflow-x-auto">
+            <h3 className="mb-2 font-mono text-xs uppercase tracking-wide text-muted-foreground">
+              By adapter
+            </h3>
+            <table className="w-full text-sm tabular-nums">
+              <thead className="text-left text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="py-1 pr-3 font-mono">Adapter (model_used)</th>
+                  <th className="py-1 pr-3 font-mono">Blocked turns</th>
+                </tr>
+              </thead>
+              <tbody>
+                {adapters.map(([adapter, count]) => (
+                  <tr key={adapter} className="border-t border-border/50">
+                    <td className="py-1 pr-3 text-muted-foreground">
+                      {adapter}
+                    </td>
+                    <td className="py-1 pr-3">{count.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
       <p className="mt-3 text-xs text-muted-foreground">
         Source: <code>inference_usage</code> rows with{" "}
         <code>status = 'error'</code> and{" "}
-        <code>metadata-&gt;&gt;'image_blocked' = 'true'</code>. Blocked turns
-        don't debit caps or count toward CPAUD; this surface is just for
-        tuning the classifier threshold and spotting prompt-abuse spikes.
+        <code>metadata-&gt;&gt;'image_blocked' = 'true'</code>. Verdict
+        reason comes from <code>metadata-&gt;&gt;'image_blocked_reason'</code>;
+        rows from before that field was being recorded count as{" "}
+        <code>unknown</code>. Blocked turns don't debit caps or count toward
+        CPAUD; this surface is just for tuning the classifier threshold and
+        spotting prompt-abuse spikes.
       </p>
     </section>
   );

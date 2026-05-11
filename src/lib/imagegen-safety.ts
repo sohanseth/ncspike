@@ -38,9 +38,37 @@
  * and allow verdicts deterministically without downloading model
  * weights at test time.
  */
+/**
+ * Structured reason category for a deny verdict. Persisted by the
+ * dispatcher onto `inference_usage.metadata.image_blocked_reason`
+ * (Task #51) so the CPAUD admin surface can group blocked turns by
+ * what triggered the refusal — not just by which adapter ran.
+ *
+ *   - `nsfw`                  — the on-device NSFW classifier flagged
+ *                               the image with confidence ≥ threshold.
+ *   - `classifier_unavailable`— the classifier model failed to load or
+ *                               threw mid-inference (fail-CLOSED — we
+ *                               still deny so we never persist an
+ *                               unchecked image).
+ *   - `invalid_image`         — structural pre-checks rejected the
+ *                               bytes (too small, too large, mime not
+ *                               in the allow-list).
+ *   - `other`                 — any unexpected throw the inner branches
+ *                               missed (belt-and-braces fail-closed).
+ *
+ * The list is closed for now — adding a category (e.g. when the
+ * prompt-injection gate ships) is a deliberate change, not a free
+ * string, so the CPAUD aggregation can stay typed.
+ */
+export type ImageSafetyReason =
+  | "nsfw"
+  | "classifier_unavailable"
+  | "invalid_image"
+  | "other";
+
 export type ImageSafetyVerdict =
   | { allow: true }
-  | { allow: false; reason: string };
+  | { allow: false; reason: string; reasonCategory: ImageSafetyReason };
 
 const MIN_BYTES = 64;
 const MAX_BYTES = 25 * 1024 * 1024; // 25 MB hard cap on stored generated images
@@ -123,18 +151,21 @@ export async function classifyGeneratedImage(
       return {
         allow: false,
         reason: "Generated image is too small to be a valid image.",
+        reasonCategory: "invalid_image",
       };
     }
     if (bytes.length > MAX_BYTES) {
       return {
         allow: false,
         reason: "Generated image exceeds the 25 MB safety cap.",
+        reasonCategory: "invalid_image",
       };
     }
     if (!ALLOWED_MIMES.has(mime)) {
       return {
         allow: false,
         reason: `Generated image mime "${mime}" is not in the allow-list.`,
+        reasonCategory: "invalid_image",
       };
     }
 
@@ -143,7 +174,11 @@ export async function classifyGeneratedImage(
     try {
       classifier = await getClassifier();
     } catch {
-      return { allow: false, reason: NSFW_TOAST };
+      return {
+        allow: false,
+        reason: NSFW_TOAST,
+        reasonCategory: "classifier_unavailable",
+      };
     }
 
     // ─── 3. Run classifier (fail-closed on inference failure) ────────────
@@ -151,11 +186,15 @@ export async function classifyGeneratedImage(
     try {
       result = await classifier(bytes, mime);
     } catch {
-      return { allow: false, reason: NSFW_TOAST };
+      return {
+        allow: false,
+        reason: NSFW_TOAST,
+        reasonCategory: "classifier_unavailable",
+      };
     }
 
     if (result.nsfw) {
-      return { allow: false, reason: NSFW_TOAST };
+      return { allow: false, reason: NSFW_TOAST, reasonCategory: "nsfw" };
     }
     return { allow: true };
   } catch (err) {
@@ -166,6 +205,7 @@ export async function classifyGeneratedImage(
         err instanceof Error
           ? `Image safety check failed: ${err.message}`
           : "Image safety check failed.",
+      reasonCategory: "other",
     };
   }
 }
