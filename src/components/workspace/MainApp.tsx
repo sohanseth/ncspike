@@ -9,8 +9,12 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
+<<<<<<< HEAD
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip,
   ShieldAlert,
+=======
+  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, ListTodo,
+>>>>>>> 8342c40512d817bffac2c3d643ebb0f9bf8ba56e
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
@@ -36,6 +40,7 @@ import { readPreferLocalAudio } from "@/lib/voice-preferences";
 import { supabase } from "@/integrations/supabase/client";
 import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
+import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
@@ -375,7 +380,54 @@ function DomainTiles({ onDomain }: { onDomain:(id:DomainId)=>void }) {
   );
 }
 
+// ─── Action pill (header buttons: Search / Add tasks / Chat / Compose / You) ─
+//
+// Glassmorphic pill with a per-button accent colour applied to the icon and
+// glow halo. Active state lights the whole pill with the accent. Designed so
+// the row of header actions feels like a connected set rather than five
+// neutral grey buttons.
+
+function ActionPill({
+  icon, label, accent, active, onClick, title,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  accent: string;
+  active?: boolean;
+  onClick: () => void;
+  title?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={title ?? label}
+      aria-label={title ?? label}
+      className={`group relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 hover:-translate-y-px ${
+        active
+          ? "text-foreground/95 border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.4)]"
+          : "border-white/[0.08] text-foreground/70 hover:text-foreground hover:border-white/20"
+      }`}
+      style={{
+        fontFamily: "'DM Sans',sans-serif",
+        background: active
+          ? `linear-gradient(135deg, ${accent}33, ${accent}10)`
+          : "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+        boxShadow: active ? `0 0 18px ${accent}55, inset 0 0 0 1px ${accent}55` : undefined,
+      }}
+    >
+      <span
+        className="inline-flex items-center justify-center transition-transform group-hover:scale-110"
+        style={{ color: accent, filter: `drop-shadow(0 0 6px ${accent}99)` }}
+      >
+        {icon}
+      </span>
+      <span className="hidden sm:block">{label}</span>
+    </button>
+  );
+}
+
 // ─── Top bar ──────────────────────────────────────────────────────────────────
+
 
 function TopBar({
   mapView, setMapView, tool, setTool, onDomain, onVoice, onExplore, onTest,
@@ -400,60 +452,66 @@ function TopBar({
         <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>NeuralConnexions</span>
       </button>
 
-      <div className="w-px h-6 bg-border mx-1 hidden md:block"/>
+      {/* Domain tiles moved out of the header — they now live under the
+          greeting on the home canvas, where they have room to breathe. */}
 
-      {/* Domain tiles */}
-      <div className="hidden md:flex">
-        <DomainTiles onDomain={onDomain}/>
-      </div>
+      {/* Primary actions — Search, Voice, Chat, Compose */}
+      <div className="ml-auto flex items-center gap-1.5">
+        {/* Search — opens Google in a new tab */}
+        <ActionPill
+          icon={<Search size={14}/>}
+          label="Search"
+          accent="#38bdf8"
+          title="Search Google"
+          onClick={() => {
+            const q = window.prompt("Search Google for:")?.trim();
+            if (!q) return;
+            const a = document.createElement("a");
+            a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+            a.target = "_blank"; a.rel = "noopener noreferrer";
+            document.body.appendChild(a); a.click(); a.remove();
+          }}
+        />
 
-      {/* Primary actions — Voice, Chat, Compose */}
-      <div className="ml-auto flex items-center gap-2">
-        {/* Voice */}
-        <button onClick={onVoice}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <Mic size={13}/>
-          <span className="hidden sm:block">Voice</span>
-        </button>
+        {/* Add task — manual entry, auto-categorised into a bento box */}
+        <AddTaskButton/>
 
-        {/* Chat */}
-        <button onClick={()=>setTool(tool==="chat"?null:"chat")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="chat"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <MessageCircle size={13}/>
-          <span className="hidden sm:block">Chat</span>
-        </button>
+        {/* Chat / Voice — both icons shown so it's obvious the panel handles
+            text and voice. The panel itself has a text/voice toggle. */}
+        <ActionPill
+          icon={
+            <span className="inline-flex items-center gap-1">
+              <MessageCircle size={13}/>
+              <span className="opacity-40 text-[10px] leading-none">/</span>
+              <Mic size={12}/>
+            </span>
+          }
+          label="Chat"
+          accent="#9b6dfa"
+          active={tool==="chat"}
+          title="Chat or talk"
+          onClick={()=>setTool(tool==="chat"?null:"chat")}
+        />
 
         {/* Compose */}
-        <button onClick={()=>setTool(tool==="compose"?null:"compose")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            tool==="compose"
-              ? "bg-primary/15 text-primary border-primary/30 shadow-[0_0_16px_rgba(155,109,250,0.2)]"
-              : "border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <PenLine size={13}/>
-          <span className="hidden sm:block">Compose</span>
-        </button>
+        <ActionPill
+          icon={<PenLine size={14}/>}
+          label="Compose"
+          accent="#fb7185"
+          active={tool==="compose"}
+          onClick={()=>setTool(tool==="compose"?null:"compose")}
+        />
 
         <div className="w-px h-5 bg-border mx-1"/>
 
         {/* You */}
-        <button onClick={onExplore}
-          className={`relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 ${
-            ["mindmap","memory","signals"].includes(mapView??"")
-              ? "bg-white/[0.08] text-foreground/90 border-white/[0.15]"
-              : "border-white/[0.08] text-muted-foreground hover:text-foreground hover:border-white/15 hover:bg-white/[0.04]"
-          }`}
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
-          <User size={13}/>
-          <span className="hidden sm:block">You</span>
-        </button>
+        <ActionPill
+          icon={<User size={14}/>}
+          label="You"
+          accent="#34d399"
+          active={["mindmap","memory","signals"].includes(mapView??"")}
+          onClick={onExplore}
+        />
 
         {/* Briefings — overnight research queue */}
         <BriefingsButton/>
@@ -1804,8 +1862,19 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
   const { items: inboxRaw, error: inboxErr } = useInbox();
   const inbox = useMemo(() => (inboxRaw ?? []).filter(i => !doneIds.has(i.id)), [inboxRaw, doneIds]);
 
+  // Manual tasks the user added via the header "Add task" button. Stored in
+  // localStorage; merged here so they appear in the matching bento box
+  // alongside live Gmail items.
+  const { tasks: manualTasks } = useManualTasks();
+  const activeManual = useMemo(() => manualTasks.filter(t => !t.done), [manualTasks]);
+
   const liveByDomain = useMemo(() => {
     const groups: Partial<Record<DomainId, Array<{ id:string; text:string; meta:string; urgent:boolean; progress:number }>>> = {};
+    // Manual tasks first so they appear at the top of each domain.
+    activeManual.forEach(t => {
+      const arr = groups[t.domain] ?? (groups[t.domain] = []);
+      arr.push({ id: t.id, text: t.text, meta: "Added by you", urgent: t.urgent, progress: 0 });
+    });
     (inbox ?? []).filter(i => i.category !== "ignore" && i.category !== "needs_review").forEach(i => {
       const arr = groups[i.domain] ?? (groups[i.domain] = []);
       arr.push({
@@ -1817,7 +1886,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       });
     });
     return groups;
-  }, [inbox]);
+  }, [inbox, activeManual]);
 
   const urgencyByDomain = useMemo(() => {
     const out: Partial<Record<DomainId, UrgencyCounts>> = {};
@@ -1828,8 +1897,14 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       else if (i.category === "today") u.today += 1;
       else if (i.category === "proactive") u.proactive += 1;
     });
+    // Manual tasks bump urgent vs proactive depending on the urgency hint.
+    activeManual.forEach(t => {
+      const u = out[t.domain] ?? (out[t.domain] = { urgent: 0, today: 0, proactive: 0 });
+      if (t.urgent) u.urgent += 1;
+      else u.proactive += 1;
+    });
     return out;
-  }, [inbox]);
+  }, [inbox, activeManual]);
 
   const otherList = useMemo(
     () => (inbox ?? []).filter(i => i.category === "needs_review" || i.category === "ignore"),
@@ -1898,6 +1973,12 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
           </span>
         )}
         <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
+      </div>
+
+      {/* Domain tiles — moved here from the header so they sit right under the
+          greeting, giving the bento entry-points more visual weight. */}
+      <div className="flex-shrink-0 flex justify-center md:justify-start px-1">
+        <DomainTiles onDomain={onDomain}/>
       </div>
 
       {inboxErr && (
@@ -2049,6 +2130,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
   const Icon = domain?.Icon;
 
   const { items: inbox, error: inboxErr } = useInbox();
+  const { tasks: manualTasks, toggleDone: toggleManualDone, removeTask: removeManualTask } = useManualTasks();
   const { status, refresh } = useVoiceDraftsStatus();
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
@@ -2067,6 +2149,11 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
     if (isOther) return inbox.filter(i => i.category === "needs_review" || i.category === "ignore");
     return inbox.filter(i => i.domain === domainId && i.category !== "ignore" && i.category !== "needs_review");
   }, [inbox, isOther, domainId]);
+
+  const myManualTasks = useMemo(
+    () => (isOther ? [] : manualTasks.filter(t => t.domain === domainId)),
+    [manualTasks, isOther, domainId]
+  );
 
   const visible = items.filter(i => !doneIds.has(i.id));
   const fallbackC = C.professional;
@@ -2097,7 +2184,7 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
             {isOther ? "Other" : domain!.label}
           </p>
           <p className="text-[10px] font-mono text-muted-foreground/50">
-            {visible.length} {visible.length === 1 ? "item" : "items"}
+            {visible.length + myManualTasks.length} {visible.length + myManualTasks.length === 1 ? "item" : "items"}
           </p>
         </div>
       </div>
@@ -2113,7 +2200,40 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
           {!inbox && !inboxErr && (
             <div className="rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading…</div>
           )}
-          {inbox && visible.length === 0 && (
+          {myManualTasks.length > 0 && (
+            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 flex flex-col gap-1">
+              <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
+                <Mono className="!text-foreground/55">Your tasks</Mono>
+                <span className="text-[10px] font-mono text-muted-foreground/40">{myManualTasks.length}</span>
+              </div>
+              {myManualTasks.map(t => (
+                <div key={t.id} className="group flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition-colors">
+                  <button
+                    onClick={() => toggleManualDone(t.id)}
+                    className="w-4 h-4 rounded-md border border-white/20 flex items-center justify-center flex-shrink-0 hover:border-white/40 transition-colors"
+                    style={t.done ? { background: cardC.icon, borderColor: cardC.icon } : undefined}
+                    aria-label={t.done ? "Mark not done" : "Mark done"}
+                  >
+                    {t.done && <Check size={10} className="text-background"/>}
+                  </button>
+                  <span className={`flex-1 text-[12.5px] leading-snug ${t.done ? "line-through text-muted-foreground/40" : "text-foreground/85"}`} style={{fontFamily:"'DM Sans',sans-serif"}}>
+                    {t.text}
+                  </span>
+                  {t.urgent && !t.done && (
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-300/90">urgent</span>
+                  )}
+                  <button
+                    onClick={() => removeManualTask(t.id)}
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-rose-300 transition-all"
+                    aria-label="Remove"
+                  >
+                    <X size={12}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          {inbox && visible.length === 0 && myManualTasks.length === 0 && (
             <div className="rounded-2xl border border-white/[0.06] px-4 py-6 flex flex-col items-center gap-2 text-center">
               <Check size={16} className="text-emerald-400"/>
               <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>
@@ -3860,6 +3980,405 @@ export function MainApp() {
 
       <div className="pointer-events-none fixed top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"/>
     </div>
+  );
+}
+
+// ─── AddTaskButton ────────────────────────────────────────────────────────────
+// Header button + lightweight modal for entering a free-text task. The task
+// text is run through the keyword classifier in `manual-tasks.ts`, persisted
+// to localStorage, and shows up in the matching bento box on the home canvas.
+
+function AddTaskButton() {
+  const { addTasks } = useManualTasks();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [voiceLang, setVoiceLang] = useState<string>(() => {
+    if (typeof window === "undefined") return "en-US";
+    return localStorage.getItem("voice-lang") || (navigator.language || "en-US");
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") localStorage.setItem("voice-lang", voiceLang);
+  }, [voiceLang]);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // SpeechRecognition is a browser API not in TS lib types; cast loosely.
+  const recogRef = useRef<any>(null);
+
+  // Web Speech API support — Chrome/Edge/Safari expose it on window under
+  // different prefixes. We feature-detect once on mount.
+  const speechSupported =
+    typeof window !== "undefined" &&
+    !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+
+  const previews = useMemo(() => {
+    return text
+      .split(/\r?\n/)
+      .map((raw) => raw.replace(/^\s*[-*•·–—]\s+/, "").replace(/^\s*\d+[.)]\s+/, "").trim())
+      .filter(Boolean)
+      .map((line) => ({ line, ...classifyTask(line) }));
+  }, [text]);
+
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => inputRef.current?.focus(), 30);
+      return () => clearTimeout(t);
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  // Stop recognition when the modal closes.
+  useEffect(() => {
+    if (!open && recogRef.current) {
+      try { recogRef.current.stop(); } catch { /* noop */ }
+      recogRef.current = null;
+      setListening(false);
+    }
+  }, [open]);
+
+  const startListening = () => {
+    if (!speechSupported) {
+      setVoiceError("Voice input isn't supported in this browser. Try Chrome or Safari.");
+      return;
+    }
+    setVoiceError(null);
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recog = new Ctor();
+    recog.continuous = true;       // keep listening across pauses
+    recog.interimResults = true;   // show partial transcripts as they arrive
+    recog.lang = voiceLang || navigator.language || "en-US";
+    // Some engines support alternative results — request a few so accented
+    // speech has more chances to match the right word.
+    try { recog.maxAlternatives = 3; } catch { /* noop */ }
+
+    // Track the text we had when dictation started so we can append cleanly
+    // and keep what the user already typed.
+    const baseText = text.endsWith("\n") || text === "" ? text : text + "\n";
+    // Buffer of completed phrases that share the *current* line. We prefer
+    // sentence boundaries over raw pauses, so a mid-thought pause like
+    // "pick up tickets from … ballet at five" stays on one line.
+    const lines: string[] = [""]; // lines[lines.length-1] is the active line
+    let silenceTimer: ReturnType<typeof setTimeout> | null = null;
+    const SILENCE_MS = 1600;
+    const CONTINUATION_WORDS = new Set([
+      "a", "an", "the", "and", "or", "but", "so", "because", "if", "then",
+      "than", "that", "which", "who", "whom", "whose", "when", "while", "until",
+      "to", "for", "from", "of", "in", "on", "at", "by", "with", "about", "into",
+      "over", "under", "after", "before", "between", "through", "during", "without",
+      "within", "around", "near", "as", "is", "are", "was", "were", "be", "been",
+      "being", "have", "has", "had", "do", "does", "did", "can", "could", "should",
+      "would", "will", "just", "my", "your", "our", "their", "his", "her", "its",
+      "this", "these", "those",
+    ]);
+    const TASK_ACTION_WORDS = new Set([
+      "add", "ask", "book", "bring", "buy", "call", "check", "clean", "confirm",
+      "drop", "draft", "email", "finish", "fix", "follow", "get", "go", "grab",
+      "make", "message", "order", "pack", "pay", "pick", "plan", "prepare", "reply",
+      "schedule", "send", "shop", "submit", "take", "text", "update", "visit", "watch",
+      "write",
+    ]);
+    const NON_COMMAND_STARTERS = new Set([
+      "i", "i'm", "im", "ive", "i've", "we", "we're", "were", "you", "you're",
+      "he", "she", "they", "it", "there",
+    ]);
+
+    const render = (interim = "") => {
+      const joined = lines.join("\n").replace(/\s+$/g, "");
+      const tail = interim ? (joined ? " " : "") + interim : "";
+      setText(baseText + joined + tail);
+    };
+
+    const breakLine = () => {
+      if (lines[lines.length - 1].trim()) lines.push("");
+    };
+
+    const shouldBreakOnSilence = (line: string) => {
+      const trimmed = line.trim();
+      if (!trimmed) return false;
+      if (/[.!?]$/.test(trimmed)) return true;
+
+      const words = trimmed.split(/\s+/);
+      const firstWord = words[0]?.replace(/[^\p{L}\p{N}:']/gu, "").toLowerCase();
+      const lastWord = words[words.length - 1]?.replace(/[^\p{L}\p{N}:']/gu, "").toLowerCase();
+      if (!lastWord) return false;
+      if (CONTINUATION_WORDS.has(lastWord)) return false;
+
+      const tail = words.slice(-3).join(" ").toLowerCase();
+      if (/\b(at|by|before|after)\s+\d/.test(tail)) return true;
+      if (/\b(am|pm|tomorrow|today|tonight)\b/.test(tail)) return true;
+      if (
+        words.length >= 3 &&
+        words.length <= 5 &&
+        firstWord &&
+        TASK_ACTION_WORDS.has(firstWord) &&
+        !NON_COMMAND_STARTERS.has(firstWord)
+      ) {
+        return true;
+      }
+
+      return words.length >= 4;
+    };
+
+    recog.onresult = (event: any) => {
+      let interim = "";
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = String(result[0].transcript || "").trim();
+        if (!transcript) continue;
+        if (result.isFinal) {
+          // Strip an explicit "new task" / "next task" cue and force a break.
+          const cueRe = /^(new task|next task|next)[\s,:.-]*/i;
+          let phrase = transcript;
+          let forceBreak = false;
+          if (cueRe.test(phrase)) {
+            phrase = phrase.replace(cueRe, "").trim();
+            forceBreak = true;
+          }
+          if (forceBreak) breakLine();
+          if (phrase) {
+            const cur = lines[lines.length - 1];
+            lines[lines.length - 1] = cur ? cur + " " + phrase : phrase;
+          }
+          // Sentence-ending punctuation → new line for the next phrase.
+          if (/[.!?]$/.test(phrase)) breakLine();
+          // Reset silence timer — a long pause only commits a line break when
+          // the current line already looks like a complete sentence/task.
+          if (silenceTimer) clearTimeout(silenceTimer);
+          silenceTimer = setTimeout(() => {
+            if (shouldBreakOnSilence(lines[lines.length - 1] ?? "")) breakLine();
+            render();
+          }, SILENCE_MS);
+        } else {
+          interim += (interim ? " " : "") + transcript;
+        }
+      }
+      render(interim);
+    };
+    recog.onerror = (e: any) => {
+      const msg = e?.error === "not-allowed"
+        ? "Microphone access denied. Enable it in your browser settings."
+        : `Voice error: ${e?.error || "unknown"}`;
+      setVoiceError(msg);
+      setListening(false);
+    };
+    recog.onend = () => {
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      setListening(false);
+      recogRef.current = null;
+    };
+
+    try {
+      recog.start();
+      recogRef.current = recog;
+      setListening(true);
+    } catch {
+      setVoiceError("Couldn't start the microphone. Try again.");
+    }
+  };
+
+  const stopListening = () => {
+    if (recogRef.current) {
+      try { recogRef.current.stop(); } catch { /* noop */ }
+    }
+    setListening(false);
+  };
+
+  const submit = () => {
+    stopListening();
+    const created = addTasks(text);
+    if (!created.length) return;
+    setText("");
+    setOpen(false);
+  };
+
+  const domainColor: Record<ManualTask["domain"], string> = {
+    learning: "#8b5cf6",
+    professional: "#38bdf8",
+    social: "#fb7185",
+    family: "#fbbf24",
+    personal: "#34d399",
+  };
+
+  return (
+    <>
+      <ActionPill
+        icon={<ListTodo size={14}/>}
+        label="Add tasks"
+        accent="#fbbf24"
+        title="Add tasks (type or dictate)"
+        onClick={() => setOpen(true)}
+      />
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-lg rounded-2xl border border-white/10 p-5 shadow-2xl"
+            style={{ background: "radial-gradient(ellipse at 0% 0%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(20,18,38,0.96)" }}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <ListTodo size={14} className="text-primary" />
+              <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add tasks</h2>
+              <span className="text-[10.5px] font-mono text-muted-foreground/60">type or dictate · one per line</span>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+                className="ml-auto text-muted-foreground/60 hover:text-foreground"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="relative">
+              <textarea
+                ref={inputRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                rows={5}
+                placeholder={"Type or tap the mic to dictate…\nReply to Sarah about partnership terms\nPick up kids from ballet at 5"}
+                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 pr-12 text-[13px] outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.06] resize-none font-mono leading-relaxed"
+              />
+
+              {/* Mic button — toggles dictation. Pulses red while listening so
+                  it's visually obvious the mic is hot. */}
+              <button
+                type="button"
+                onClick={listening ? stopListening : startListening}
+                title={listening ? "Stop dictation" : speechSupported ? "Dictate tasks" : "Voice not supported in this browser"}
+                aria-label={listening ? "Stop dictation" : "Start dictation"}
+                disabled={!speechSupported}
+                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                  listening
+                    ? "border-rose-400/50 bg-rose-500/15 text-rose-300 animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
+                    : "border-white/10 bg-white/[0.04] text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10"
+                }`}
+              >
+                <Mic size={14}/>
+              </button>
+            </div>
+
+            {voiceError && (
+              <div className="mt-2 text-[11px] text-rose-300/90 font-mono">{voiceError}</div>
+            )}
+
+            {/* Voice language picker — accent/locale hint dramatically improves
+                recognition for non-native English speakers. Persisted locally. */}
+            {speechSupported && (
+              <div className="mt-2 flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
+                <Mic size={11} className="opacity-60"/>
+                <span>Voice language</span>
+                <select
+                  value={voiceLang}
+                  onChange={(e) => setVoiceLang(e.target.value)}
+                  disabled={listening}
+                  className="bg-white/[0.04] border border-white/10 rounded-md px-1.5 py-0.5 text-foreground/80 text-[11px] outline-none focus:border-primary/40 disabled:opacity-50"
+                >
+                  <optgroup label="English">
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="en-IN">English (India)</option>
+                    <option value="en-AU">English (Australia)</option>
+                    <option value="en-CA">English (Canada)</option>
+                    <option value="en-IE">English (Ireland)</option>
+                    <option value="en-ZA">English (South Africa)</option>
+                    <option value="en-NG">English (Nigeria)</option>
+                    <option value="en-PH">English (Philippines)</option>
+                    <option value="en-SG">English (Singapore)</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="es-ES">Español (España)</option>
+                    <option value="es-MX">Español (México)</option>
+                    <option value="fr-FR">Français</option>
+                    <option value="de-DE">Deutsch</option>
+                    <option value="it-IT">Italiano</option>
+                    <option value="pt-BR">Português (Brasil)</option>
+                    <option value="pt-PT">Português (Portugal)</option>
+                    <option value="nl-NL">Nederlands</option>
+                    <option value="pl-PL">Polski</option>
+                    <option value="sv-SE">Svenska</option>
+                    <option value="tr-TR">Türkçe</option>
+                    <option value="ru-RU">Русский</option>
+                    <option value="ar-SA">العربية</option>
+                    <option value="hi-IN">हिन्दी</option>
+                    <option value="bn-IN">বাংলা</option>
+                    <option value="ta-IN">தமிழ்</option>
+                    <option value="te-IN">తెలుగు</option>
+                    <option value="mr-IN">मराठी</option>
+                    <option value="ur-PK">اردو</option>
+                    <option value="zh-CN">中文 (简体)</option>
+                    <option value="zh-TW">中文 (繁體)</option>
+                    <option value="ja-JP">日本語</option>
+                    <option value="ko-KR">한국어</option>
+                    <option value="vi-VN">Tiếng Việt</option>
+                    <option value="th-TH">ไทย</option>
+                    <option value="id-ID">Bahasa Indonesia</option>
+                    <option value="fil-PH">Filipino</option>
+                  </optgroup>
+                </select>
+                <span className="text-muted-foreground/50">tip: pick your accent for better accuracy</span>
+              </div>
+            )}
+
+            {listening && !voiceError && (
+              <div className="mt-2 text-[11px] text-rose-300/90 font-mono flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"/>
+                Listening — pause between tasks; each phrase becomes a new line.
+              </div>
+            )}
+
+            {previews.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto space-y-1 pr-1">
+                {previews.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[11px] font-mono text-muted-foreground/80">
+                    <span
+                      className="inline-block w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ background: domainColor[p.domain], boxShadow: `0 0 8px ${domainColor[p.domain]}` }}
+                    />
+                    <span className="capitalize text-foreground/80 w-20 flex-shrink-0">{p.domain}</span>
+                    <span className="truncate text-foreground/60">{p.line}</span>
+                    {p.urgent && <span className="text-rose-300 flex-shrink-0">urgent</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex items-center justify-between">
+              <div className="text-[11px] text-muted-foreground/70 font-mono">
+                {previews.length === 0
+                  ? "Auto-categorised into the right bento box"
+                  : `${previews.length} task${previews.length === 1 ? "" : "s"} · ⌘/Ctrl+Enter to add`}
+              </div>
+              <button
+                onClick={submit}
+                disabled={previews.length === 0}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-medium border border-primary/40 bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                style={{ fontFamily: "'DM Sans',sans-serif" }}
+              >
+                <Plus size={12} />
+                Add {previews.length > 1 ? `${previews.length} tasks` : "task"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
