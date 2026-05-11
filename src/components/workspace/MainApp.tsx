@@ -9,12 +9,8 @@ import {
   Layers, RefreshCw, ChevronRight, Sparkles,
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
-<<<<<<< HEAD
-  Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip,
-  ShieldAlert,
-=======
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, ListTodo,
->>>>>>> 8342c40512d817bffac2c3d643ebb0f9bf8ba56e
+  ShieldAlert,
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
