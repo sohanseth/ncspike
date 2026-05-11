@@ -22,6 +22,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         ) { notification in
             guard let bridge = notification.object as? CAPBridgeProtocol else { return }
             bridge.registerPluginInstance(NCImageSafetyVision())
+            bridge.registerPluginInstance(OnDeviceLLMPlugin())
         }
         return true
     }

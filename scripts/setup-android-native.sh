@@ -9,12 +9,15 @@
 #      (required by `NCImageSafetyMediaPipe.kt`).
 #   2. `aaptOptions { noCompress "tflite" }` so MediaPipe can mmap the
 #      classifier asset directly.
-#   3. `registerPlugin(NCImageSafetyMediaPipe.class)` in
+#   3. `registerPlugin(NCImageSafetyMediaPipe.class)` and
+#      `registerPlugin(OnDeviceLLMPlugin.class)` in
 #      `android/app/src/main/java/com/neuralconnexions/app/MainActivity.java`.
-#   4. An optional fetch of `nsfw_image_classifier.tflite` into APK assets
+#   4. The AICore dependency in `android/app/build.gradle` (required by
+#      `OnDeviceLLMPlugin.kt` — Phase 2.8 on-device PRIVATE tier).
+#   5. An optional fetch of `nsfw_image_classifier.tflite` into APK assets
 #      via `scripts/fetch-android-nsfw-model.sh` (only when
 #      NSFW_MODEL_URL + NSFW_MODEL_SHA256 are set).
-#   5. A fail-closed guard: if the gradle file is present (i.e. the
+#   6. A fail-closed guard: if the gradle file is present (i.e. the
 #      Android project has been generated) and the model asset is missing,
 #      print a loud error and exit non-zero so a build doesn't silently
 #      ship an inert APK whose safety gate falls back to WebGPU on every
@@ -36,6 +39,7 @@ ASSET_DIR="android/app/src/main/assets"
 ASSET_FILE="${ASSET_DIR}/nsfw_image_classifier.tflite"
 
 MEDIAPIPE_DEP='implementation "com.google.mediapipe:tasks-vision:0.10.14"'
+AICORE_DEP='implementation "com.google.ai.edge.aicore:aicore:0.0.1-exp01"'
 NO_COMPRESS_LINE='        noCompress "tflite"'
 
 if [[ ! -f "${GRADLE_FILE}" ]]; then
@@ -73,6 +77,34 @@ print(f"setup-android-native: inserted MediaPipe dep into {path}")
 PY
 fi
 
+# ---- 1b. AICore dependency (Phase 2.8 on-device PRIVATE tier) -----------
+if grep -qF 'com.google.ai.edge.aicore:aicore' "${GRADLE_FILE}"; then
+  echo "setup-android-native: AICore dep already present in ${GRADLE_FILE}"
+else
+  python3 - "${GRADLE_FILE}" "${AICORE_DEP}" <<'PY'
+import re, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+dep = sys.argv[2]
+src = path.read_text()
+m = list(re.finditer(r'dependencies\s*\{', src))
+if not m:
+    sys.stderr.write("setup-android-native: no `dependencies {` block in build.gradle — refusing to patch blindly\n")
+    sys.exit(2)
+start = m[-1].end()
+depth = 1
+i = start
+while i < len(src) and depth > 0:
+    c = src[i]
+    if c == '{': depth += 1
+    elif c == '}': depth -= 1
+    i += 1
+close = i - 1
+patched = src[:close] + f"    {dep}\n" + src[close:]
+path.write_text(patched)
+print(f"setup-android-native: inserted AICore dep into {path}")
+PY
+fi
+
 # ---- 2. aaptOptions noCompress "tflite" ----------------------------------
 if grep -qE 'noCompress[[:space:]]+"tflite"' "${GRADLE_FILE}"; then
   echo "setup-android-native: aaptOptions noCompress \"tflite\" already present"
@@ -95,6 +127,46 @@ fi
 
 # ---- 3. MainActivity registerPlugin --------------------------------------
 if [[ -f "${MAIN_ACTIVITY}" ]]; then
+  # Register OnDeviceLLMPlugin as well (Phase 2.8). Idempotent: only
+  # patches when the import / registerPlugin call is missing.
+  if ! grep -qF 'OnDeviceLLMPlugin.class' "${MAIN_ACTIVITY}"; then
+    python3 - "${MAIN_ACTIVITY}" <<'PY'
+import re, sys, pathlib
+path = pathlib.Path(sys.argv[1])
+src = path.read_text()
+import_line = "import com.neuralconnexions.app.plugins.OnDeviceLLMPlugin;"
+if import_line not in src:
+    src = re.sub(r'(package [^\n]*;\n)', r'\1\n' + import_line + '\n', src, count=1)
+if 'registerPlugin(' in src:
+    src = re.sub(
+        r'(registerPlugin\([^)]*\);\s*\n)',
+        r'\1        registerPlugin(OnDeviceLLMPlugin.class);\n',
+        src, count=1,
+    )
+elif re.search(r'protected\s+void\s+onCreate\s*\([^)]*\)\s*\{', src):
+    src = re.sub(
+        r'(protected\s+void\s+onCreate\s*\([^)]*\)\s*\{\s*\n)',
+        r'\1        registerPlugin(OnDeviceLLMPlugin.class);\n',
+        src, count=1,
+    )
+else:
+    src = re.sub(
+        r'(public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{\s*\n)',
+        r'''\1    @Override
+    public void onCreate(android.os.Bundle savedInstanceState) {
+        registerPlugin(OnDeviceLLMPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+''',
+        src, count=1,
+    )
+path.write_text(src)
+print(f"setup-android-native: registered OnDeviceLLMPlugin in {path}")
+PY
+  else
+    echo "setup-android-native: MainActivity already registers OnDeviceLLMPlugin"
+  fi
+
   if grep -qF 'NCImageSafetyMediaPipe.class' "${MAIN_ACTIVITY}"; then
     echo "setup-android-native: MainActivity already registers NCImageSafetyMediaPipe"
   else
