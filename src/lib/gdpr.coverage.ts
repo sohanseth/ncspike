@@ -99,11 +99,6 @@ export const GDPR_IGNORE_TABLES: readonly GdprIgnoreEntry[] = [
     reason:
       "Cron execution audit; user_id is `on delete set null` (admin runs have null), retained as operational telemetry.",
   },
-  {
-    table: "search_queries",
-    reason:
-      "TEMP: Brought in by the May-10 merge from origin (web-search history surface). Must be wired into EXPORT_TABLES + delete_user_data() RPC before paid-tier launch — tracked as a follow-up. Cascades from auth.users on full account deletion in the meantime.",
-  },
 ] as const;
 
 export const GDPR_IGNORE_TABLE_NAMES: ReadonlySet<string> = new Set(

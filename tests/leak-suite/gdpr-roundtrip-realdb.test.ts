@@ -112,6 +112,13 @@ const SEEDS: Record<string, SeedRow> = {
     columns: ["user_id", "day", "badge", "provider_used"],
     values: [userId, "2026-05-01", "flash", "openai"],
   }),
+  search_queries: (userId) => ({
+    // Brought in by the May-10 web-search merge from origin
+    // (migration 20260510103014_*). Wired into delete_user_data() via
+    // 20260517000300_phase29_gdpr_search_queries.sql.
+    columns: ["user_id", "query", "engine"],
+    values: [userId, "seed query", "perplexity"],
+  }),
 };
 
 // ─── Ensure every EXPORT_TABLES entry has a seed strategy ──────────────────
@@ -160,6 +167,7 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
         "inference_usage",
         "inference_usage_daily",
         "user_settings",
+        "search_queries",
         "profiles",
       ]) {
         await client.query(`delete from public.${t}`);
