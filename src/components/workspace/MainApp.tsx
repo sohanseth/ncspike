@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/lib/auth-context";
+import { webSearch, logOpenedSearchUrl } from "@/lib/search.functions";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Heart, MessageCircle, Briefcase, ShoppingBag,
@@ -2583,6 +2585,15 @@ type LiveChatMsg = {
   /** On-device PRIVATE: WebLLM model-load progress in [0,100]. Cleared
    *  when the first real delta arrives. Never persisted to the DB. */
   loadProgressPct?: number | null;
+  /** Web search results — when present, the assistant message renders as a
+   *  structured list (title / url / snippet) instead of plain text. Comes
+   *  from SearXNG via webSearch; client-only, not persisted to the DB. */
+  searchResults?: Array<{ title: string; url: string; snippet: string; engine?: string }>;
+  /** SearXNG instance the results came from — rendered as a "via …" footer. */
+  searchInstance?: string | null;
+  /** The original query (used for click-logging and as the human-readable
+   *  caption above the results list). */
+  searchQuery?: string;
 };
 
 function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose:()=>void; onSwitchToCompose?:()=>void }) {
@@ -2594,9 +2605,11 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
   const [isDragging, setIsDragging] = useState(false);
   // Input mode — drives placeholder + send dispatch. Set by the intent chips
   // in the empty state (Search / Task). Reverts to "chat" after a successful
-  // send for those modes. Phase 2 follow-up will add prefix-based auto-switch
-  // ("search:" / "remind me:") and an in-chat results renderer for search.
+  // send for those modes.
   const [inputMode, setInputMode] = useState<"chat" | "search" | "task">("chat");
+  // SearXNG bindings for in-thread search results.
+  const runWebSearch = useServerFn(webSearch);
+  const logSearchClick = useServerFn(logOpenedSearchUrl);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const arr = Array.from(files);
@@ -2886,13 +2899,49 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
 
     // Mode dispatch — Search and Task short-circuit the chat pipeline.
     if (inputMode === "search" && text) {
-      window.open(
-        `https://www.google.com/search?q=${encodeURIComponent(text)}`,
-        "_blank",
-        "noopener,noreferrer",
-      );
+      // Push the query as a user message + a "Searching…" assistant
+      // placeholder, then call SearXNG and replace the placeholder with the
+      // structured result list. Client-only — not persisted to chat_messages
+      // because search history doesn't belong in chat history.
       setInput("");
       setInputMode("chat");
+      const userMsg: LiveChatMsg = { role: "user", text };
+      const loadingMsg: LiveChatMsg = {
+        role: "assistant",
+        text: "Searching the web…",
+        searchQuery: text,
+      };
+      setMessages(m => [...m, userMsg, loadingMsg]);
+      void (async () => {
+        try {
+          const res = await runWebSearch({ data: { query: text } });
+          setMessages(m => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && last.searchQuery === text) {
+              next[next.length - 1] = {
+                ...last,
+                text: "", // hide "Searching…" once results land — render flips to the list
+                searchResults: res.results.slice(0, 8),
+                searchInstance: res.instance,
+              };
+            }
+            return next;
+          });
+        } catch {
+          setMessages(m => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && last.searchQuery === text) {
+              next[next.length - 1] = {
+                ...last,
+                text: "Couldn't reach search providers. Try again in a moment.",
+              };
+            }
+            return next;
+          });
+        }
+      })();
       return;
     }
     if (inputMode === "task" && text) {
@@ -2923,7 +2972,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     setInput("");
     setAttachments([]);
     void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask]);
+  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask, runWebSearch]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
@@ -3144,7 +3193,44 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                               ))}
                             </div>
                           )}
-                          {msg.text && (
+                          {msg.searchResults ? (
+                            <div className="flex flex-col gap-2.5">
+                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-muted-foreground/55">
+                                <Search size={10} className="text-sky-400/70" />
+                                <span>Search results</span>
+                                {msg.searchInstance && (
+                                  <span className="opacity-60">· via {(() => { try { return new URL(msg.searchInstance).host; } catch { return "searxng"; } })()}</span>
+                                )}
+                              </div>
+                              {msg.searchResults.length === 0 ? (
+                                <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>No results.</p>
+                              ) : (
+                                <ul className="flex flex-col gap-2">
+                                  {msg.searchResults.map((h, k) => (
+                                    <li key={k}>
+                                      <a
+                                        href={h.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={() => {
+                                          void logSearchClick({
+                                            data: { query: msg.searchQuery ?? "", url: h.url },
+                                          }).catch(() => {});
+                                        }}
+                                        className="block group rounded-lg p-2 -mx-2 hover:bg-white/[0.03] transition-colors"
+                                      >
+                                        <div className="text-[13px] font-medium text-foreground/95 group-hover:text-primary leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.title}</div>
+                                        <div className="text-[10.5px] font-mono text-primary/70 truncate mt-0.5">{h.url}</div>
+                                        {h.snippet && (
+                                          <div className="text-[11.5px] text-muted-foreground/75 leading-snug line-clamp-2 mt-0.5" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.snippet}</div>
+                                        )}
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ) : msg.text && (
                             <p
                               className={isImageBlocked
                                 ? "text-[12.5px] text-amber-200/85 leading-relaxed whitespace-pre-wrap"
