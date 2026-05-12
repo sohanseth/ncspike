@@ -31,14 +31,19 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      // maximum-scale=1 + user-scalable=no prevents iOS Safari/WKWebView from
-      // auto-zooming when an input with font-size < 16px is focused. Without
-      // this, tapping the chat input (text-[12.5px]) zooms the whole viewport
-      // and the home page reads as "overflowing everywhere" on close.
+      // - maximum-scale=1 + user-scalable=no: stop iOS Safari/WKWebView from
+      //   auto-zooming when an input with font-size < 16px is focused.
+      // - viewport-fit=cover: extend the page behind the iOS notch / home
+      //   indicator so safe-area insets work.
+      // - interactive-widget=resizes-content (Safari 16.4+): when the keyboard
+      //   appears, RESIZE the visible viewport rather than scroll the page.
+      //   Without this iOS pushes the focused input into view by scrolling the
+      //   whole page, which shoves fixed-position chat headers above the
+      //   viewport — making the close button unreachable until you scroll up.
       // Trade-off: disables intentional pinch-zoom — acceptable for an app
       // wrap (Capacitor / installed PWA), revisit if accessibility-zoom
-      // becomes a requirement.
-      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" },
+      // becomes a requirement on a specific surface.
+      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" },
       { title: "NeuralConnexions — The cognitive companion for everyday connection" },
       {
         name: "description",

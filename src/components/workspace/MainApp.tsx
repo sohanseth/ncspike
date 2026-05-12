@@ -438,6 +438,10 @@ function TopBar({
   const handleSignOut = async () => { await signOut(); navigate({ to: "/auth" }); };
 
   return (
+    // Header is wrapped in a sticky container in MainApp's render
+    // (around line 3967) which handles the pinning + safe-area-inset and
+    // backdrop blur. Don't add `sticky top-0` here — duplicating it broke
+    // sticky on the wrapper because of nested-positioning interactions.
     <header className="h-14 flex items-center px-4 gap-3 border-b border-border flex-shrink-0 relative z-30">
       {/* Logo */}
       <button onClick={()=>{ setMapView(null); setTool(null); }} className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0">
@@ -3950,7 +3954,15 @@ export function MainApp() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
+    // overflow-x: clip (NOT hidden) — clip prevents horizontal page scroll
+    // without turning this div into a scroll container. `overflow-x: hidden`
+    // implicitly sets `overflow-y: auto`, which traps `position: sticky`
+    // descendants (they pin relative to *this* container instead of the
+    // window, and since this container's min-height is 100dvh but content
+    // can grow taller, the container doesn't actually scroll internally —
+    // the page does — so sticky never engages). `clip` doesn't create a
+    // scroll context, so sticky elements correctly resolve to the window.
+    <div className="min-h-[100dvh] w-full overflow-x-clip bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
       {/* Ambient */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute top-[-8%] left-[15%] w-[700px] h-[550px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(109,40,217,0.11) 0%,transparent 65%)"}}/>
