@@ -455,12 +455,14 @@ function TopBar({
       {/* Domain tiles moved out of the header — they now live under the
           greeting on the home canvas, where they have room to breathe. */}
 
-      {/* Primary actions — Search, Voice, Chat, Compose.
-          Mobile: row scrolls horizontally. `min-w-0` is critical — without it, flex-1's
-          natural minimum width is the sum of all (flex-shrink-0) children, which would
-          push the header wider than the viewport and cause page-level horizontal scroll.
-          Desktop (lg:+): reverts to right-aligned, no scroll needed. */}
-      <div className="flex-1 min-w-0 lg:flex-initial lg:ml-auto flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Primary actions row.
+          Mobile (< md): HIDDEN. Mobile gets a Brief + bottom action bar
+          (MobileQuickBar below) to reduce information overload — 14 pills
+          crammed into a phone is the noise we're trying to drop.
+          md+: row scrolls horizontally; min-w-0 stops the container from
+          forcing the header wider than the viewport.
+          lg+: reverts to right-aligned, no scroll needed. */}
+      <div className="hidden md:flex flex-1 min-w-0 lg:flex-initial lg:ml-auto items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Search — opens Google in a new tab */}
         <ActionPill
           icon={<Search size={14}/>}
@@ -562,6 +564,47 @@ function TopBar({
         </button>
       </div>
     </header>
+  );
+}
+
+// ─── Mobile quick bar ─────────────────────────────────────────────────────────
+//
+// A focused, always-visible entry point pinned to the bottom of the viewport on
+// mobile. Matches the "Brief + bottom input" pattern that reduces information
+// overload — one place to type whatever you want, plus a voice shortcut.
+// Hidden on md+ where the top action rail covers the same intents.
+//
+// Bottom safe-area padding (pb-[max(...)]) so the bar clears the iPhone home
+// indicator without leaving a gap on Androids without the inset.
+
+function MobileQuickBar({ onChat, onCompose }: { onChat: () => void; onCompose: () => void }) {
+  return (
+    <div
+      className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-background/95 backdrop-blur-md border-t border-border pt-2 px-3"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+    >
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onCompose}
+          aria-label="Compose"
+          title="Compose"
+          className="relative w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.04] border border-white/[0.08] text-foreground/70 active:bg-white/[0.08] after:content-[''] after:absolute after:-inset-1"
+        >
+          <PenLine size={16} className="text-rose-400/80" />
+        </button>
+        <button
+          type="button"
+          onClick={onChat}
+          aria-label="Open chat"
+          className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/[0.1] bg-white/[0.03] text-left text-[13px] text-muted-foreground active:bg-white/[0.06]"
+        >
+          <Sparkles size={14} className="text-primary/80 flex-shrink-0" />
+          <span className="flex-1 truncate">Ask anything…</span>
+          <Send size={14} className="text-primary/80 flex-shrink-0" />
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1961,9 +2004,61 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
   const slots = ["xl", "md", "md", "sm", "sm", "sm"] as const;
 
+  // Brief: the single thing that should be on the user's mind right now.
+  // Walk the already-ranked tiles and return the *first item with actual
+  // content*. Prefers urgent items in the top tile when present. Falls back
+  // to the DOMAINS fixture data when no live data is loaded (e.g. Gmail not
+  // yet connected) so the surface stays demonstrable. Mobile shows this
+  // prominently; desktop still gets the original pill.
+  const briefText = useMemo<string>(() => {
+    for (const tile of tiles) {
+      if (tile.kind === "domain") {
+        const live = liveByDomain[tile.id];
+        if (live && live.length > 0) {
+          // Prefer the first urgent item if any exist in the top tile.
+          const urgent = live.find(i => i.urgent);
+          return (urgent ?? live[0]).text;
+        }
+        // Fixture fallback so the Brief reads meaningful when nothing real
+        // is pending (e.g. before the user connects Gmail).
+        const fx = DOMAINS[tile.id].items;
+        if (fx && fx.length > 0) {
+          const urgent = fx.find(i => i.urgent);
+          return (urgent ?? fx[0]).text;
+        }
+      } else if (tile.kind === "other" && otherList.length > 0) {
+        return otherList[0].subject;
+      }
+    }
+    return "Nothing pending. Want to plan tomorrow?";
+  }, [tiles, liveByDomain, otherList]);
+
   return (
-    <div className="flex flex-col p-3 lg:p-4 gap-3">
-      <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
+    // pb-28 leaves room for the fixed MobileQuickBar on mobile; md:pb-3 reverts.
+    <div className="flex flex-col p-3 lg:p-4 gap-3 pb-28 md:pb-3">
+      {/* Mobile-only Brief card. Larger and more prominent than the desktop
+          greeting pill — this is the "one thing right now" that the personal-OS
+          framing depends on. */}
+      <div className="md:hidden flex-shrink-0 flex flex-col gap-2 px-4 py-3.5 rounded-2xl border border-white/[0.06]"
+        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(30,25,52,0.6)"}}>
+        <div className="flex items-center justify-between text-[10.5px] font-mono">
+          <span className="text-muted-foreground/60">{greet}, {firstName}</span>
+          <span className="text-muted-foreground/40">{dateLabel}</span>
+        </div>
+        <p className="text-[15px] font-medium text-foreground/95 leading-snug" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          {briefText}
+        </p>
+        {totalUrgent > 0 && (
+          <span className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border"
+            style={{background:"rgba(248,113,113,0.16)", borderColor:"rgba(248,113,113,0.4)", color:"#fca5a5"}}>
+            <span className="w-1 h-1 rounded-full bg-rose-300"/>
+            {totalUrgent} urgent
+          </span>
+        )}
+      </div>
+
+      {/* Desktop pill: original compact format — greeting + urgent count + date. */}
+      <div className="hidden md:flex flex-shrink-0 items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
         <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -1976,7 +2071,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
             {totalUrgent} urgent
           </span>
         )}
-        <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
+        <span className="text-[10.5px] text-muted-foreground/40 font-mono">{dateLabel}</span>
       </div>
 
       {/* Domain tiles — moved here from the header so they sit right under the
@@ -4027,11 +4122,20 @@ export function MainApp() {
         </div>
       </div>
 
+      {/* Mobile-only bottom action bar — primary entry to chat + compose.
+          Hides when any modal is open so it doesn't compete with the panel. */}
+      {tool === null && !voiceOpen && !exploreOpen && !domain && (
+        <MobileQuickBar
+          onChat={() => setTool("chat")}
+          onCompose={() => setTool("compose")}
+        />
+      )}
+
       {/* Modals */}
       <VoiceBar   open={voiceOpen}     onClose={()=>setVoiceOpen(false)} onSubmitTask={handleSubmitTask}/>
       <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)}/>
       <ComposePanel open={tool==="compose"} onClose={()=>setTool(null)}/>
-      
+
 
       <div className="pointer-events-none fixed top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"/>
     </div>
