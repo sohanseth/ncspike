@@ -90,6 +90,10 @@ const config: CapacitorConfig = {
     // Capacitor will write Info.plist defaults; supplemental keys (NSUser
     // TrackingUsageDescription etc.) are added in Xcode after `cap add ios`.
     contentInset: "automatic",
+    // backgroundColor: shows through during iOS rubber-band overscroll at the
+    // top/bottom of the page. Default is white. Pin to the app's dark surface
+    // so a pull-down doesn't expose a white pane behind the WebView.
+    backgroundColor: "#0b0b0f",
   },
 
   android: {

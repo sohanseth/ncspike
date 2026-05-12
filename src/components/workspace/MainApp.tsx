@@ -577,33 +577,26 @@ function TopBar({
 // Bottom safe-area padding (pb-[max(...)]) so the bar clears the iPhone home
 // indicator without leaving a gap on Androids without the inset.
 
-function MobileQuickBar({ onChat, onCompose }: { onChat: () => void; onCompose: () => void }) {
+function MobileQuickBar({ onChat }: { onChat: () => void }) {
   return (
     <div
       className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-background/95 backdrop-blur-md border-t border-border pt-2 px-3"
       style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
     >
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onCompose}
-          aria-label="Compose"
-          title="Compose"
-          className="relative w-10 h-10 rounded-full flex items-center justify-center bg-white/[0.04] border border-white/[0.08] text-foreground/70 active:bg-white/[0.08] after:content-[''] after:absolute after:-inset-1"
-        >
-          <PenLine size={16} className="text-rose-400/80" />
-        </button>
-        <button
-          type="button"
-          onClick={onChat}
-          aria-label="Open chat"
-          className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/[0.1] bg-white/[0.03] text-left text-[13px] text-muted-foreground active:bg-white/[0.06]"
-        >
-          <Sparkles size={14} className="text-primary/80 flex-shrink-0" />
-          <span className="flex-1 truncate">Ask anything…</span>
-          <Send size={14} className="text-primary/80 flex-shrink-0" />
-        </button>
-      </div>
+      {/* Single primary entry point. The other intents (Search / Add Task /
+          Draft) live as chips inside the ChatPanel empty state — surfacing
+          them on home would compete with the Brief + ambient bento for
+          attention. Two-tap path is acceptable for those non-primary actions. */}
+      <button
+        type="button"
+        onClick={onChat}
+        aria-label="Open chat"
+        className="w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border border-primary/40 bg-primary/[0.07] text-left text-[14px] text-foreground/90 active:bg-primary/[0.13] transition-colors"
+      >
+        <Sparkles size={16} className="text-primary flex-shrink-0" />
+        <span className="flex-1 truncate">Ask anything…</span>
+        <Send size={15} className="text-primary flex-shrink-0" />
+      </button>
     </div>
   );
 }
@@ -2592,7 +2585,8 @@ type LiveChatMsg = {
   loadProgressPct?: number | null;
 };
 
-function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
+function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose:()=>void; onSwitchToCompose?:()=>void }) {
+  const { addTask } = useManualTasks();
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
@@ -2985,14 +2979,62 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 scrollbar-none min-h-0">
           {messages.length === 0 && !sending && (
             <div className="flex-1 flex items-center justify-center text-center px-6">
-              <div className="max-w-[260px]">
+              <div className="max-w-[320px] w-full">
                 <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center"
                   style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                   <Zap size={16} style={{color:"#ddd6fe"}}/>
                 </div>
-                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed mb-4" style={{fontFamily:"'DM Sans',sans-serif"}}>
                   Ask anything. Pick a badge below to choose how I think — fast, deep, or fully on-device.
                 </p>
+                {/* Intent chips — surfacing the OTHER actions the user might
+                    want besides chat. Each routes to its existing flow:
+                    Search → window.prompt + Google; Task → prompt + addTask;
+                    Draft → close chat + open ComposePanel. Only shown in the
+                    empty state so they don't clutter active conversations. */}
+                <div className="flex flex-wrap items-center justify-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const q = window.prompt("Search the web for:")?.trim();
+                      if (!q) return;
+                      window.open(
+                        `https://www.google.com/search?q=${encodeURIComponent(q)}`,
+                        "_blank",
+                        "noopener,noreferrer",
+                      );
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
+                  >
+                    <Search size={11.5} className="text-sky-400/85" />
+                    Search the web
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const text = window.prompt("Remind me to…")?.trim();
+                      if (!text) return;
+                      addTask(text);
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
+                  >
+                    <Plus size={11.5} className="text-emerald-400/85" />
+                    Add a task
+                  </button>
+                  {onSwitchToCompose && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onSwitchToCompose();
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
+                    >
+                      <PenLine size={11.5} className="text-rose-400/85" />
+                      Draft a message
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -4122,18 +4164,16 @@ export function MainApp() {
         </div>
       </div>
 
-      {/* Mobile-only bottom action bar — primary entry to chat + compose.
-          Hides when any modal is open so it doesn't compete with the panel. */}
+      {/* Mobile-only bottom action bar — single primary entry to chat.
+          Hides when any modal is open. Other intents (Search/Task/Draft)
+          are chips inside the ChatPanel empty state, two taps away. */}
       {tool === null && !voiceOpen && !exploreOpen && !domain && (
-        <MobileQuickBar
-          onChat={() => setTool("chat")}
-          onCompose={() => setTool("compose")}
-        />
+        <MobileQuickBar onChat={() => setTool("chat")} />
       )}
 
       {/* Modals */}
       <VoiceBar   open={voiceOpen}     onClose={()=>setVoiceOpen(false)} onSubmitTask={handleSubmitTask}/>
-      <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)}/>
+      <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)} onSwitchToCompose={()=>setTool("compose")}/>
       <ComposePanel open={tool==="compose"} onClose={()=>setTool(null)}/>
 
 
