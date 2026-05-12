@@ -71,6 +71,19 @@ const config: CapacitorConfig = {
       splashFullScreen: true,
       splashImmersive: true,
     },
+    Keyboard: {
+      // `native` mode makes the iOS WKWebView itself shrink when the keyboard
+      // appears. Combined with the chat panel using `fixed inset-x-0 top-0`
+      // + dvh height, the panel reflows above the keyboard without fixed-
+      // position scrolling glitches. Without this, WKWebView leaves the
+      // WebView at full height and scrolls the focused input into view,
+      // pushing the chat header above the visible area.
+      resize: "native",
+      // Hide the keyboard's accessory bar (the ↑↓✓ strip above the keys)
+      // — also done at runtime via Keyboard.setAccessoryBarVisible in
+      // native-bootstrap.ts, but the static config helps for first launch.
+      resizeOnFullScreen: true,
+    },
   },
 
   ios: {
