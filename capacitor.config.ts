@@ -48,6 +48,11 @@ const config: CapacitorConfig = {
     androidScheme: "https",
     // iosScheme defaults to "capacitor"; leave it.
     allowNavigation: ["app.neuralconnexions.com", "neuralconnexions.com"],
+    // DEV ONLY — point the WebView at the Mac's Vite dev server so the
+    // real app renders on-device. REMOVE before any TestFlight / store
+    // build (per N6 — production must bundle the reviewed JS).
+    url: "http://192.168.1.101:5173",
+    cleartext: true,
   },
 
   // Plugin-specific tuning. Each plugin we install must opt in here if it
