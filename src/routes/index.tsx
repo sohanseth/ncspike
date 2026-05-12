@@ -39,8 +39,12 @@ export const Route = createFileRoute("/")({
 function Landing() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Nav */}
-      <nav className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
+      {/* Nav. bg-background (no /80 alpha) — solid so content scrolling under
+          the sticky bar doesn't bleed through and make the bar appear to move.
+          pt-[env(safe-area-inset-top)] keeps the inner content below the iOS
+          notch / status bar when the WebView overlays it (Capacitor's
+          setOverlaysWebView is on in native-bootstrap.ts). */}
+      <nav className="sticky top-0 z-40 border-b border-border bg-background backdrop-blur-md pt-[env(safe-area-inset-top)]">
         <div className="mx-auto max-w-6xl px-6 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-2">
             <div className="size-7 rounded-lg bg-primary flex items-center justify-center">
