@@ -2581,6 +2581,29 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     return ()=>window.removeEventListener("keydown",handler);
   },[onClose]);
 
+  // Keyboard-aware height via VisualViewport API.
+  // 100dvh is unreliable in Capacitor WKWebView — the unit doesn't always
+  // shrink when the iOS keyboard appears, so the chat header gets pushed
+  // above the viewport when an input is focused. VisualViewport.height is
+  // the *visible* viewport (excludes keyboard), supported iOS Safari/WKWebView
+  // 13+. We mirror it into a CSS variable `--chat-h` that the outer panel
+  // binds to. Cleanup on close so the variable doesn't leak to other surfaces.
+  useEffect(() => {
+    if (!open || typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      document.documentElement.style.setProperty("--chat-h", `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.documentElement.style.removeProperty("--chat-h");
+    };
+  }, [open]);
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
@@ -2819,16 +2842,12 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   return (
     // Mobile: full-screen — chat is a destination, not a transient sheet.
     // Matches iMessage / WhatsApp / ChatGPT / Claude on iOS.
-    // `h-[100dvh]` (dynamic viewport height) is the keyboard-aware fix: when
-    // the iOS keyboard appears, dvh shrinks so the panel resizes to fit
-    // above the keyboard. Without this, `fixed inset-0` resolves to the
-    // *layout* viewport (un-shrunk) and the footer/input get hidden behind
-    // the keyboard. dvh is supported iOS 15.4+ and is more reliable than
-    // the viewport meta `interactive-widget=resizes-content` across WKWebView
-    // versions.
-    // Desktop (md+): centered modal — original floating-card behavior
-    // (`md:inset-0` brings back the centered-fill layout).
-    <div className="fixed inset-x-0 top-0 h-[100dvh] md:inset-0 md:h-auto z-[60] flex items-stretch md:items-center justify-center md:px-4"
+    // Height: `--chat-h` is set by the VisualViewport useEffect above (the
+    // *visible* viewport, excludes the iOS keyboard). Fallback to 100dvh for
+    // browsers without VisualViewport (older iOS / non-iOS desktop).
+    // Desktop (md+): centered modal — `md:h-auto` overrides height so the
+    // inner panel's max-h-[85vh] takes over.
+    <div className="fixed inset-x-0 top-0 h-[var(--chat-h,100dvh)] md:inset-0 md:h-auto z-[60] flex items-stretch md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
       <div className={`w-full md:max-w-[520px] md:max-h-[85vh] md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
