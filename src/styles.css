@@ -123,6 +123,11 @@
     -moz-osx-font-smoothing: grayscale;
     background-color: var(--color-background);
     color: var(--color-foreground);
+    /* Prevent the iOS rubber-band overscroll from exposing the page above
+       the sticky top bar (which makes the bar look like it's moving when
+       you scroll near the top). `contain` blocks scroll-chaining without
+       disabling overscroll inside scrollable descendants. */
+    overscroll-behavior-y: contain;
   }
 
   body {

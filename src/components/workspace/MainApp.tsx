@@ -2818,11 +2818,17 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
 
   return (
     // Mobile: full-screen — chat is a destination, not a transient sheet.
-    // Matches iMessage / WhatsApp / ChatGPT / Claude on iOS. No rounded
-    // corners, no backdrop bleed, plenty of vertical space, sidesteps the
-    // keyboard reflow + bottom-sheet boundary issues.
-    // Desktop (md+): centered modal — original floating-card behavior.
-    <div className="fixed inset-0 z-[60] flex items-stretch md:items-center justify-center md:px-4"
+    // Matches iMessage / WhatsApp / ChatGPT / Claude on iOS.
+    // `h-[100dvh]` (dynamic viewport height) is the keyboard-aware fix: when
+    // the iOS keyboard appears, dvh shrinks so the panel resizes to fit
+    // above the keyboard. Without this, `fixed inset-0` resolves to the
+    // *layout* viewport (un-shrunk) and the footer/input get hidden behind
+    // the keyboard. dvh is supported iOS 15.4+ and is more reliable than
+    // the viewport meta `interactive-widget=resizes-content` across WKWebView
+    // versions.
+    // Desktop (md+): centered modal — original floating-card behavior
+    // (`md:inset-0` brings back the centered-fill layout).
+    <div className="fixed inset-x-0 top-0 h-[100dvh] md:inset-0 md:h-auto z-[60] flex items-stretch md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
       <div className={`w-full md:max-w-[520px] md:max-h-[85vh] md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
@@ -3971,7 +3977,11 @@ export function MainApp() {
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
-        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-4 lg:pt-6" style={{paddingTop:"max(env(safe-area-inset-top), 1rem)"}}>
+        {/* bg-background (no /80) — fully opaque so the ambient gradient
+            behind doesn't show through and make the bar look like it's
+            sliding when content scrolls underneath. Keep the subtle blur as
+            a polish. */}
+        <div className="sticky top-0 z-30 bg-background backdrop-blur-md pt-4 lg:pt-6" style={{paddingTop:"max(env(safe-area-inset-top), 1rem)"}}>
           <TopBar
             mapView={mapView} setMapView={handleMap}
             tool={tool} setTool={setTool}
