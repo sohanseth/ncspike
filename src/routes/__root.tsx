@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { AuthProvider } from "@/lib/auth-context";
 import { Toaster } from "@/components/ui/sonner";
+import { initNativeShell } from "@/lib/native-bootstrap";
 
 import appCss from "../styles.css?url";
 
@@ -107,6 +108,10 @@ function ClientToaster() {
 }
 
 function RootComponent() {
+  useEffect(() => {
+    void initNativeShell();
+  }, []);
+
   return (
     <AuthProvider>
       <Outlet />

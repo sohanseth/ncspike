@@ -82,8 +82,8 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
   };
 
   return (
-    <header className="h-16 shrink-0 sticky top-0 z-30 border-b border-border bg-background/40 backdrop-blur-xl">
-      <div className="h-full px-6 lg:px-8 flex items-center gap-6">
+    <header className="shrink-0 sticky top-0 z-30 border-b border-border bg-background/40 backdrop-blur-xl pt-[env(safe-area-inset-top)]">
+      <div className="h-16 px-6 lg:px-8 flex items-center gap-6">
         <div className="min-w-0">
           <h1 className="text-sm font-semibold tracking-tight font-display truncate">{title}</h1>
           {subtitle && (
@@ -178,7 +178,7 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
             onClick={handleSignOut}
             title="Sign out"
             aria-label="Sign out"
-            className="size-9 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 ring-1 ring-white/10 transition-colors"
+            className="relative size-9 rounded-lg inline-flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/5 ring-1 ring-white/10 transition-colors after:content-[''] after:absolute after:-inset-1 after:md:hidden"
           >
             <LogOut className="size-4" />
           </button>

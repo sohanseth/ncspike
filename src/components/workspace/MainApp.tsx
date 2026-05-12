@@ -610,7 +610,7 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinn
         <button
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </button>
       )}
@@ -682,7 +682,7 @@ function IconBtn({ icon: Icon, label, onClick, color="default" }: {
   };
   return (
     <button onClick={onClick} title={label}
-      className={`w-7 h-7 rounded-lg flex items-center justify-center border border-transparent transition-all flex-shrink-0 ${colors[color]}`}>
+      className={`relative w-7 h-7 rounded-lg flex items-center justify-center border border-transparent transition-all flex-shrink-0 after:content-[''] after:absolute after:-inset-2 after:md:hidden ${colors[color]}`}>
       <Icon size={12}/>
     </button>
   );
@@ -2064,7 +2064,7 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
           role="button"
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </span>
       )}
@@ -3067,7 +3067,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         </div>
 
         {/* Mode toggle + active input + model selector */}
-        <div className="p-4 border-t border-border flex-shrink-0 flex flex-col gap-2.5">
+        <div className="px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)] border-t border-border flex-shrink-0 flex flex-col gap-2.5">
           {/* Text ↔ Voice segmented control */}
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] self-start">
             {(["text","voice"] as const).map(m => (
@@ -3097,7 +3097,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       <button
                         type="button"
                         onClick={() => removeAttachment(a.id)}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground after:content-[''] after:absolute after:-inset-3.5 after:md:hidden"
                         aria-label="Remove image"
                       >
                         <X size={9}/>
@@ -3125,7 +3125,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   aria-label="Attach image"
                   title="Attach image"
                 >
@@ -3151,7 +3151,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                   className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
                   style={{fontFamily:"'DM Sans',sans-serif"}}/>
                 <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
                   <Send size={11}/>
                 </button>
@@ -3232,7 +3232,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           <button
             type="button"
             onClick={() => setLightboxSrc(null)}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80 after:content-[''] after:absolute after:-inset-1 after:md:hidden"
             aria-label="Close expanded image"
           >
             <X size={16} />
@@ -4319,7 +4319,7 @@ function AddTaskButton() {
                 title={listening ? "Stop dictation" : speechSupported ? "Dictate tasks" : "Voice not supported in this browser"}
                 aria-label={listening ? "Stop dictation" : "Start dictation"}
                 disabled={!speechSupported}
-                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-1.5 after:md:hidden ${
                   listening
                     ? "border-rose-400/50 bg-rose-500/15 text-rose-300 animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
                     : "border-white/10 bg-white/[0.04] text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10"
