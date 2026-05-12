@@ -31,7 +31,14 @@ export const Route = createRootRoute({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+      // maximum-scale=1 + user-scalable=no prevents iOS Safari/WKWebView from
+      // auto-zooming when an input with font-size < 16px is focused. Without
+      // this, tapping the chat input (text-[12.5px]) zooms the whole viewport
+      // and the home page reads as "overflowing everywhere" on close.
+      // Trade-off: disables intentional pinch-zoom — acceptable for an app
+      // wrap (Capacitor / installed PWA), revisit if accessibility-zoom
+      // becomes a requirement.
+      { name: "viewport", content: "width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" },
       { title: "NeuralConnexions — The cognitive companion for everyday connection" },
       {
         name: "description",
