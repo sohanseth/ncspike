@@ -2592,6 +2592,11 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Input mode — drives placeholder + send dispatch. Set by the intent chips
+  // in the empty state (Search / Task). Reverts to "chat" after a successful
+  // send for those modes. Phase 2 follow-up will add prefix-based auto-switch
+  // ("search:" / "remind me:") and an in-chat results renderer for search.
+  const [inputMode, setInputMode] = useState<"chat" | "search" | "task">("chat");
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const arr = Array.from(files);
@@ -2878,6 +2883,30 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && attachments.length === 0) || sending) return;
+
+    // Mode dispatch — Search and Task short-circuit the chat pipeline.
+    if (inputMode === "search" && text) {
+      window.open(
+        `https://www.google.com/search?q=${encodeURIComponent(text)}`,
+        "_blank",
+        "noopener,noreferrer",
+      );
+      setInput("");
+      setInputMode("chat");
+      return;
+    }
+    if (inputMode === "task" && text) {
+      const added = addTask(text);
+      setInput("");
+      setInputMode("chat");
+      if (added) {
+        void import("sonner").then(({ toast }) =>
+          toast.success(`Added: ${added.text.slice(0, 60)}${added.text.length > 60 ? "…" : ""}`),
+        );
+      }
+      return;
+    }
+
     // Fail-closed for PRIVATE + attachments: refuse before the upload starts
     // so we don't leave orphan bytes in the chat-attachments bucket. The
     // server-side runner has the same guard (defense-in-depth); this one
@@ -2894,7 +2923,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     setInput("");
     setAttachments([]);
     void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, attachments, sending, model, runChatTurn]);
+  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
@@ -2987,22 +3016,18 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                 <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed mb-4" style={{fontFamily:"'DM Sans',sans-serif"}}>
                   Ask anything. Pick a badge below to choose how I think — fast, deep, or fully on-device.
                 </p>
-                {/* Intent chips — surfacing the OTHER actions the user might
-                    want besides chat. Each routes to its existing flow:
-                    Search → window.prompt + Google; Task → prompt + addTask;
-                    Draft → close chat + open ComposePanel. Only shown in the
-                    empty state so they don't clutter active conversations. */}
+                {/* Intent chips. Tapping Search / Task switches the input
+                    *mode* — placeholder + send dispatch change accordingly,
+                    no native prompts. Draft is structurally different
+                    (channel + tone + recipient form) so it still hands off
+                    to ComposePanel. Chips appear only in the empty state. */}
                 <div className="flex flex-wrap items-center justify-center gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
-                      const q = window.prompt("Search the web for:")?.trim();
-                      if (!q) return;
-                      window.open(
-                        `https://www.google.com/search?q=${encodeURIComponent(q)}`,
-                        "_blank",
-                        "noopener,noreferrer",
-                      );
+                      setInputMode("search");
+                      setMode("text"); // chips drive the text input, not voice
+                      setTimeout(() => inputRef.current?.focus(), 60);
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
                   >
@@ -3012,9 +3037,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   <button
                     type="button"
                     onClick={() => {
-                      const text = window.prompt("Remind me to…")?.trim();
-                      if (!text) return;
-                      addTask(text);
+                      setInputMode("task");
+                      setMode("text"); // chips drive the text input, not voice
+                      setTimeout(() => inputRef.current?.focus(), 60);
                     }}
                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
                   >
@@ -3226,6 +3251,34 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
 
           {mode === "text" ? (
             <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+              {/* Mode indicator — only shown when Search or Task mode is
+                  active (set by the empty-state chips). Tapping X reverts to
+                  chat. Visually a small pill with the mode's accent color. */}
+              {inputMode !== "chat" && (
+                <div className="flex items-center gap-1.5 -mt-0.5">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-mono border ${
+                      inputMode === "search"
+                        ? "border-sky-400/40 bg-sky-500/10 text-sky-200"
+                        : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                    }`}
+                  >
+                    {inputMode === "search" ? (
+                      <><Search size={10} /> Search</>
+                    ) : (
+                      <><Plus size={10} /> Add task</>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setInputMode("chat")}
+                      aria-label="Cancel mode"
+                      className="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-white/15 transition-colors"
+                    >
+                      <X size={9} />
+                    </button>
+                  </span>
+                </div>
+              )}
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {attachments.map(a => (
@@ -3284,7 +3337,13 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     }
                   }}
                   disabled={sending}
-                  placeholder={sending ? "Sending…" : attachments.length ? "Add a caption…" : "Message your assistant…"}
+                  placeholder={
+                    sending ? "Sending…"
+                    : attachments.length ? "Add a caption…"
+                    : inputMode === "search" ? "Search the web for…"
+                    : inputMode === "task" ? "Remind me to…"
+                    : "Message your assistant…"
+                  }
                   className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
                   style={{fontFamily:"'DM Sans',sans-serif"}}/>
                 <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
