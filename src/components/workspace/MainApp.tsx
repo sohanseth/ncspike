@@ -451,8 +451,12 @@ function TopBar({
       {/* Domain tiles moved out of the header — they now live under the
           greeting on the home canvas, where they have room to breathe. */}
 
-      {/* Primary actions — Search, Voice, Chat, Compose */}
-      <div className="ml-auto flex items-center gap-1.5">
+      {/* Primary actions — Search, Voice, Chat, Compose.
+          Mobile: row scrolls horizontally. `min-w-0` is critical — without it, flex-1's
+          natural minimum width is the sum of all (flex-shrink-0) children, which would
+          push the header wider than the viewport and cause page-level horizontal scroll.
+          Desktop (lg:+): reverts to right-aligned, no scroll needed. */}
+      <div className="flex-1 min-w-0 lg:flex-initial lg:ml-auto flex items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Search — opens Google in a new tab */}
         <ActionPill
           icon={<Search size={14}/>}
@@ -1983,9 +1987,15 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
         </div>
       )}
 
-      <div className="flex-shrink-0 overflow-x-auto">
-        <motion.div layout className="min-w-[580px] min-h-[420px] grid gap-2.5"
-          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 110px",gridTemplateAreas:`"s0 s0 s1" "s0 s0 s2" "s3 s4 s5"`}}>
+      <div className="flex-shrink-0 md:overflow-x-auto">
+        {/* Bento layout. Responsive rules live in src/styles.css under `.nc-bento-grid`
+            (Tailwind arbitrary value couldn't express grid-template-areas with quoted
+            strings, hence the CSS class).
+            Mobile (< md): grid-cols-1 utility → children stack vertically; children's
+            inline `gridArea: s${i}` falls back to auto since no areas are defined.
+            md+: `.nc-bento-grid` defines a 3-column bento with named areas s0..s5,
+            so children's inline gridArea snaps them into the bento positions. */}
+        <motion.div layout className="nc-bento-grid min-h-[420px] grid gap-2.5 grid-cols-1">
           <AnimatePresence initial={false}>
             {tiles.slice(0, 6).map((tile, i) => {
               const size = slots[i];
