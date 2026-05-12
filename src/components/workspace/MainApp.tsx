@@ -2030,7 +2030,9 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
   return (
     // pb-28 leaves room for the fixed MobileQuickBar on mobile; md:pb-3 reverts.
-    <div className="flex flex-col p-3 lg:p-4 gap-3 pb-28 md:pb-3">
+    // pt-[env(safe-area-inset-top)] keeps the Brief card clear of the iOS notch
+    // when the TopBar is hidden on mobile (desktop has its own sticky wrapper).
+    <div className="flex flex-col p-3 lg:p-4 gap-3 pb-28 md:pb-3 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-3">
       {/* Mobile-only Brief card. Larger and more prominent than the desktop
           greeting pill — this is the "one thing right now" that the personal-OS
           framing depends on. */}
@@ -3062,53 +3064,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                   <Zap size={16} style={{color:"#ddd6fe"}}/>
                 </div>
-                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed mb-4" style={{fontFamily:"'DM Sans',sans-serif"}}>
-                  Ask anything. Pick a badge below to choose how I think — fast, deep, or fully on-device.
+                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                  Ask anything, or pick an action below — Search, Add task, or Draft.
                 </p>
-                {/* Intent chips. Tapping Search / Task switches the input
-                    *mode* — placeholder + send dispatch change accordingly,
-                    no native prompts. Draft is structurally different
-                    (channel + tone + recipient form) so it still hands off
-                    to ComposePanel. Chips appear only in the empty state. */}
-                <div className="flex flex-wrap items-center justify-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInputMode("search");
-                      setMode("text"); // chips drive the text input, not voice
-                      setTimeout(() => inputRef.current?.focus(), 60);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
-                  >
-                    <Search size={11.5} className="text-sky-400/85" />
-                    Search the web
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInputMode("task");
-                      setMode("text"); // chips drive the text input, not voice
-                      setTimeout(() => inputRef.current?.focus(), 60);
-                    }}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
-                  >
-                    <Plus size={11.5} className="text-emerald-400/85" />
-                    Add a task
-                  </button>
-                  {onSwitchToCompose && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onSwitchToCompose();
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11.5px] text-foreground/85 border border-white/[0.1] bg-white/[0.04] active:bg-white/[0.1] transition-colors"
-                    >
-                      <PenLine size={11.5} className="text-rose-400/85" />
-                      Draft a message
-                    </button>
-                  )}
-                </div>
               </div>
             </div>
           )}
@@ -3335,6 +3293,52 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
             ))}
           </div>
 
+          {/* Persistent intent chips — always visible during a chat session,
+              not just in the empty state. Hidden when an action mode is
+              already active (search / task pill takes their slot). Sets the
+              mode + forces text-input over voice; Draft hands off to the
+              ComposePanel (closes chat). */}
+          {mode === "text" && inputMode === "chat" && (
+            <div className="flex flex-wrap items-center gap-1.5 -mt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode("search");
+                  setMode("text");
+                  setTimeout(() => inputRef.current?.focus(), 60);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+              >
+                <Search size={10.5} className="text-sky-400/80" />
+                Search
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode("task");
+                  setMode("text");
+                  setTimeout(() => inputRef.current?.focus(), 60);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+              >
+                <Plus size={10.5} className="text-emerald-400/80" />
+                Task
+              </button>
+              {onSwitchToCompose && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSwitchToCompose();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+                >
+                  <PenLine size={10.5} className="text-rose-400/80" />
+                  Draft
+                </button>
+              )}
+            </div>
+          )}
           {mode === "text" ? (
             <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
               {/* Mode indicator — only shown when Search or Task mode is
@@ -4278,11 +4282,12 @@ export function MainApp() {
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
-        {/* bg-background (no /80) — fully opaque so the ambient gradient
-            behind doesn't show through and make the bar look like it's
-            sliding when content scrolls underneath. Keep the subtle blur as
-            a polish. */}
-        <div className="sticky top-0 z-30 bg-background backdrop-blur-md pt-4 lg:pt-6" style={{paddingTop:"max(env(safe-area-inset-top), 1rem)"}}>
+        {/* TopBar — desktop only. On mobile the logo + nav pills aren't doing
+            functional work (pills hidden, logo isn't a back button anywhere
+            you'd navigate from on the home), so it just wastes the area
+            below the iOS status bar. HomeCanvas handles safe-area inset
+            directly on mobile (pt-[env(safe-area-inset-top)]). */}
+        <div className="hidden md:block sticky top-0 z-30 bg-background backdrop-blur-md pt-4 lg:pt-6">
           <TopBar
             mapView={mapView} setMapView={handleMap}
             tool={tool} setTool={setTool}
