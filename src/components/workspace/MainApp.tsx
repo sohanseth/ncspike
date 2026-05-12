@@ -2813,10 +2813,13 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   if(!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+    // Mobile: bottom-sheet — panel aligns to bottom edge, full viewport width,
+    // rounded only on top corners. Backdrop fills the rest.
+    // Desktop (md+): centered modal — original floating-card behavior.
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className={`w-full max-w-[520px] max-h-[85vh] rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
+      <div className={`w-full md:max-w-[520px] max-h-[90vh] md:max-h-[85vh] rounded-t-3xl md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}
         onDragOver={e => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
@@ -3238,10 +3241,11 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+    // Mobile: bottom sheet. Desktop (md+): centered modal.
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full max-w-[540px] max-h-[88vh] rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
+      <div className="w-full md:max-w-[540px] max-h-[90vh] md:max-h-[88vh] rounded-t-3xl md:rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}>
 
@@ -3671,9 +3675,10 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
 
   if(!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" onClick={onClose}
+    // Mobile: bottom sheet. Desktop (md+): centered modal.
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4" onClick={onClose}
       style={{background:"rgba(10,5,24,0.75)",backdropFilter:"blur(12px)"}}>
-      <div className="w-full max-w-[620px] flex flex-col gap-0 rounded-2xl border border-primary/25 overflow-hidden shadow-2xl"
+      <div className="w-full md:max-w-[620px] max-h-[90vh] md:max-h-none flex flex-col gap-0 rounded-t-2xl md:rounded-2xl border border-primary/25 overflow-hidden shadow-2xl"
         style={{background:"rgba(22,18,38,0.98)",boxShadow:"0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,109,250,0.18)"}}
         onClick={e=>e.stopPropagation()}>
 
