@@ -12,7 +12,7 @@ import {
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, ListTodo,
-  ShieldAlert,
+  ShieldAlert, Camera as CameraIcon,
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
@@ -2604,6 +2604,11 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Separate ref for the camera-capture file input on web. Uses the
+  // `capture="environment"` attribute so mobile browsers open the rear camera
+  // directly. On native (Capacitor) we go through @capacitor/camera instead
+  // for a richer permission flow + retake UI.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   // Input mode — drives placeholder + send dispatch. Set by the intent chips
   // in the empty state (Search / Task). Reverts to "chat" after a successful
@@ -2642,6 +2647,49 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
       return prev.filter(p => p.id !== id);
     });
   }, []);
+
+  // Camera capture — adds a photo from the device camera as a chat attachment.
+  // Native (Capacitor): @capacitor/camera getPhoto for a real permission flow
+  // and retake UI. The plugin handles iOS/Android permission prompts.
+  // Web: fall back to a hidden <input capture="environment"> which mobile
+  // Safari/Chrome handle by opening the camera directly. Desktop browsers
+  // open a file picker — acceptable degradation; desktop users have the
+  // existing paperclip path anyway.
+  const handleCameraCapture = useCallback(async () => {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Camera,
+          saveToGallery: false,
+          // Default to rear camera; Capacitor lets the user toggle within the
+          // native UI before capture.
+        });
+        if (!photo.webPath) return;
+        const res = await fetch(photo.webPath);
+        const blob = await res.blob();
+        const ext = (photo.format || "jpeg").replace(/^\./, "");
+        const file = new File([blob], `camera-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        addFiles([file]);
+      } catch (err: unknown) {
+        // User cancelled the camera UI → silently no-op. Other errors:
+        // surface via toast so it doesn't fail silently.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/cancelled|denied|user/i.test(msg)) {
+          void import("sonner").then(({ toast }) => toast.error(`Camera: ${msg}`));
+        }
+      }
+    } else {
+      // Web fallback — click the hidden input with capture attribute.
+      cameraInputRef.current?.click();
+    }
+  }, [addFiles]);
 
   // Cleanup object URLs on unmount
   useEffect(() => () => {
@@ -3401,6 +3449,21 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     e.target.value = "";
                   }}
                 />
+                {/* Web fallback for the camera button — `capture="environment"`
+                    asks mobile browsers to open the rear camera directly.
+                    Native uses @capacitor/camera; this input is only the
+                    fallback path on web / desktop. */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files) addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -3410,6 +3473,16 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   title="Attach image"
                 >
                   <Paperclip size={13}/>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleCameraCapture(); }}
+                  disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
+                  aria-label="Take photo with camera"
+                  title="Take photo"
+                >
+                  <CameraIcon size={13}/>
                 </button>
                 <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
                   onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}

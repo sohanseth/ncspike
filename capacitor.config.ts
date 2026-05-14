@@ -57,7 +57,7 @@ const config: CapacitorConfig = {
     // Mac's mDNS hostname instead, e.g. `http://REM-LGM7KQ4RJG-2.local:5173`
     // (works on the same LAN regardless of DHCP). For now using the
     // explicit IP — simpler debugging.
-    url: "http://10.70.42.67:5173",
+    url: "http://192.168.1.101:5173",
     cleartext: true,
   },
 
