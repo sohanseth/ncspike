@@ -20,7 +20,6 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { join } from "node:path";
 
 // ─── Mocks ────────────────────────────────────────────────────────────────
@@ -192,7 +191,7 @@ import {
 } from "@/server/agents/templates/research-digest";
 import { templates, resolveTemplate } from "@/server/agents/templates";
 import { execute, type RunnerDeps } from "@/server/agents/runner";
-import { checkBudget } from "@/server/agents/budget";
+import { checkBudget, recordCost } from "@/server/agents/budget";
 import type { AgentRow, BrokerContext } from "@/server/agents/types";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────
@@ -435,48 +434,147 @@ describe("PR3b invariant: ResearchDigest runs through the generic runner unchang
   });
 });
 
-// ─── Static invariant: runner.ts + batch.ts unchanged in PR3b ────────────
+// ─── PR3b.1: per-hop recordCost attribution ───────────────────────────────
 
-describe("PR3b static invariant: no runner.ts or batch.ts changes", () => {
-  // The test passes if these files match what's on main. If a PR3b commit
-  // accidentally edited the runner to accommodate ResearchDigest, this
-  // fails — which is the exact signal that the abstraction broke.
-  //
-  // We compare against `origin/main` to avoid drift from local commits
-  // accumulating during PR3b development. Skip if main isn't available
-  // (sandbox runs, clean checkouts, etc.).
+describe("PR3b.1: per-hop cost attribution via recordCost", () => {
+  it("ResearchDigest.summarise records one inference_usage row per item, tagged with the current run id", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    vi.mocked(recordCost).mockResolvedValue(undefined);
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    // 4 items kept → 4 recordCost calls. (Score-only LLM calls don't
+    // record cost yet; only summarise does in 3.0. Per-hop attribution
+    // is summarise-only until templates explicitly opt in.)
+    expect(vi.mocked(recordCost)).toHaveBeenCalledTimes(4);
+
+    for (const call of vi.mocked(recordCost).mock.calls) {
+      const args = call[0];
+      // The headline assertion: every cost row carries the run id.
+      expect(args.agentRunId).toBe(run.id);
+      // And the user_id + badge come straight from the agent row.
+      expect(args.userId).toBe(USER);
+      expect(args.badge).toBe("flash");
+      // Cost unit is micro-USD, not dollars.
+      expect(typeof args.costMicroUsd).toBe("number");
+      expect(args.costMicroUsd).toBeGreaterThan(0);
+      // Status, provider, tokens come from the generate() result.
+      expect(args.status).toBe("ok");
+      expect(args.providerUsed).toBe("groq");
+      expect(args.modelUsed).toBe("llama-3.3-70b-versatile");
+    }
+  });
+
+  it("aggregate cost on agent_runs still matches per-hop sum (no double-counting after PR3b.1)", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    vi.mocked(recordCost).mockResolvedValue(undefined);
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    const totalMicro = vi
+      .mocked(recordCost)
+      .mock.calls.reduce((acc, [args]) => acc + args.costMicroUsd, 0);
+
+    // agent_runs.cost_usd should equal the sum of per-hop micro costs,
+    // converted to USD. PR3b.1 must not introduce double-counting: each
+    // summarise returns the SAME microCost it just pushed to recordCost,
+    // not double the amount. This test pins that.
+    expect(run.cost_usd).toBeCloseTo(totalMicro / 1_000_000, 6);
+  });
+
+  it("recordCost failure does NOT crash the digest run (cap fail-open invariant)", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    // Make every recordCost call throw — simulates the worst-case
+    // ledger-write outage. The run must still complete with findings
+    // persisted; the cost just doesn't land in inference_usage.
+    vi.mocked(recordCost).mockRejectedValue(
+      new Error("simulated ledger outage 'with quoted PII'"),
+    );
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    // The run completed successfully.
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBe(4);
+    expect(agentFindingsInserts).toHaveLength(4);
+
+    // Cost still aggregated on the run row (the in-memory accumulator
+    // is independent of the ledger write).
+    expect(run.cost_usd).toBeGreaterThan(0);
+
+    // Each recordCost throw was caught + logged + scrubbed.
+    expect(consoleSpy).toHaveBeenCalled();
+    const logCalls = consoleSpy.mock.calls;
+    const sawScrubbedMessage = logCalls.some((args) =>
+      args.some(
+        (a) =>
+          typeof a === "string" &&
+          a.includes("research-digest") &&
+          a.includes("recordCost"),
+      ),
+    );
+    expect(sawScrubbedMessage).toBe(true);
+    // The 'with quoted PII' substring should NEVER appear in any log —
+    // the scrubber redacts quoted content before it hits stderr.
+    const allLogText = logCalls
+      .flat()
+      .filter((a) => typeof a === "string")
+      .join(" ");
+    expect(allLogText).not.toMatch(/with quoted PII/);
+    consoleSpy.mockRestore();
+  });
+});
+
+// ─── Static invariant: no template-specific code in runner.ts / batch.ts ─
+//
+// History: PR3b shipped this as a byte-identity check against origin/main.
+// That was the right shape FOR PR3b — proved ResearchDigest plugged in
+// without any runner touch. PR3b.1 legitimately added a single
+// context-shape field (`run.id` on TemplateCallContext) to enable per-hop
+// cost attribution; the byte-identity check would now reject a valid
+// generic extension.
+//
+// Replaced with grep-style assertions (same shape as the existing
+// "Invariant #7" suite in tests/leak-suite/phase30-runner.test.ts). These
+// fail if anyone adds template-id branching or imports from `templates/`
+// to the runtime — the real architectural concern.
+
+describe("Static invariant: no template-specific code in runtime files", () => {
   const repoRoot = join(__dirname, "..", "..");
   const FILES_TO_PIN = [
     "src/server/agents/runner.ts",
     "src/server/agents/batch.ts",
   ];
 
-  let mainAvailable = true;
-  try {
-    execSync("git rev-parse origin/main", { cwd: repoRoot, stdio: "pipe" });
-  } catch {
-    mainAvailable = false;
-  }
-
   for (const path of FILES_TO_PIN) {
-    (mainAvailable ? it : it.skip)(
-      `${path} is byte-identical to origin/main`,
-      () => {
-        const current = readFileSync(join(repoRoot, path), "utf8");
-        const onMain = execSync(`git show origin/main:${path}`, {
-          cwd: repoRoot,
-          encoding: "utf8",
-        });
-        if (current !== onMain) {
-          throw new Error(
-            `${path} has diverged from origin/main during PR3b.\n` +
-              `PR3b's invariant pass-condition is that ResearchDigest can run ` +
-              `through the runner with ZERO runner changes. If you changed ` +
-              `${path} to accommodate ResearchDigest, the abstraction is wrong — ` +
-              `fix the AgentTemplate contract instead of the runner.`,
-          );
-        }
-      },
-    );
+    const src = readFileSync(join(repoRoot, path), "utf8");
+
+    it(`${path} does not branch on agent.template_id`, () => {
+      expect(src, `${path} contains a template_id === string-literal branch`).not.toMatch(
+        /template_id\s*===\s*['"]/,
+      );
+      expect(src, `${path} contains a template_id == string-literal branch`).not.toMatch(
+        /template_id\s*==\s*['"]/,
+      );
+      expect(
+        src,
+        `${path} contains a switch/case on a known template id`,
+      ).not.toMatch(
+        /case\s+['"](research_digest|job|shopping|deal_watcher)['"]/,
+      );
+    });
+
+    it(`${path} does not import from any templates/ path`, () => {
+      expect(src, `${path} imports from a templates/ subpath`).not.toMatch(
+        /from\s+['"][^'"]*templates[\/'"]/,
+      );
+      expect(src, `${path} imports a /templates module`).not.toMatch(
+        /from\s+['"][^'"]*\/templates['"]/,
+      );
+    });
   }
 });

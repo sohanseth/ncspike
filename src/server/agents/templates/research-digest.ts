@@ -12,14 +12,6 @@
  * runner changes, the abstraction was wrong — the answer would have
  * been to fix the contract, not patch the runner.
  *
- * **No recordCost call in PR3b.** Per-hop `inference_usage` ledger
- * writes need the `runId` in TemplateCallContext, which today is only
- * `{config, broker}`. Extending the context shape is a runner.ts change,
- * which PR3b explicitly avoids. Cost still flows into `agent_runs.cost_usd`
- * via `_costMicroUsd` accumulation in the runner — just not the per-hop
- * inference_usage breakdown. That breakdown ships in PR3c (or a small
- * follow-up between PR3b and PR3c) once the context-extension question
- * is settled.
  *
  * **Privacy:** the broker `fragment` is forwarded opaquely to the LLM
  * as a system prompt. ResearchDigest never inspects it, never extracts
@@ -31,6 +23,8 @@ import { searxngSearch } from "@/lib/search.functions";
 import { generate } from "@/server/inference";
 import { costMicroUsd as pricingCostMicroUsd } from "@/server/inference/pricing";
 import type { ProviderId } from "@/lib/provider-tiers";
+import { recordCost } from "../budget";
+import { scrubErrorMessage } from "../error-scrub";
 import type {
   AgentTemplate,
   FindingDraft,
@@ -219,8 +213,9 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
 
   async summarise(
     item: ResearchItem,
-    { config, broker }: TemplateCallContext<ResearchDigestConfig>,
+    { config, broker, run }: TemplateCallContext<ResearchDigestConfig>,
   ): Promise<FindingDraft> {
+    const startedAt = Date.now();
     const result = await generate({
       messages: [
         { role: "system", content: broker.fragment },
@@ -229,6 +224,7 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
       maxTokens: 120,
       temperature: 0.4,
     });
+    const latencyMs = Date.now() - startedAt;
 
     const microCost = Number(
       pricingCostMicroUsd(
@@ -237,6 +233,39 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
         result.outputTokens,
       ),
     );
+
+    // Per-hop cost ledger entry (PR3b.1). Tagged via metadata.agent_run_id
+    // so CPAUD breakdowns can attribute spend to specific agent runs.
+    //
+    // **Fail-open** (Sneha: "recordCost() failure should be logged/scrubbed
+    // and not break the digest generation"). recordCost itself doesn't
+    // throw on insert failure (cap fail-open inherited from chat's
+    // writeUsage), but if anything else goes wrong — a network blip
+    // before the insert even starts, a synchronous throw in the supabase
+    // chain construction — we catch + scrub + continue. The cost would
+    // be lost from the ledger (acceptable under-counting per the existing
+    // CAP-CRITICAL convention) but the finding still lands.
+    try {
+      await recordCost({
+        userId: run.userId,
+        agentRunId: run.id,
+        badge: run.badge,
+        providerChain: [result.provider],
+        providerUsed: result.provider,
+        modelUsed: result.model,
+        fallbackDepth: 0,
+        inputTokens: result.inputTokens ?? null,
+        outputTokens: result.outputTokens ?? null,
+        costMicroUsd: microCost,
+        latencyMs,
+        status: "ok",
+      });
+    } catch (e) {
+      console.error(
+        `[research-digest] recordCost threw for run ${run.id}:`,
+        scrubErrorMessage(e),
+      );
+    }
 
     return {
       title: item.title,

@@ -171,11 +171,32 @@ export type BrokerContext = {
 /**
  * Per-call context handed to template methods. The shape is intentionally
  * minimal: template methods get the agent's `config` (already validated by
- * the template's Zod schema) and a `BrokerContext`. Nothing else.
+ * the template's Zod schema), a `BrokerContext`, and a `run` sub-object
+ * carrying the bare minimum the template needs for cost attribution.
+ *
+ * **The `run` sub-object (added in PR3b.1):** templates need it to call
+ * `recordCost()` inline per LLM hop so that `inference_usage` rows can be
+ * tagged with `metadata.agent_run_id = run.id`. Kept as a nested object
+ * so future additions (e.g., a `traitVersion` for promotion paths in 3.5)
+ * don't pollute the top level — `ctx.run.*` stays self-documenting.
+ *
+ * Templates MUST NOT use `run.id` or `run.userId` for any purpose other
+ * than telemetry / cost attribution. In particular: templates MUST NOT
+ * use `run.userId` to query for that user's data outside what's already
+ * in `config` and `broker`. The broker is the authoritative privacy
+ * boundary; the run identity is purely an accounting handle.
  */
 export type TemplateCallContext<TConfig> = {
   config: TConfig;
   broker: BrokerContext;
+  run: {
+    /** agent_runs.id — tag for `inference_usage.metadata.agent_run_id`. */
+    id: string;
+    /** agents.user_id — required field on `inference_usage.user_id`. */
+    userId: string;
+    /** agents.badge — required field on `inference_usage.badge`. */
+    badge: Badge;
+  };
 };
 
 /**
