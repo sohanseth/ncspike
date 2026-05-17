@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Loader, Pause, Play, Plus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import {
   archiveAgent,
   createResearchDigestAgent,
@@ -230,11 +231,9 @@ function AgentsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
+      <WorkspaceLocalNav />
       <header className="mb-8">
-        <p className="text-sm uppercase tracking-wider text-muted-foreground">
-          Workspace
-        </p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">Agents</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Agents</h1>
         <p className="mt-2 text-muted-foreground">
           Manage your research-digest agents. They pull relevant articles on
           your topics on a daily cadence and drop findings into your inbox.

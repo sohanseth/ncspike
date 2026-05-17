@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ExternalLink, RefreshCw } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import { listFindings, type FindingItem } from "@/lib/findings.functions";
 
 export const Route = createFileRoute("/workspace/inbox")({
@@ -129,12 +130,10 @@ function InboxPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
+      <WorkspaceLocalNav />
       <header className="mb-8 flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm uppercase tracking-wider text-muted-foreground">
-            Workspace
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Inbox</h1>
+          <h1 className="text-3xl font-semibold tracking-tight">Inbox</h1>
           <p className="mt-2 text-muted-foreground">
             Latest findings from your agents. Read-only for now — dismiss /
             snooze ships with the notification surface in 3.1.
