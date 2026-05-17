@@ -138,13 +138,37 @@ Notes on this topology:
 
 ## 6. Data model
 
-**Use docs/13 §5 SQL as-is.** All four tables. No changes for 3.0. Migration file:
+Use docs/13 §5 SQL as the starting point, with the timestamp-and-lease correction below (added 2026-05-17 per Sneha's invariant review). Migration file:
 
 ```
 supabase/migrations/20260601000000_phase30_agent_runtime.sql
 ```
 
-Make it idempotent per [replit.md](../replit.md) preferences:
+### 6.1 Timestamp + lease schema (overrides docs/13 §5)
+
+`docs/13` §5 has a single `last_run_at` column that conflates "when was this agent last claimed by a runner?" with "when did the last run complete?". This breaks the cadence semantics — a crashed runner that never finalizes leaves the timestamp ambiguous, and we'd need a separate lease mechanism for stuck-claim recovery anyway. The clean shape:
+
+| Column | Set by | Meaning |
+|---|---|---|
+| `last_claimed_at` | `claim_due_agents()` SQL function, at claim time | When the most recent runner picked this agent up. Diagnostic only — never read by scheduling. |
+| `last_completed_at` | `release_agent_lease()` SQL function, at finalize | When the most recent run reached its end (any status). **Drives cadence:** an agent is due when `now() - last_completed_at > cadence_hours`. |
+| `last_useful_at` | `release_agent_lease()` SQL function, if items_kept > 0 | When the most recent run produced ≥ 1 finding. **Drives inactive transition** (30 days no useful run → `inactive`). |
+| `claim_expires_at` | `claim_due_agents()` at claim; `release_agent_lease()` at finalize | Lease TTL. **DB-backed lease, no Durable Object needed.** If set + in future, agent is currently claimed and not eligible for re-claim. NULL = available. |
+
+**Lease semantics:**
+- TTL = 30 minutes (matches cron cadence + buffer; tunable constant in the claim function).
+- Set to `now() + 30 min` inside `claim_due_agents()` transaction (atomic with the SELECT FOR UPDATE).
+- Cleared (set NULL) by `release_agent_lease()` at finalize.
+- If runner crashes: lease auto-expires 30 min later; subsequent `claim_due_agents()` call treats the agent as available (lease check: `claim_expires_at IS NULL OR claim_expires_at < now()`).
+- Stuck-run sweep (§10) independently marks orphan `agent_runs` rows (status `running` for > 30 min) as `timeout` — that's about audit trail for the run, not about lease release.
+
+**Cadence is checked on `last_completed_at`**, not `last_claimed_at`. This means:
+- A successful run at T0 → next run eligible at T0 + cadence_hours (correct).
+- A crashed run claimed at T0 → `last_completed_at` not updated → next run eligible as soon as the lease expires (T0 + 30 min) AND cadence_hours since previous completion has passed. For agents that have NEVER completed, this means crash → 30 min recovery. Acceptable behavior — crashes are rare.
+
+### 6.2 Idempotency
+
+Per [replit.md](../replit.md) preferences:
 - `create type` / `create table` blocks wrapped in `do $$ ... end $$` with existence checks.
 - Indexes use `create index if not exists`.
 - Policies use `drop policy if exists` before `create policy`.
@@ -166,8 +190,8 @@ GDPR is a **PR1 blocker** — no runtime code lands until deletion + export are 
 | Agent run metadata (status, duration, cost, error) | `agent_runs` row | **DELETED** | EXPORTED | Including `error` (already PII-scrubbed) |
 | Generated findings (digest content, summaries) | `agent_findings` row | **DELETED** | EXPORTED | Output content; full delete |
 | Per-agent state (cursors, dedupe keys) | `agent_state` row | **DELETED** | EXPORTED | Opaque KV; full delete |
-| Cost events tied to this user's runs | `cpaud_events` row | **DELETED** | EXPORTED | Required so the user's cost ledger zeros out |
-| CPAUD aggregate row | `cpaud_aggregate` materialised view | **REFRESHED** (the deleted events stop contributing automatically) | aggregated values exported | View refresh removes the user's contribution; no separate DELETE needed |
+| Per-hop cost events tied to LLM calls during runs | `inference_usage` row (existing table, already wired through GDPR) | **DELETED** (already covered by existing delete_user_data) | EXPORTED (already in EXPORT_TABLES) | No new wiring needed; agent LLM hops use the existing inference_usage path the same way chat does. |
+| Daily aggregate of inference usage | `inference_usage_daily` row | **DELETED** (existing) | EXPORTED (existing) | Same |
 | Structured Worker logs (`console.log` JSON) | Cloudflare Workers log retention | **NOT DELETED** in 3.0 | NOT EXPORTED | CF Workers logs retained per CF policy (~24h on free tier, longer on paid). **Logs MUST contain only opaque IDs + metrics — no user content, no PII, no titles, no URLs, no summaries.** See §15 for the invariant. |
 | Provider traces (Anthropic / OpenAI / Groq side) | Provider's own infra | **NOT DELETED** | NOT EXPORTED | Each provider has its own retention + deletion policy. Documented in the privacy-posture page (Phase 3.9); user can request provider-side deletion via the broker's per-provider opt-out controls. |
 
@@ -181,26 +205,25 @@ If the log invariant *breaks* (e.g., a debug commit accidentally logs a finding 
 supabase/migrations/20260601000001_phase30_gdpr_agents.sql
 ```
 
-Drops + recreates `delete_user_data()` with the four new tables + `cpaud_events` filter in FK-safe order:
+Drops + recreates `delete_user_data()` with the four new tables in FK-safe order (cost events are already covered by the existing `inference_usage` delete — no new cost-table wiring needed):
 
 ```sql
 -- inside delete_user_data(target_user_id uuid)
--- (... existing chat/trait/etc deletes first ...)
-agent_findings_deleted   := (delete from public.agent_findings   where user_id = target_user_id);
-agent_state_deleted      := (delete from public.agent_state      where user_id = target_user_id);
-cpaud_events_deleted     := (delete from public.cpaud_events     where user_id = target_user_id and source = 'agent_run');
-agent_runs_deleted       := (delete from public.agent_runs       where user_id = target_user_id);
-agents_deleted           := (delete from public.agents           where user_id = target_user_id);
--- cpaud_aggregate materialised view picks up the deletion on next refresh
+-- (... existing chat/trait/etc deletes first, including inference_usage ...)
+-- NEW for Phase 3.0 — FK-safe order: children first, parent last.
+delete from public.agent_findings where user_id = target_user_id;
+delete from public.agent_state    where user_id = target_user_id;
+delete from public.agent_runs     where user_id = target_user_id;
+delete from public.agents         where user_id = target_user_id;
 ```
 
-Adds five new return columns: `agents_deleted`, `agent_runs_deleted`, `agent_findings_deleted`, `agent_state_deleted`, `cpaud_events_deleted` (filtered to source='agent_run').
+Adds four new return columns: `agents_deleted`, `agent_runs_deleted`, `agent_findings_deleted`, `agent_state_deleted`.
 
 Client-side updates in [src/lib/gdpr.functions.ts](../src/lib/gdpr.functions.ts):
-- `EXPORT_TABLES` adds `agents`, `agent_runs`, `agent_findings`, `agent_state`. (cpaud_events deletion is internal — not exported as a top-level table.)
-- `RPC_COLUMN_TO_TABLE` adds the five `*_deleted` keys.
+- `EXPORT_TABLES` adds `agents`, `agent_runs`, `agent_findings`, `agent_state`.
+- `RPC_COLUMN_TO_TABLE` adds the four `*_deleted` keys.
 
-[tests/leak-suite/gdpr-roundtrip-realdb.test.ts](../tests/leak-suite/gdpr-roundtrip-realdb.test.ts) — extend `seedUser()` to insert one row per agent table + one `cpaud_events` row tied to a fake agent_run in FK order. Assert `delete_user_data` returns `agent_findings_deleted: 1, agent_state_deleted: 1, agent_runs_deleted: 1, agents_deleted: 1, cpaud_events_deleted: 1`.
+[tests/leak-suite/gdpr-roundtrip-realdb.test.ts](../tests/leak-suite/gdpr-roundtrip-realdb.test.ts) — extend `seedUser()` to insert one row per agent table in FK order (agents → agent_runs → agent_findings + agent_state). Assert `delete_user_data` returns `agent_findings_deleted: 1, agent_state_deleted: 1, agent_runs_deleted: 1, agents_deleted: 1`.
 
 ---
 
@@ -618,14 +641,19 @@ export async function checkBudget(args: {
 
   // 2. Unified CPAUD: sum cost across all user spend today, including
   // accumulated cost from the current run that hasn't yet been recorded.
+  // PR2 task: replace this direct query with whatever the existing
+  // src/server/cpaud-alerts.ts / src/lib/cpaud.functions.ts already does
+  // for chat-side CPAUD ceiling checks. Keep the budget seam in this file
+  // so the integration is one swap, not a sprawl.
+  const dayKey = new Date().toISOString().slice(0, 10);
   const { data: spend } = await supabaseAdmin()
-    .from("cpaud_aggregate")  // existing materialised view, includes chat_messages.cost_usd + image-out + agent_runs.cost_usd
-    .select("total_usd")
+    .from("inference_usage_daily")  // existing daily aggregate; includes chat + agent (via inference_usage source='agent_run')
+    .select("cost_usd")
     .eq("user_id", args.userId)
-    .eq("day", new Date().toISOString().slice(0, 10))
-    .single();
+    .eq("day", dayKey)
+    .maybeSingle();
 
-  const projectedTotal = (spend?.total_usd ?? 0) + (args.accumulatedCostUsd ?? 0);
+  const projectedTotal = (spend?.cost_usd ?? 0) + (args.accumulatedCostUsd ?? 0);
   if (projectedTotal >= CPAUD_DAILY_CEILING_USD) {
     return { ok: false, reason: `user CPAUD ceiling ($${CPAUD_DAILY_CEILING_USD}) reached` };
   }
@@ -633,21 +661,30 @@ export async function checkBudget(args: {
   return { ok: true };
 }
 
-/** Push a single LLM-hop cost into the CPAUD ledger. Called inline during
- *  the run (per LLM hop), NOT batched at finalize. This is the invariant:
- *  *if external compute is attempted, cost is recorded — even if the run
- *  fails before persisting any finding*. Crash safety. */
+/** Push a single LLM-hop cost via the existing inference_usage path.
+ *  Called inline during the run (per LLM hop), NOT batched at finalize.
+ *  This is the invariant: *if external compute is attempted, cost is
+ *  recorded — even if the run fails before persisting any finding*.
+ *
+ *  Reuses the existing inference_usage table (same shape chat uses for its
+ *  cost-recording). agent_run_id is stored as a JSON tag in the existing
+ *  meta column so we can filter by it but don't need a new column or table.
+ *  The CPAUD aggregate view already pulls from inference_usage; no new
+ *  aggregation needed.
+ *
+ *  GDPR: inference_usage is already in EXPORT_TABLES and already wiped by
+ *  delete_user_data; no new GDPR wiring for cost events. */
 export async function recordCost(userId: string, costUsd: number, runId: string) {
   if (costUsd <= 0) return;
-  // Append-only cost-event row. The CPAUD aggregation view consumes these
-  // alongside chat / image-out cost rows. No double-entry; the agent_runs
-  // row's cost_usd is the per-run total maintained for UI display.
-  await supabaseAdmin().from("cpaud_events").insert({
+  // Mirror the existing chat-side cost-recording path. The chat runner uses
+  // the same insert shape for chat_messages-derived inference; agents do
+  // the same for symmetry.
+  await supabaseAdmin().from("inference_usage").insert({
     user_id: userId,
-    source: "agent_run",
-    source_id: runId,
     cost_usd: costUsd,
     occurred_at: new Date().toISOString(),
+    source: "agent_run",
+    source_id: runId,
   });
 }
 ```
