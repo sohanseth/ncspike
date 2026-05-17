@@ -11,6 +11,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { Badge } from "@/server/inference/router";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type ResolvedBadge = {
   /** The badge actually used to resolve the chain. */
@@ -61,7 +62,7 @@ export async function resolveBadgeForUser(
       // explicit choice, and the most-private chain is the only safe default.
       console.warn(
         "[personalization-routing] user_settings lookup returned error, failing closed to PRIVATE:",
-        error.message ?? error,
+        scrubErrorMessage(error.message ?? error),
       );
       return {
         badge: "private",

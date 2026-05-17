@@ -23,6 +23,7 @@ import { capFor, chainFor, modalityFor, type Badge } from "./router";
 import { isOnDeviceProvider } from "@/lib/provider-tiers";
 import { costMicroUsd } from "./pricing";
 import type { ProviderId } from "@/lib/provider-tiers";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 /**
  * Defense-in-depth: if the resolved chain contains any on-device provider,
@@ -234,7 +235,7 @@ export async function finalizeReservedUsage(args: {
     // (fail-closed against the user) until the 5-min sweep. Shout loudly.
     console.error(
       `[finalize_inference_usage] CAP-CRITICAL update failure (status=${args.status}):`,
-      error.message,
+      scrubErrorMessage(error.message),
     );
     return false;
   }
@@ -261,7 +262,7 @@ export async function releaseReservedUsage(
     p_user_id: userId,
   });
   if (error) {
-    console.error(`[release_inference_slot] failed:`, error.message);
+    console.error(`[release_inference_slot] failed:`, scrubErrorMessage(error.message));
     return false;
   }
   return Boolean(data);
@@ -319,7 +320,7 @@ async function writeUsage(args: WriteUsageArgs): Promise<void> {
   if (error) {
     console.error(
       `[inference_usage] CAP-CRITICAL insert failure (status=${args.status}):`,
-      error.message,
+      scrubErrorMessage(error.message),
     );
   }
 }
