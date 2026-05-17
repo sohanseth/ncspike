@@ -612,52 +612,76 @@ Two layers, checked **both pre-flight and mid-run**:
 import { supabaseAdmin } from "@/integrations/supabase/admin-client";
 import type { AgentBudget } from "./types";
 
-export type BudgetCheckResult = { ok: true } | { ok: false; reason: string };
+export type BudgetCheckResult =
+  | { ok: true }
+  | { ok: false; reason: string; kind: "per_agent_runs" | "cpaud_ceiling" };
 
-const CPAUD_DAILY_CEILING_USD = 1.50;
+// Unit invariant (Sneha audit, 2026-05-17): all internal cost math is
+// micro-USD. Dollars only appear in human-readable log strings. The dollar
+// constant in cpaud.functions stays the source of truth for UI; we derive
+// the integer micro form once at module load.
+const MICRO_PER_USD = 1_000_000;
+const CPAUD_CEILING_MICRO_USD = Math.round(CPAUD_CEILING_USD * MICRO_PER_USD);
 
 export async function checkBudget(args: {
   userId: string;
   agentId: string;
   perAgentBudget: AgentBudget;
-  /** Cost accumulated *within the current run, not yet flushed to CPAUD*.
-   *  Mid-run callers pass this so the check accounts for in-flight spend
-   *  before deciding to abort with partial_success. Preflight calls pass 0. */
-  accumulatedCostUsd?: number;
+  /** Cost (MICRO-USD) accumulated within the current run, not yet visible
+   *  in inference_usage_daily. Mid-run callers pass the running sum of
+   *  `_costMicroUsd` from each `template.summarise()`. Preflight: pass 0. */
+  accumulatedCostMicroUsd?: number;
+  /** Optional clock override for deterministic tests. */
+  now?: Date;
 }): Promise<BudgetCheckResult> {
-  // 1. Per-agent: count runs in the rolling 24h window (preflight only — once
-  // a run has started this would always be ≥ 1 from its own row).
-  if ((args.accumulatedCostUsd ?? 0) === 0) {
-    const { count: runsToday } = await supabaseAdmin()
+  const accumulatedMicro = args.accumulatedCostMicroUsd ?? 0;
+  const isPreflight = accumulatedMicro === 0;
+  const now = args.now ?? new Date();
+
+  // 1. Per-agent: count runs in the rolling 24h window (preflight only —
+  // once a run has started this would always be ≥ 1 from its own row).
+  if (isPreflight) {
+    const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    const { count } = await supabaseAdmin
       .from("agent_runs")
       .select("id", { count: "exact", head: true })
       .eq("agent_id", args.agentId)
-      .gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+      .gte("started_at", since);
 
-    if ((runsToday ?? 0) >= args.perAgentBudget.maxRunsPerDay) {
-      return { ok: false, reason: `per-agent maxRunsPerDay (${args.perAgentBudget.maxRunsPerDay}) reached` };
+    const runsToday = count ?? 0;
+    if (runsToday >= args.perAgentBudget.maxRunsPerDay) {
+      return {
+        ok: false,
+        kind: "per_agent_runs",
+        reason: `per-agent maxRunsPerDay (${args.perAgentBudget.maxRunsPerDay}) reached`,
+      };
     }
   }
 
-  // 2. Unified CPAUD: sum cost across all user spend today, including
-  // accumulated cost from the current run that hasn't yet been recorded.
-  // PR2 task: replace this direct query with whatever the existing
-  // src/server/cpaud-alerts.ts / src/lib/cpaud.functions.ts already does
-  // for chat-side CPAUD ceiling checks. Keep the budget seam in this file
-  // so the integration is one swap, not a sprawl.
-  const dayKey = new Date().toISOString().slice(0, 10);
-  const { data: spend } = await supabaseAdmin()
-    .from("inference_usage_daily")  // existing daily aggregate; includes chat + agent (via inference_usage source='agent_run')
-    .select("cost_usd")
+  // 2. Unified CPAUD: sum micro-USD spend for today from the daily
+  // aggregate, plus accumulated in-flight cost. The agent runtime reads
+  // the aggregate (not raw inference_usage) because the 30-min cron
+  // cadence doesn't need sub-day latency.
+  const dayKey = now.toISOString().slice(0, 10);
+  const { data } = await supabaseAdmin
+    .from("inference_usage_daily")
+    .select("cost_micro_usd_sum")
     .eq("user_id", args.userId)
-    .eq("day", dayKey)
-    .maybeSingle();
+    .eq("day", dayKey);
 
-  const projectedTotal = (spend?.cost_usd ?? 0) + (args.accumulatedCostUsd ?? 0);
-  if (projectedTotal >= CPAUD_DAILY_CEILING_USD) {
-    return { ok: false, reason: `user CPAUD ceiling ($${CPAUD_DAILY_CEILING_USD}) reached` };
+  const todaySpendMicro = (data ?? []).reduce(
+    (acc, row) => acc + Number(row.cost_micro_usd_sum ?? 0),
+    0,
+  );
+  const projectedMicro = todaySpendMicro + accumulatedMicro;
+
+  if (projectedMicro >= CPAUD_CEILING_MICRO_USD) {
+    return {
+      ok: false,
+      kind: "cpaud_ceiling",
+      reason: `user CPAUD ceiling ($${CPAUD_CEILING_USD.toFixed(2)}) reached`,
+    };
   }
-
   return { ok: true };
 }
 
@@ -666,28 +690,63 @@ export async function checkBudget(args: {
  *  This is the invariant: *if external compute is attempted, cost is
  *  recorded — even if the run fails before persisting any finding*.
  *
- *  Reuses the existing inference_usage table (same shape chat uses for its
- *  cost-recording). agent_run_id is stored as a JSON tag in the existing
- *  meta column so we can filter by it but don't need a new column or table.
- *  The CPAUD aggregate view already pulls from inference_usage; no new
- *  aggregation needed.
+ *  Reuses the existing inference_usage table (same shape chat uses via
+ *  src/server/inference/chat.ts:writeUsage). agent_run_id is tagged in
+ *  the `metadata` JSONB column (added 20260517000200_phase29b) so CPAUD
+ *  breakdowns can attribute spend to agents vs chat without a new column.
  *
- *  GDPR: inference_usage is already in EXPORT_TABLES and already wiped by
- *  delete_user_data; no new GDPR wiring for cost events. */
-export async function recordCost(userId: string, costUsd: number, runId: string) {
-  if (costUsd <= 0) return;
-  // Mirror the existing chat-side cost-recording path. The chat runner uses
-  // the same insert shape for chat_messages-derived inference; agents do
-  // the same for symmetry.
-  await supabaseAdmin().from("inference_usage").insert({
-    user_id: userId,
-    cost_usd: costUsd,
-    occurred_at: new Date().toISOString(),
-    source: "agent_run",
-    source_id: runId,
+ *  GDPR: inference_usage is already in EXPORT_TABLES and already wiped
+ *  by delete_user_data; no new GDPR wiring for cost events. */
+export async function recordCost(args: {
+  userId: string;
+  agentRunId: string;
+  badge: Badge;
+  providerChain: string[];
+  providerUsed: string;
+  modelUsed: string | null;
+  fallbackDepth: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** Micro-USD per the unit invariant above. */
+  costMicroUsd: number;
+  latencyMs: number;
+  status: "ok" | "rate_limited" | "error" | "user_abort" | "cap_exceeded";
+  errorClass?: string;
+}): Promise<void> {
+  const { error } = await supabaseAdmin.from("inference_usage").insert({
+    user_id: args.userId,
+    thread_id: null,
+    badge: args.badge,
+    provider_chain: args.providerChain,
+    provider_used: args.providerUsed,
+    model_used: args.modelUsed,
+    fallback_depth: args.fallbackDepth,
+    input_tokens: args.inputTokens,
+    output_tokens: args.outputTokens,
+    cost_micro_usd: args.costMicroUsd,
+    latency_ms: args.latencyMs,
+    status: args.status,
+    error_class: args.errorClass ?? null,
+    metadata: { agent_run_id: args.agentRunId },  // ← the agent tag
   });
+  // Cap fail-open invariant inherited from chat's writeUsage: insert errors
+  // are logged but NEVER thrown — raising here would cancel an agent
+  // finding that already completed. Fix lands with the atomic ledger.
+  if (error) {
+    console.error(
+      `[inference_usage] CAP-CRITICAL agent recordCost failure (status=${args.status}, run=${args.agentRunId}):`,
+      error.message,
+    );
+  }
 }
 ```
+
+**Implementation reference:** the live code matching this example is in
+[`src/server/agents/budget.ts`](../src/server/agents/budget.ts) and
+[`tests/leak-suite/phase30-budget.test.ts`](../tests/leak-suite/phase30-budget.test.ts).
+The two earlier sketches in this section (pre-PR2) referenced
+`source` / `source_id` / `cost_usd` columns that don't exist on
+`inference_usage` — superseded.
 
 ### 11.1 Run-status enum
 
@@ -701,10 +760,10 @@ export async function recordCost(userId: string, costUsd: number, runId: string)
 | `partial_success` | Mid-run budget check failed; some findings persisted before abort | Yes — partial cost recorded |
 | `skipped_budget_exceeded` | Preflight budget check failed; no external work attempted | No |
 | `skipped_disabled` | Agent state changed to `paused` / `archived` / `error` between claim and execute (rare) | No |
-| `timeout` | Sweep marked it — runner never reached finalize within the threshold | Possibly — last recorded cost in `cpaud_events` is authoritative |
+| `timeout` | Sweep marked it — runner never reached finalize within the threshold | Possibly — last recorded cost in `inference_usage` (filtered by `metadata->>'agent_run_id' = run.id`) is authoritative |
 | `cancelled` | User-initiated cancellation. **Not used in 3.0** (no cancel UI yet); reserved for 3.5+ | Possibly |
 
-**Invariant — cost durability:** for every status except `running`, `agent_runs.cost_usd` reflects the total of `cpaud_events` rows for that `run_id`. The sweep and partial_success paths preserve this — `recordCost` runs inline per LLM hop, so even a runner crash post-LLM-hop leaves the cost in the ledger.
+**Invariant — cost durability:** for every status except `running`, `agent_runs.cost_usd` reflects the total of `inference_usage` rows filtered by `metadata->>'agent_run_id' = run.id`. The sweep and partial_success paths preserve this — `recordCost` runs inline per LLM hop, so even a runner crash post-LLM-hop leaves the cost in the ledger.
 
 ### 11.2 Free-tier ceiling enforcement (3.0 vs 3.1)
 
@@ -1102,7 +1161,7 @@ Runtime assumptions worth making explicit even though each has an answer somewhe
 | CPAUD budget exhausted mid-run | `partial_success` status; persisted findings kept; recorded cost retained; remaining items not fetched. | §11 |
 | Skipped runs recorded? | **Yes for `skipped_disabled` and `partial_success`.** **No** explicit row for `skipped_not_due` — `claim_due_agents` filters them out before they reach the runner, so they never get a row. Preflight `skipped_budget_exceeded` DOES insert a row (the runner has already written `status='running'` before the check). | §11.1 |
 | Degraded / inactive vs active scheduling | Same `claim_due_agents` query path. `inactive` runs at 2× the configured cadence_hours; `degraded` runs at 1× but has its `consecutive_failures` count visible in the UI. State transitions happen in `updateAgentLifecycleState()` after each run. | §8 (SQL) + §12 |
-| Deletion behavior for agent output vs run metadata under GDPR | All deleted equally. Output (`agent_findings`), metadata (`agent_runs`), config (`agents`), cursors (`agent_state`), and per-run cost events (`cpaud_events` filtered) all wiped in one `delete_user_data` call. Structured Worker logs NOT deleted; relies on no-content invariant. | §7.1 |
+| Deletion behavior for agent output vs run metadata under GDPR | All deleted equally. Output (`agent_findings`), metadata (`agent_runs`), config (`agents`), cursors (`agent_state`), and per-run cost events (`inference_usage` rows, already covered by the existing user-id delete) all wiped in one `delete_user_data` call. Structured Worker logs NOT deleted; relies on no-content invariant. | §7.1 |
 | Duplicate-run prevention if a cron overlaps a slow previous invocation | Two-layered: (1) `claim_due_agents` updates `last_run_at = now()` inside the claiming transaction, so the slow invocation's agent is invisible to subsequent ticks for `cadence_hours`. (2) `FOR UPDATE SKIP LOCKED` prevents two concurrent invocations from claiming the same row. (3) Stuck-run sweep marks `running` rows older than 30 min as `timeout` so the UI doesn't show "still running" forever. | §8 + §10 |
 
 ## 22. Invariant verification checklist (for PR1 review)
@@ -1116,7 +1175,7 @@ These are the seven invariants Sneha flagged. Each must be verifiable from the c
 | 3 | No content in logs | `logRun()` schema is IDs + metrics only; `errorCodeFor()` maps raw exceptions to enum codes | CI test in `log-contents.test.ts` runs adversarial fixtures, greps log output for forbidden strings |
 | 4 | Budget checked before AND after | `checkBudget()` called in two places: preflight (§9 step 1.5) and mid-run loop (§9 step 6) | Unit test: fixture where 3rd item pushes over CPAUD ceiling → `status=partial_success`, `items_kept=2`, cost recorded for hops 1–3 |
 | 5 | Failures are durable | `agent_runs` row inserted as `running` at start; finalize always runs (in `finally` or via sweep) | Integration test: kill the Worker mid-run; next batch tick's sweep marks the row `timeout` |
-| 6 | GDPR delete is complete | `delete_user_data` covers all 5 data classes (4 tables + cpaud_events filter); structured logs covered by no-content invariant | `gdpr-roundtrip-realdb.test.ts` extends seed + assert (per §7.2) |
+| 6 | GDPR delete is complete | `delete_user_data` covers all 5 data classes (4 agent tables + `inference_usage` user-id delete, already covered pre-PR1); structured logs covered by no-content invariant | `gdpr-roundtrip-realdb.test.ts` extends seed + assert (per §7.2) |
 | 7 | ResearchDigest not hardcoded | Runner uses only `AgentTemplate<unknown, unknown>` dispatch; no `if (template_id === ...)` branches anywhere | Code review grep + a "second template" smoke test in 3.1 (when JobAgent lands) — if the runner needed changes to host it, this invariant was broken |
 
 PR1 ships the schema + GDPR per §20. PRs 2–5 each must demonstrate the relevant invariants are still upheld; reviewer should reject any PR that breaks one without an explicit spec revision.
