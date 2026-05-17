@@ -28,8 +28,10 @@ const MAX_TOPIC_LEN = 120;
 function AgentsPage() {
   // Auth gate — matches workspace.connections.tsx. Server fn is also
   // gated by requireSupabaseAuth middleware (the authoritative check);
-  // this redirect is the UX layer so an unauthed visitor doesn't see
-  // a form that would silently fail on submit.
+  // this redirect + render gate is the UX layer so an unauthed visitor
+  // doesn't see a form that would silently fail on submit, AND so
+  // the form doesn't flash for a frame between auth-context settling
+  // and the redirect firing.
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   useEffect(() => {
@@ -94,6 +96,18 @@ function AgentsPage() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Hold render until auth context settles. Without this, an unauth'd
+  // visitor sees the form for a frame before the redirect effect fires;
+  // an auth'd visitor sees the form referencing `user` before it's set.
+  // Matches the gate in workspace.connections.tsx.
+  if (loading || !user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">
+        Loading…
+      </div>
+    );
   }
 
   return (
