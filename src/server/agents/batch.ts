@@ -138,7 +138,7 @@ export async function sweepStuckRuns(thresholdMinutes: number): Promise<number> 
     .select("id");
 
   if (error) {
-    console.error(`[batch] sweepStuckRuns failed:`, error.message);
+    console.error(`[batch] sweepStuckRuns failed:`, scrubErrorMessage(error.message));
     return 0;
   }
   return Array.isArray(data) ? data.length : 0;

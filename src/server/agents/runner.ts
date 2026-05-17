@@ -306,9 +306,14 @@ export async function execute(
         // record and continue. Worst case: the user doesn't see that
         // specific finding; cost was already incurred (template called
         // recordCost during summarise).
+        //
+        // The dedupe_key (often a URL) is deliberately NOT included in
+        // the log — that's user content per the no-content invariant.
+        // The error message itself goes through scrubErrorMessage in
+        // case Supabase echoes the conflicting key value back.
         console.error(
-          `[runner] agent_findings insert failed for run ${runId} key=${dedupeKey}:`,
-          insertErr.message,
+          `[runner] agent_findings insert failed for run ${runId}:`,
+          scrubErrorMessage(insertErr.message),
         );
         continue;
       }
@@ -359,7 +364,7 @@ export async function execute(
     if (updateErr) {
       console.error(
         `[runner] agent_runs update failed for run ${runId}:`,
-        updateErr.message,
+        scrubErrorMessage(updateErr.message),
       );
     }
 
@@ -483,7 +488,7 @@ async function saveSeenKeys(
   if (error) {
     console.error(
       `[runner] agent_state upsert failed for agent ${agentId}:`,
-      error.message,
+      scrubErrorMessage(error.message),
     );
   }
 }
