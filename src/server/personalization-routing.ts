@@ -85,7 +85,7 @@ export async function resolveBadgeForUser(
   } catch (e) {
     console.warn(
       "[personalization-routing] resolveBadgeForUser threw, failing closed to PRIVATE:",
-      e,
+      scrubErrorMessage(e),
     );
     return {
       badge: "private",

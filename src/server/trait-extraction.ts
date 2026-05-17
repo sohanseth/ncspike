@@ -34,6 +34,7 @@ import {
   type TraitSheet,
 } from "@/lib/trait-schema";
 import { scrub } from "@/server/pii-scrub";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 const MEMORY_WINDOW_DAYS = 30;
 const MAX_MEMORY_NODES = 400; // truncate input to keep prompts under the budget
@@ -296,7 +297,7 @@ async function logExtractionFailure(
     });
   } catch (e) {
     // never let an audit-write failure break extraction
-    console.warn(`[trait-extraction] audit write failed for ${userId}:`, e);
+    console.warn(`[trait-extraction] audit write failed for ${userId}:`, scrubErrorMessage(e));
   }
 }
 
@@ -989,7 +990,7 @@ export async function backfillTraitMetaAllUsers(): Promise<BackfillSummary> {
       // Surface as failed so the script's non-zero exit fires; otherwise a
       // truncated/erroring user-list silently returns "0 failed" and the
       // operator believes the backfill completed cleanly.
-      console.error("[trait-backfill] user-list query failed:", error);
+      console.error("[trait-backfill] user-list query failed:", scrubErrorMessage(error.message ?? String(error)));
       summary.failed++;
       return summary;
     }
@@ -1009,7 +1010,7 @@ export async function backfillTraitMetaAllUsers(): Promise<BackfillSummary> {
       else summary.failed++;
     } catch (e) {
       summary.failed++;
-      console.error(`[trait-backfill] user ${userId} threw:`, e);
+      console.error(`[trait-backfill] user ${userId} threw:`, scrubErrorMessage(e));
     }
   }
 
@@ -1059,7 +1060,7 @@ export async function runTraitExtractionAllUsers(): Promise<ExtractionCronSummar
     .select("user_id")
     .gte("created_at", since);
   if (error) {
-    console.error("[trait-extraction] user-list query failed:", error);
+    console.error("[trait-extraction] user-list query failed:", scrubErrorMessage(error.message ?? String(error)));
     return summary;
   }
   const userIds = Array.from(
@@ -1081,7 +1082,7 @@ export async function runTraitExtractionAllUsers(): Promise<ExtractionCronSummar
       else summary.skipped++;
     } catch (e) {
       summary.failed++;
-      console.error(`[trait-extraction] user ${userId} threw:`, e);
+      console.error(`[trait-extraction] user ${userId} threw:`, scrubErrorMessage(e));
     }
   }
 

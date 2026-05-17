@@ -32,6 +32,7 @@ import {
 } from "@/server/calendar.server";
 import { parsePrepTimeToHours } from "@/server/email-intent.server";
 import { generate, InferenceError } from "@/server/inference";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 // ---------------------------------------------------------------------------
 // Generic tool contract
@@ -273,7 +274,7 @@ export async function executeSuggestAvailability(
   try {
     slots = await proposeFreeSlots(userId, { bufferHours, throwOnError: true });
   } catch (e) {
-    console.warn("suggest_availability: proposeFreeSlots failed:", e);
+    console.warn("suggest_availability: proposeFreeSlots failed:", scrubErrorMessage(e));
     return { status: "error", message: e instanceof Error ? e.message.slice(0, 200) : "calendar lookup failed" };
   }
   if (slots.length === 0) return { status: "empty" };
@@ -494,7 +495,7 @@ function mapCalendarError(
   if (/not\s+connected|reconnect/i.test(msg)) {
     return { ok: false, reason: "no_calendar", message: "Connect Google Calendar first." };
   }
-  console.warn(`${source} failed:`, e);
+  console.warn(`${source} failed:`, scrubErrorMessage(e));
   return { ok: false, reason: "create_failed", message: msg.slice(0, 200) };
 }
 

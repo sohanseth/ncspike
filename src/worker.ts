@@ -101,7 +101,7 @@ export default {
     if (event.cron === RESEARCH_CRON) {
       ctx.waitUntil(
         runResearchBatchAllUsers().catch((e) => {
-          console.error("[worker.scheduled] research cron threw:", e);
+          console.error("[worker.scheduled] research cron threw:", scrubErrorMessage(e));
         }),
       );
       return;
