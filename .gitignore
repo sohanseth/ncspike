@@ -16,6 +16,12 @@ dist-ssr
 .nitro
 *.local
 
+# Environment files — never commit a real .env. Use .env.example as the
+# checked-in template and copy to .env / .env.local for local dev.
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
