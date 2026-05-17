@@ -4,9 +4,16 @@
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/worker.ts",
-  // 03:07 UTC nightly. Off-hour to dodge midnight cron storms; minute 7 to
-  // avoid the global ":00" stampede on Cloudflare's scheduler.
+  // Two scheduled triggers, dispatched by cron string in src/worker.ts:
+  //
+  //   "7 3 * * *"    — nightly research-cron. Off-hour + minute 7 to dodge
+  //                    the midnight cron storm and the global ":00" stampede.
+  //   "*/30 * * * *" — agent runtime batch tick (PR3c). Matches docs/16 §10
+  //                    cadence; runAgentBatch caps at BATCH_LIMIT=10 agents
+  //                    per tick and the lease TTL matches the interval, so
+  //                    a missed tick is recovered by the stuck-run sweep on
+  //                    the next one.
   "triggers": {
-    "crons": ["7 3 * * *"]
+    "crons": ["7 3 * * *", "*/30 * * * *"]
   }
 }
