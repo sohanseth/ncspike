@@ -41,3 +41,7 @@ android/app/src/main/assets/nsfw_image_classifier.tflite
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling — Claude Code preview-server config and other per-dev
+# scratch dirs. Machine-specific (ports, paths); don't pollute git status.
+.claude/
