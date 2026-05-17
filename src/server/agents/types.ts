@@ -183,6 +183,13 @@ export type TemplateCallContext<TConfig> = {
  * `agent_findings` row. The two underscored fields carry cost telemetry the
  * runner needs to drive budget enforcement and CPAUD; they don't end up in
  * the DB.
+ *
+ * **Unit choice (Sneha audit, 2026-05-17):** all internal cost values are
+ * micro-USD (1 USD = 1_000_000 micro). Templates that talk to providers
+ * which return dollars (or cents) MUST convert at the provider boundary
+ * before populating `_costMicroUsd`. Dollar formatting happens only in
+ * UI / reporting / log strings — never in budget math. Eliminates the
+ * unit-drift class of bugs at source.
  */
 export type FindingDraft = {
   title: string;
@@ -191,8 +198,8 @@ export type FindingDraft = {
   urgency: AgentFindingUrgency;
   /** Number of LLM round-trips this summarise() call performed. */
   _llmHops: number;
-  /** USD spent on this summarise() call (sum of provider costs). */
-  _costUsd: number;
+  /** Micro-USD spent on this summarise() call (sum of provider costs). */
+  _costMicroUsd: number;
 };
 
 /**
@@ -212,7 +219,7 @@ export type FindingDraft = {
  *  - `score`  — relevance score in [0, 1]. Items below
  *               `config.minScore` are dropped before summarise.
  *  - `summarise` — produce the finding draft. Cost + hop counts surface to
- *                  the runner via `_costUsd` / `_llmHops`.
+ *                  the runner via `_costMicroUsd` / `_llmHops`.
  */
 export type AgentTemplate<TConfig, TItem> = {
   /** Stable id matching `agents.template_id`. */

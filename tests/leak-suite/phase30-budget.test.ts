@@ -284,7 +284,7 @@ describe("checkBudget — preflight CPAUD ceiling", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) {
       expect(r.kind).toBe("cpaud_ceiling");
-      expect(r.reason).toMatch(/CPAUD ceiling \(\$1\.50\)/);
+      expect(r.reason).toMatch(/CPAUD ceiling \(\$1\.5000\)/);
     }
   });
 
@@ -344,7 +344,7 @@ describe("checkBudget — preflight CPAUD ceiling", () => {
 
 // ─── Mid-run: skips per-agent, only CPAUD with accumulated cost ───────────
 
-describe("checkBudget — mid-run (accumulatedCostUsd > 0)", () => {
+describe("checkBudget — mid-run (accumulatedCostMicroUsd > 0)", () => {
   it("rejects when today-spend + accumulated reaches ceiling", async () => {
     inferenceUsageDailyRows.push({
       user_id: USER,
@@ -355,7 +355,7 @@ describe("checkBudget — mid-run (accumulatedCostUsd > 0)", () => {
       userId: USER,
       agentId: AGENT,
       perAgentBudget: BUDGET,
-      accumulatedCostUsd: 0.01,
+      accumulatedCostMicroUsd: 10_000,
       now: NOW,
     });
     expect(r.ok).toBe(false);
@@ -375,7 +375,7 @@ describe("checkBudget — mid-run (accumulatedCostUsd > 0)", () => {
       userId: USER,
       agentId: AGENT,
       perAgentBudget: BUDGET,
-      accumulatedCostUsd: 0.49,
+      accumulatedCostMicroUsd: 490_000,
       now: NOW,
     });
     expect(r.ok).toBe(true);
@@ -394,7 +394,7 @@ describe("checkBudget — mid-run (accumulatedCostUsd > 0)", () => {
       userId: USER,
       agentId: AGENT,
       perAgentBudget: BUDGET,
-      accumulatedCostUsd: 0.01,
+      accumulatedCostMicroUsd: 10_000,
       now: NOW,
     });
     expect(r.ok).toBe(true); // CPAUD has room; per-agent should be skipped

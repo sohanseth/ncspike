@@ -9,7 +9,7 @@
  *   2. **Unified CPAUD ceiling** — `CPAUD_CEILING_USD` (currently $1.50/day),
  *      enforced against the user's daily spend across all features (chat,
  *      agents, on-device). Source: `inference_usage_daily.cost_micro_usd_sum`
- *      aggregated for today; mid-run callers pass `accumulatedCostUsd` so
+ *      aggregated for today; mid-run callers pass `accumulatedCostMicroUsd` so
  *      the projected total accounts for in-flight spend not yet flushed.
  *
  * The status mapping the runner uses (docs/16 §11.1):
@@ -38,8 +38,27 @@ import type { Badge } from "@/server/inference/router";
 
 const MICRO_PER_USD = 1_000_000;
 
+/**
+ * CPAUD ceiling as micro-USD — the unit used for all internal budget math.
+ * The dollar constant in cpaud.functions stays the source of truth for UI;
+ * we derive the integer micro form once at module load to avoid per-call
+ * float multiplication.
+ *
+ * **Unit invariant (Sneha audit, 2026-05-17):** every internal cost
+ * comparison and accumulation in this file is micro-USD. Dollars only
+ * appear in human-facing reason strings. If you ever find yourself
+ * dividing or multiplying by MICRO_PER_USD outside `formatDollarsForLog`,
+ * something is wrong.
+ */
+const CPAUD_CEILING_MICRO_USD = Math.round(CPAUD_CEILING_USD * MICRO_PER_USD);
+
 /** Re-exported so callers don't reach into cpaud.functions just for the constant. */
 export { CPAUD_CEILING_USD };
+
+/** Dollar formatting helper for human-readable log lines. NEVER for budget math. */
+function formatDollarsForLog(microUsd: number): string {
+  return `$${(microUsd / MICRO_PER_USD).toFixed(4)}`;
+}
 
 // ─── Budget check ─────────────────────────────────────────────────────────
 
@@ -48,12 +67,16 @@ export type CheckBudgetArgs = {
   agentId: string;
   perAgentBudget: AgentBudget;
   /**
-   * Cost (USD) accumulated within the current run, NOT yet visible in
-   * `inference_usage_daily`. Mid-run callers pass the running sum of
-   * `_costUsd` from each `template.summarise()`. Preflight callers pass
-   * 0 (or omit). Used to compute the projected total against the ceiling.
+   * Cost (MICRO-USD) accumulated within the current run, NOT yet visible
+   * in `inference_usage_daily`. Mid-run callers pass the running sum of
+   * `_costMicroUsd` from each `template.summarise()`. Preflight callers
+   * pass 0 (or omit). Used to compute the projected total against the
+   * ceiling.
+   *
+   * Micro-USD because all internal cost math in this module is micro;
+   * see the unit invariant on `CPAUD_CEILING_MICRO_USD`.
    */
-  accumulatedCostUsd?: number;
+  accumulatedCostMicroUsd?: number;
   /**
    * Optional clock override for deterministic tests. Production callers
    * should omit it and let the function use the wall clock.
@@ -65,16 +88,16 @@ export type CheckBudgetArgs = {
  * Decides whether the agent may continue. Both layers are checked; the
  * stricter one wins.
  *
- * - Preflight (`accumulatedCostUsd` omitted or 0): both per-agent
+ * - Preflight (`accumulatedCostMicroUsd` omitted or 0): both per-agent
  *   maxRunsPerDay and CPAUD ceiling are checked. Per-agent is the
  *   cheaper check, so it runs first.
- * - Mid-run (`accumulatedCostUsd > 0`): only the CPAUD ceiling is
+ * - Mid-run (`accumulatedCostMicroUsd > 0`): only the CPAUD ceiling is
  *   checked. The per-agent runs count would always include the current
  *   in-flight run, making it tautologically over budget; skip it.
  */
 export async function checkBudget(args: CheckBudgetArgs): Promise<BudgetCheckResult> {
-  const accumulated = args.accumulatedCostUsd ?? 0;
-  const isPreflight = accumulated === 0;
+  const accumulatedMicro = args.accumulatedCostMicroUsd ?? 0;
+  const isPreflight = accumulatedMicro === 0;
   const now = args.now ?? new Date();
 
   // 1. Per-agent maxRunsPerDay — preflight only.
@@ -100,16 +123,16 @@ export async function checkBudget(args: CheckBudgetArgs): Promise<BudgetCheckRes
     }
   }
 
-  // 2. Unified CPAUD ceiling — user's daily spend, plus any in-flight
-  // accumulated cost. Sum across all badges/providers for today.
-  const todaySpendUsd = await fetchTodaySpendUsd(args.userId, now);
-  const projectedTotal = todaySpendUsd + accumulated;
+  // 2. Unified CPAUD ceiling — user's daily spend (micro-USD) plus any
+  // in-flight accumulated cost. Sum across all badges/providers for today.
+  const todaySpendMicro = await fetchTodaySpendMicroUsd(args.userId, now);
+  const projectedTotalMicro = todaySpendMicro + accumulatedMicro;
 
-  if (projectedTotal >= CPAUD_CEILING_USD) {
+  if (projectedTotalMicro >= CPAUD_CEILING_MICRO_USD) {
     return {
       ok: false,
       kind: "cpaud_ceiling",
-      reason: `user CPAUD ceiling ($${CPAUD_CEILING_USD.toFixed(2)}) reached: projected $${projectedTotal.toFixed(4)} (today $${todaySpendUsd.toFixed(4)} + in-flight $${accumulated.toFixed(4)})`,
+      reason: `user CPAUD ceiling (${formatDollarsForLog(CPAUD_CEILING_MICRO_USD)}) reached: projected ${formatDollarsForLog(projectedTotalMicro)} (today ${formatDollarsForLog(todaySpendMicro)} + in-flight ${formatDollarsForLog(accumulatedMicro)})`,
     };
   }
 
@@ -118,7 +141,8 @@ export async function checkBudget(args: CheckBudgetArgs): Promise<BudgetCheckRes
 
 /**
  * Sum today's `inference_usage_daily.cost_micro_usd_sum` for the user
- * across all badges/providers. Returns USD.
+ * across all badges/providers. Returns **micro-USD** (no conversion) so
+ * caller-side math stays in the same unit as the column.
  *
  * Reads the aggregate (not the raw `inference_usage` table) because the
  * aggregate already exists, is indexed on `(user_id, day)`, and stays in
@@ -133,7 +157,7 @@ export async function checkBudget(args: CheckBudgetArgs): Promise<BudgetCheckRes
  * already uses both surfaces; the agent runtime can graduate to direct
  * `inference_usage` reads if the under-counting causes real CPAUD breaches.
  */
-async function fetchTodaySpendUsd(userId: string, now: Date): Promise<number> {
+async function fetchTodaySpendMicroUsd(userId: string, now: Date): Promise<number> {
   // UTC day key — matches the daily-aggregate's `day` column.
   const dayKey = now.toISOString().slice(0, 10);
   const { data, error } = await (supabaseAdmin as any)
@@ -146,12 +170,10 @@ async function fetchTodaySpendUsd(userId: string, now: Date): Promise<number> {
     throw new Error(`checkBudget: failed to read inference_usage_daily: ${error.message}`);
   }
 
-  const microSum = (data as Array<{ cost_micro_usd_sum: number | null }> | null)?.reduce(
+  return (data as Array<{ cost_micro_usd_sum: number | null }> | null)?.reduce(
     (acc, row) => acc + Number(row.cost_micro_usd_sum ?? 0),
     0,
   ) ?? 0;
-
-  return microSum / MICRO_PER_USD;
 }
 
 // ─── Cost recording ───────────────────────────────────────────────────────
