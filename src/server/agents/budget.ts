@@ -102,13 +102,28 @@ export async function checkBudget(args: CheckBudgetArgs): Promise<BudgetCheckRes
   const now = args.now ?? new Date();
 
   // 1. Per-agent maxRunsPerDay — preflight only.
+  //
+  // Counts **finalized** runs in the last 24h, NOT all runs. The runner
+  // inserts the current run's `agent_runs` row as `status='running',
+  // finished_at=NULL` BEFORE this preflight check (per the documented
+  // lifecycle step 1: durability). Without the `finished_at IS NOT NULL`
+  // filter, the current in-flight row counted toward its own budget —
+  // every fresh ResearchDigest agent (maxRunsPerDay=1) was immediately
+  // skipped_budget_exceeded with reason "1 runs in the last 24h".
+  // Caught during 2026-05-18 deploy verification.
+  //
+  // Stuck `status='running'` rows (crashed runner awaiting sweep) are
+  // also excluded until the stuck-run sweep finalizes them to `timeout`
+  // with `finished_at` set. Acceptable: max window is the 30-min lease
+  // TTL, after which the sweep closes the loop.
   if (isPreflight) {
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const { count, error } = await (supabaseAdmin as any)
       .from("agent_runs")
       .select("id", { count: "exact", head: true })
       .eq("agent_id", args.agentId)
-      .gte("started_at", since);
+      .gte("started_at", since)
+      .not("finished_at", "is", null);
 
     if (error) {
       throw new Error(`checkBudget: failed to read agent_runs count: ${error.message}`);
