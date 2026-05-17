@@ -206,9 +206,18 @@ export async function execute(
     // STEP 5 — Fetch items. Bounded by budget.maxItemsConsideredPerRun.
     // We iterate the async iterable, breaking early at the limit so a
     // misbehaving template that yields unbounded doesn't run away.
+    //
+    // The template call context is constructed once and reused across
+    // fetch/score/summarise. The `run` sub-object (PR3b.1) carries the
+    // bare minimum a template needs for cost attribution via recordCost.
+    const ctx = {
+      config: agent.config,
+      broker,
+      run: { id: runId, userId: agent.user_id, badge: agent.badge },
+    };
     const items: unknown[] = [];
     const cap = Math.max(0, agent.budget.maxItemsConsideredPerRun);
-    for await (const item of template.fetch({ config: agent.config, broker })) {
+    for await (const item of template.fetch(ctx)) {
       items.push(item);
       itemsFetched++;
       if (itemsFetched >= cap) break;
@@ -230,7 +239,7 @@ export async function execute(
       const dedupeKey = template.dedupeKey(item);
       if (seen.has(dedupeKey)) continue;
 
-      const score = await template.score(item, { config: agent.config, broker });
+      const score = await template.score(item, ctx);
       if (score < minScore) {
         // Remember it anyway — re-scoring next run wastes budget.
         newKeysToRemember.push(dedupeKey);
@@ -259,7 +268,7 @@ export async function execute(
 
       let draft: FindingDraft;
       try {
-        draft = await template.summarise(item, { config: agent.config, broker });
+        draft = await template.summarise(item, ctx);
       } catch (e) {
         // Per-item summarise failure shouldn't take down the whole run;
         // skip the item but keep going. Templates that want hard-stop
