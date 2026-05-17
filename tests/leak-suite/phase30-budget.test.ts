@@ -29,7 +29,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // and `inferenceUsageDailyRows` (for the today-spend lookup), then asserts
 // against the recorded fields of any insert.
 
-type AgentRunRow = { id: string; agent_id: string; started_at: string };
+type AgentRunRow = {
+  id: string;
+  agent_id: string;
+  started_at: string;
+  /** Null = the run hasn't finalized yet (current in-flight row that
+   *  the runner just inserted as status='running'). The preflight count
+   *  must exclude these so the current run doesn't gate itself. */
+  finished_at?: string | null;
+};
 type InfDailyRow = { user_id: string; day: string; cost_micro_usd_sum: number };
 
 let agentRunsRows: AgentRunRow[] = [];
@@ -52,11 +60,14 @@ vi.mock("@/integrations/supabase/client.server", () => {
       queriedTables.push(table);
 
       if (table === "agent_runs") {
-        // Chain: .select(_, {count:'exact', head:true}).eq(...).gte(...)
+        // Chain: .select(_, {count:'exact', head:true})
+        //         .eq("agent_id", X).gte("started_at", Y)
+        //         .not("finished_at", "is", null)
         // Returns { count, error } when awaited at the end of the chain.
         const builder = {
           _agentId: undefined as string | undefined,
           _since: undefined as string | undefined,
+          _requireFinishedAtNotNull: false,
           select(_cols: string, _opts: { count?: string; head?: boolean }) {
             return builder;
           },
@@ -68,11 +79,21 @@ vi.mock("@/integrations/supabase/client.server", () => {
             if (col === "started_at") builder._since = val;
             return builder;
           },
+          // Mirror PostgREST's .not("col", "is", null) — used by
+          // checkBudget to exclude the current in-flight row.
+          not(col: string, op: string, val: unknown) {
+            if (col === "finished_at" && op === "is" && val === null) {
+              builder._requireFinishedAtNotNull = true;
+            }
+            return builder;
+          },
           then(resolve: (v: { count: number; error: null }) => void) {
             const count = agentRunsRows.filter(
               (r) =>
                 (!builder._agentId || r.agent_id === builder._agentId) &&
-                (!builder._since || r.started_at >= builder._since),
+                (!builder._since || r.started_at >= builder._since) &&
+                (!builder._requireFinishedAtNotNull ||
+                  (r.finished_at !== undefined && r.finished_at !== null)),
             ).length;
             resolve({ count, error: null });
           },
@@ -143,6 +164,8 @@ const CEILING_MICRO = CPAUD_CEILING_USD * 1_000_000;
 // ─── Preflight: per-agent maxRunsPerDay boundary ──────────────────────────
 
 describe("checkBudget — preflight per-agent maxRunsPerDay", () => {
+  /** Seeded rows represent FINALIZED historical runs — set both
+   *  started_at + finished_at so the budget query counts them. */
   function seedRuns(n: number) {
     for (let i = 0; i < n; i++) {
       agentRunsRows.push({
@@ -150,6 +173,7 @@ describe("checkBudget — preflight per-agent maxRunsPerDay", () => {
         agent_id: AGENT,
         // All within the rolling 24h window.
         started_at: new Date(NOW.getTime() - 60_000).toISOString(),
+        finished_at: new Date(NOW.getTime() - 30_000).toISOString(),
       });
     }
   }
@@ -208,6 +232,7 @@ describe("checkBudget — preflight per-agent maxRunsPerDay", () => {
         id: `other-${i}`,
         agent_id: "99999999-9999-9999-9999-999999999999",
         started_at: NOW.toISOString(),
+        finished_at: NOW.toISOString(),
       });
     }
     const r = await checkBudget({
@@ -217,6 +242,65 @@ describe("checkBudget — preflight per-agent maxRunsPerDay", () => {
       now: NOW,
     });
     expect(r.ok).toBe(true);
+  });
+
+  // ─── Regression: in-flight row must not gate itself ────────────────────
+  //
+  // 2026-05-18 deploy verification surfaced this: the runner inserts the
+  // current run's `agent_runs` row as `status='running', finished_at=NULL`
+  // BEFORE preflight (per the documented lifecycle step 1 for durability).
+  // Without the `finished_at IS NOT NULL` filter, that just-inserted row
+  // counted toward its own budget — every fresh ResearchDigest agent
+  // (maxRunsPerDay=1) was immediately skipped_budget_exceeded.
+
+  it("preflight ignores the current in-flight row (finished_at=null) — issue surfaced 2026-05-18", async () => {
+    // Mirror the prod scenario exactly: maxRunsPerDay=1, zero finalized
+    // runs, one in-flight row representing the run we're currently
+    // preflighting. Pre-fix this returned skipped_budget_exceeded with
+    // "1 runs in the last 24h" because the in-flight row counted itself.
+    agentRunsRows.push({
+      id: "current-in-flight",
+      agent_id: AGENT,
+      started_at: NOW.toISOString(),
+      finished_at: null,
+    });
+    const r = await checkBudget({
+      userId: USER,
+      agentId: AGENT,
+      perAgentBudget: { ...BUDGET, maxRunsPerDay: 1 },
+      now: NOW,
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it("preflight DOES count an in-flight row alongside finalized rows correctly", async () => {
+    // Defensive companion: with one finalized run already AND the
+    // current in-flight row, maxRunsPerDay=1 should still reject —
+    // the finalized run alone fills the budget. The in-flight row
+    // remains excluded, but the finalized one is enough.
+    agentRunsRows.push({
+      id: "finalized-1",
+      agent_id: AGENT,
+      started_at: new Date(NOW.getTime() - 60_000).toISOString(),
+      finished_at: new Date(NOW.getTime() - 30_000).toISOString(),
+    });
+    agentRunsRows.push({
+      id: "current-in-flight",
+      agent_id: AGENT,
+      started_at: NOW.toISOString(),
+      finished_at: null,
+    });
+    const r = await checkBudget({
+      userId: USER,
+      agentId: AGENT,
+      perAgentBudget: { ...BUDGET, maxRunsPerDay: 1 },
+      now: NOW,
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.kind).toBe("per_agent_runs");
+      expect(r.reason).toMatch(/1 runs in the last 24h/);
+    }
   });
 
   it("ignores rows older than 24h", async () => {
