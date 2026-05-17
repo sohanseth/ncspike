@@ -32,6 +32,22 @@ function formatTs(iso: string): string {
   });
 }
 
+/**
+ * Defense against malicious `source_url` values written by a future
+ * template or compromised upstream search index. Only render as a link
+ * if the URL parses cleanly AND uses http(s). Anything else (`javascript:`,
+ * `data:`, malformed input) → render as plain text. PR-14 review hardening.
+ */
+function isSafeHttpUrl(raw: string | null): boolean {
+  if (!raw) return false;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function scoreBadgeClass(score: number): string {
   if (score >= 0.8) return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
   if (score >= 0.6) return "border-sky-500/40 bg-sky-500/10 text-sky-200";
@@ -173,9 +189,9 @@ function InboxPage() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          {f.source_url ? (
+                          {isSafeHttpUrl(f.source_url) ? (
                             <a
-                              href={f.source_url}
+                              href={f.source_url!}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1 font-medium hover:underline underline-offset-4"

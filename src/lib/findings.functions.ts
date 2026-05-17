@@ -78,13 +78,23 @@ export async function listFindingsFor(
   const input = ListFindingsInputSchema.parse(raw);
   const limit = input.limit ?? DEFAULT_LIMIT;
 
+  // `agents!inner(...)` makes the embed an inner join. That, plus the
+  // `.neq("agents.state", "archived")` filter, means findings for an
+  // agent the user later archived are excluded by the query itself —
+  // no JS post-filtering, no row returned in the first place.
+  //
+  // PR-14 review (Sneha 2026-05-18): the previous select used
+  // `agents:agent_id(display_name)` which is a left embed, so an
+  // archived agent's findings still surfaced. Inner join + parent-state
+  // filter closes that gap server-side without any runtime change.
   let q = (supabaseAdmin as any)
     .from("agent_findings")
     .select(
-      "id, agent_id, title, summary, source_url, score, urgency, state, created_at, agents:agent_id(display_name)",
+      "id, agent_id, title, summary, source_url, score, urgency, state, created_at, agents!inner(display_name, state)",
     )
     .eq("user_id", userId)
     .neq("state", "archived")
+    .neq("agents.state", "archived")
     .order("created_at", { ascending: false })
     .limit(limit);
 

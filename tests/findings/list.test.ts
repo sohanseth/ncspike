@@ -37,7 +37,7 @@ type FindingRow = {
   created_at: string;
 };
 
-type AgentRow = { id: string; display_name: string };
+type AgentRow = { id: string; display_name: string; state?: string };
 
 let findings_rows: FindingRow[] = [];
 let agents_rows: AgentRow[] = [];
@@ -65,16 +65,35 @@ function makeBuilder(table: string) {
   let orderAsc = true;
   let limitN: number | null = null;
 
+  function getCol(r: FindingRow, col: string): unknown {
+    // Support dotted-column filters that reference the joined table,
+    // e.g. `.neq("agents.state", "archived")` — read from the parent
+    // agents row. The handler uses this to filter findings by parent
+    // agent state via the `agents!inner` embed.
+    if (col.startsWith("agents.")) {
+      const subCol = col.slice("agents.".length);
+      const a = agents_rows.find((x) => x.id === r.agent_id);
+      return a ? (a as unknown as Record<string, unknown>)[subCol] : undefined;
+    }
+    return (r as unknown as Record<string, unknown>)[col];
+  }
+
   function apply(): FindingRow[] {
-    let out = findings_rows.filter((r) =>
-      filters.every((f) => {
-        const v = (r as unknown as Record<string, unknown>)[f.col];
+    const isInner = /agents!inner\s*\(/.test(selectExpr);
+    let out = findings_rows.filter((r) => {
+      // For inner joins, a missing parent agent excludes the finding
+      // entirely — same semantics as SQL INNER JOIN.
+      if (isInner && !agents_rows.find((x) => x.id === r.agent_id)) {
+        return false;
+      }
+      return filters.every((f) => {
+        const v = getCol(r, f.col);
         if (f.kind === "eq") return v === f.val;
         if (f.kind === "neq") return v !== f.val;
         if (f.kind === "gte") return typeof v === "string" && v >= f.val;
         return false;
-      }),
-    );
+      });
+    });
     if (orderCol) {
       out = [...out].sort((a, b) => {
         const av = (a as unknown as Record<string, string>)[orderCol!];
@@ -90,14 +109,17 @@ function makeBuilder(table: string) {
   function finalize(): { data: unknown; error: unknown } {
     if (nextError) return { data: null, error: nextError };
     const matched = apply();
-    // If the select expression embeds `agents:agent_id(display_name)`,
-    // synthesize the join column. The handler's mapper reads
-    // `r.agents?.display_name` and flattens it to agent_display_name.
-    const embedsAgents = /agents:agent_id\s*\(/.test(selectExpr);
+    // If the select expression embeds agents (left embed `agents:agent_id(...)`
+    // OR inner `agents!inner(...)`), synthesize the join column. The
+    // handler's mapper reads `r.agents?.display_name` and flattens it.
+    const embedsAgents = /agents(?:!inner)?(?::\w+)?\s*\(/.test(selectExpr);
     const data = matched.map((r) => {
       const base = { ...r } as Record<string, unknown>;
       if (embedsAgents) {
         const a = agents_rows.find((x) => x.id === r.agent_id);
+        // For inner joins, apply() already filtered out rows without a
+        // parent, so `a` is always defined here. For left embeds, fall
+        // back to null (mirrors PostgREST behavior).
         base.agents = a ? { display_name: a.display_name } : null;
       }
       return base;
@@ -155,9 +177,9 @@ const AGENT_OTHER = "55555555-5555-5555-5555-bbbbbbbbbbbb";
 
 function seedRows() {
   agents_rows.push(
-    { id: AGENT_1, display_name: "AI digest" },
-    { id: AGENT_2, display_name: "Climate digest" },
-    { id: AGENT_OTHER, display_name: "Other user's agent" },
+    { id: AGENT_1, display_name: "AI digest", state: "active" },
+    { id: AGENT_2, display_name: "Climate digest", state: "active" },
+    { id: AGENT_OTHER, display_name: "Other user's agent", state: "active" },
   );
   findings_rows.push(
     // USER_A · AGENT_1 · newest
@@ -288,14 +310,63 @@ describe("listFindingsFor — embeds agent display_name", () => {
     expect(f2?.agent_display_name).toBe("Climate digest");
   });
 
-  it("falls back to '(unknown agent)' if the parent agent row is missing", async () => {
-    // Edge case: cascade deletion + race could leave a finding without
-    // a matching agent (shouldn't happen because of `on delete cascade`,
-    // but defensive).
+  it("excludes findings whose parent agent row is missing (inner-join semantics)", async () => {
+    // With agents!inner(...), a missing parent removes the finding from
+    // the result entirely — same as SQL INNER JOIN. The defensive
+    // `(unknown agent)` fallback in the mapper is now unreachable in
+    // production (on delete cascade + inner join close every gap), but
+    // we keep it as belt-and-suspenders.
     agents_rows = agents_rows.filter((a) => a.id !== AGENT_1);
     const out = await listFindingsFor(USER_A, {});
-    const f1 = out.find((r) => r.id === "f1");
-    expect(f1?.agent_display_name).toBe("(unknown agent)");
+    expect(out.find((r) => r.id === "f1")).toBeUndefined();
+    expect(out.find((r) => r.id === "f3")).toBeUndefined();
+    // f2 (AGENT_2 still present) survives.
+    expect(out.find((r) => r.id === "f2")).toBeDefined();
+  });
+});
+
+// ─── Archived-agent filter (PR-14 review hardening) ───────────────────────
+
+describe("listFindingsFor — excludes findings for archived agents", () => {
+  beforeEach(seedRows);
+
+  it("a finding produced by an agent the user later archived is hidden from the inbox", async () => {
+    // Sneha's PR-14 review concern: previous query used a left embed +
+    // filter on `agent_findings.state`, which let findings for an
+    // archived agent leak through (their finding-state is still 'new').
+    // With agents!inner(...) + .neq('agents.state', 'archived'), the
+    // archived agent is excluded by the query itself.
+    const archivedAgent = agents_rows.find((a) => a.id === AGENT_1)!;
+    archivedAgent.state = "archived";
+
+    const out = await listFindingsFor(USER_A, {});
+    // f1 and f3 both belong to AGENT_1 → must NOT appear.
+    expect(out.find((r) => r.id === "f1")).toBeUndefined();
+    expect(out.find((r) => r.id === "f3")).toBeUndefined();
+    // f2 (AGENT_2 still active) remains.
+    expect(out.map((r) => r.id)).toEqual(["f2"]);
+  });
+
+  it("paused agents still surface their findings (only archive hides)", async () => {
+    // Pause intent is "stop future runs, keep past findings visible".
+    const pausedAgent = agents_rows.find((a) => a.id === AGENT_1)!;
+    pausedAgent.state = "paused";
+
+    const out = await listFindingsFor(USER_A, {});
+    expect(out.find((r) => r.id === "f1")).toBeDefined();
+    expect(out.find((r) => r.id === "f3")).toBeDefined();
+  });
+
+  it("degraded/inactive/error agents still surface their findings", async () => {
+    // Only the user-initiated 'archived' state hides past findings.
+    const ag1 = agents_rows.find((a) => a.id === AGENT_1)!;
+    ag1.state = "degraded";
+    const out1 = await listFindingsFor(USER_A, {});
+    expect(out1.find((r) => r.id === "f1")).toBeDefined();
+
+    ag1.state = "error";
+    const out2 = await listFindingsFor(USER_A, {});
+    expect(out2.find((r) => r.id === "f1")).toBeDefined();
   });
 });
 
