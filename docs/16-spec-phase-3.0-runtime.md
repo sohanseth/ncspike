@@ -156,30 +156,51 @@ Test the migration against a fresh project AND against the actual production pro
 
 ## 7. GDPR wiring
 
-**Use docs/13 §15 as-is.** Migration file:
+GDPR is a **PR1 blocker** — no runtime code lands until deletion + export are testable. Per Sneha's invariant: agents produce several classes of data with different lifecycles. Each must be explicit.
+
+### 7.1 Data-class matrix
+
+| Data class | Where it lives | On `delete_user_data()` | On `export_user_data()` | Notes |
+|---|---|---|---|---|
+| Agent definition + config | `agents` row | **DELETED** | EXPORTED | User-owned config; full delete |
+| Agent run metadata (status, duration, cost, error) | `agent_runs` row | **DELETED** | EXPORTED | Including `error` (already PII-scrubbed) |
+| Generated findings (digest content, summaries) | `agent_findings` row | **DELETED** | EXPORTED | Output content; full delete |
+| Per-agent state (cursors, dedupe keys) | `agent_state` row | **DELETED** | EXPORTED | Opaque KV; full delete |
+| Cost events tied to this user's runs | `cpaud_events` row | **DELETED** | EXPORTED | Required so the user's cost ledger zeros out |
+| CPAUD aggregate row | `cpaud_aggregate` materialised view | **REFRESHED** (the deleted events stop contributing automatically) | aggregated values exported | View refresh removes the user's contribution; no separate DELETE needed |
+| Structured Worker logs (`console.log` JSON) | Cloudflare Workers log retention | **NOT DELETED** in 3.0 | NOT EXPORTED | CF Workers logs retained per CF policy (~24h on free tier, longer on paid). **Logs MUST contain only opaque IDs + metrics — no user content, no PII, no titles, no URLs, no summaries.** See §15 for the invariant. |
+| Provider traces (Anthropic / OpenAI / Groq side) | Provider's own infra | **NOT DELETED** | NOT EXPORTED | Each provider has its own retention + deletion policy. Documented in the privacy-posture page (Phase 3.9); user can request provider-side deletion via the broker's per-provider opt-out controls. |
+
+**Why the structured-logs row says "NOT DELETED":** if the log invariant (no content, opaque IDs only) holds, there's nothing user-identifying to delete. The user's `user_id` IS in the log, but that's a UUID — it doesn't reveal anything once the DB rows are gone. The privacy-posture doc should be explicit that "agent run logs are retained as opaque debugging records and contain no content."
+
+If the log invariant *breaks* (e.g., a debug commit accidentally logs a finding title), the spec must be revised to delete or anonymise logs on user delete. That's a future hardening item, not 3.0.
+
+### 7.2 Migration
 
 ```
 supabase/migrations/20260601000001_phase30_gdpr_agents.sql
 ```
 
-Drops + recreates `delete_user_data()` with the four new tables in FK-safe order:
+Drops + recreates `delete_user_data()` with the four new tables + `cpaud_events` filter in FK-safe order:
 
 ```sql
 -- inside delete_user_data(target_user_id uuid)
 -- (... existing chat/trait/etc deletes first ...)
-agent_findings_deleted := (delete from public.agent_findings where user_id = target_user_id);
-agent_state_deleted    := (delete from public.agent_state    where user_id = target_user_id);
-agent_runs_deleted     := (delete from public.agent_runs     where user_id = target_user_id);
-agents_deleted         := (delete from public.agents         where user_id = target_user_id);
+agent_findings_deleted   := (delete from public.agent_findings   where user_id = target_user_id);
+agent_state_deleted      := (delete from public.agent_state      where user_id = target_user_id);
+cpaud_events_deleted     := (delete from public.cpaud_events     where user_id = target_user_id and source = 'agent_run');
+agent_runs_deleted       := (delete from public.agent_runs       where user_id = target_user_id);
+agents_deleted           := (delete from public.agents           where user_id = target_user_id);
+-- cpaud_aggregate materialised view picks up the deletion on next refresh
 ```
 
-Adds four new return columns: `agents_deleted`, `agent_runs_deleted`, `agent_findings_deleted`, `agent_state_deleted`.
+Adds five new return columns: `agents_deleted`, `agent_runs_deleted`, `agent_findings_deleted`, `agent_state_deleted`, `cpaud_events_deleted` (filtered to source='agent_run').
 
 Client-side updates in [src/lib/gdpr.functions.ts](../src/lib/gdpr.functions.ts):
-- `EXPORT_TABLES` adds `agents`, `agent_runs`, `agent_findings`, `agent_state`.
-- `RPC_COLUMN_TO_TABLE` adds the four `*_deleted` keys.
+- `EXPORT_TABLES` adds `agents`, `agent_runs`, `agent_findings`, `agent_state`. (cpaud_events deletion is internal — not exported as a top-level table.)
+- `RPC_COLUMN_TO_TABLE` adds the five `*_deleted` keys.
 
-[tests/leak-suite/gdpr-roundtrip-realdb.test.ts](../tests/leak-suite/gdpr-roundtrip-realdb.test.ts) — extend `seedUser()` to insert one row per agent table in FK order (agents → agent_runs → agent_findings + agent_state). The per-user-table-coverage test picks the new tables up automatically.
+[tests/leak-suite/gdpr-roundtrip-realdb.test.ts](../tests/leak-suite/gdpr-roundtrip-realdb.test.ts) — extend `seedUser()` to insert one row per agent table + one `cpaud_events` row tied to a fake agent_run in FK order. Assert `delete_user_data` returns `agent_findings_deleted: 1, agent_state_deleted: 1, agent_runs_deleted: 1, agents_deleted: 1, cpaud_events_deleted: 1`.
 
 ---
 
@@ -224,9 +245,17 @@ returns setof public.agents
 language plpgsql
 security definer
 as $$
+declare
+  claimed_ids uuid[];
 begin
-  return query
-    select *
+  -- Step 1: claim due agents AND update last_run_at in the same transaction.
+  -- The last_run_at update is critical for duplicate-run prevention: if the
+  -- runner crashes after the claim but before finalize(), the next cron
+  -- invocation still sees last_run_at = (recent) and skips this agent until
+  -- cadence_hours passes. Without this update, a crashed runner leaves the
+  -- agent claimable on the very next tick.
+  with due as (
+    select id
     from public.agents
     where state in ('active', 'degraded', 'inactive')
       and (
@@ -240,10 +269,27 @@ begin
       )
     order by last_run_at nulls first
     limit p_limit
-    for update skip locked;
+    for update skip locked
+  )
+  update public.agents a
+  set last_run_at = now()
+  from due
+  where a.id = due.id
+  returning a.id into claimed_ids;
+
+  return query
+    select * from public.agents where id = any(claimed_ids);
 end;
 $$;
 ```
+
+**Invariant:** the call site relies on the fact that `last_run_at` is bumped *before* the runner starts work, not after. This means:
+
+- A run that completes in 5 minutes leaves `last_run_at` accurate ± 5 min — fine for `cadence_hours` purposes.
+- A run that crashes mid-flight still has `last_run_at` updated, preventing re-claim on the next 30-min cron until the full `cadence_hours` has passed.
+- The trade-off: if the runner crashes immediately (before fetching anything useful), the user effectively skips this cadence cycle. Acceptable — better than re-running 5× in the next hour.
+
+For "row was claimed but never finished" hygiene, see the stuck-run sweep in §10.
 
 **Why a SECURITY DEFINER function instead of raw client-side SQL:**
 - The runner runs with service-role credentials but the `claim_due_agents` function lets us version the "what is due?" logic centrally.
@@ -343,7 +389,26 @@ export async function execute(agent: AgentRow): Promise<AgentRunRow> {
     }
 
     // STEP 6 — summarise + persist findings.
+    // After EACH item: re-check budget. This is the partial_success path —
+    // an agent that exhausts CPAUD mid-run stops persisting further findings
+    // but keeps everything it produced so far. The invariant is: external
+    // compute attempted = cost recorded, regardless of completion.
     for (const { item, score } of scored) {
+      // Mid-run budget recheck. recordCost has already pushed any prior
+      // hops into the CPAUD aggregate; if a previous summarise() pushed us
+      // over the ceiling, abort with partial_success.
+      const midRunBudget = await checkBudget({
+        userId: agent.user_id,
+        agentId: agent.id,
+        perAgentBudget: agent.budget,
+        accumulatedCostUsd: costUsd,
+      });
+      if (!midRunBudget.ok) {
+        status = "partial_success";
+        error = `mid-run: ${midRunBudget.reason}`;
+        break;
+      }
+
       const summary = await template.summarise(item, { config: agent.config, broker });
       llmHops += summary._llmHops ?? 0;
       costUsd += summary._costUsd ?? 0;
@@ -361,13 +426,26 @@ export async function execute(agent: AgentRow): Promise<AgentRunRow> {
         source_url: summary.payload.url ?? null,
       }).onConflict("agent_id,dedupe_key").ignore();
       itemsKept++;
+
+      // Record cost immediately, not at finalize() — so partial_success
+      // runs that crash entirely still have their cost in the CPAUD ledger.
+      if (summary._costUsd && summary._costUsd > 0) {
+        await recordCost(agent.user_id, summary._costUsd, runId);
+      }
     }
 
     // STEP 7 — notifications: SKIPPED in 3.0. Inbox surfaces findings; no push.
 
-    status = "ok";
+    // status stays "running" → "ok" only if we didn't break out into
+    // partial_success above.
+    if (status === "running") status = "ok";
   } catch (e) {
     status = "failed";
+    // ALWAYS scrub before persisting. The invariant: no user content (email
+    // subjects, search queries, finding payloads, prompt fragments) ever
+    // reaches `agent_runs.error` or structured logs. scrubPii() strips
+    // anything resembling PII or quoted content; truncates to 500 chars.
+    // Tested in tests/leak-suite/agent-error-pii.test.ts (per docs/13 §16.2).
     error = scrubPii(String(e)).slice(0, 500);
   }
 
@@ -452,18 +530,46 @@ async scheduled(event: CfScheduledEvent, _env: unknown, ctx: CfExecutionContext)
 ```ts
 // src/server/agents/batch.ts
 const BATCH_LIMIT = 10;
+const STUCK_RUN_THRESHOLD_MIN = 30; // matches the cron cadence; runs older
+                                    // than this without finalize are stuck.
 
 export async function runAgentBatch() {
+  // 1. Stuck-run sweep — durable failure invariant. Any agent_runs row in
+  // 'running' state older than the sweep threshold is marked 'timeout'.
+  // Without this, a Worker that crashes between INSERT and UPDATE leaves
+  // the row 'running' forever, making debug "did this ever run?" ambiguous.
+  await sweepStuckRuns(STUCK_RUN_THRESHOLD_MIN);
+
+  // 2. Claim due agents (also bumps last_run_at — see §8) + execute serially.
   const agents = await claimDueAgents(BATCH_LIMIT);
   for (const agent of agents) {
     try {
       await execute(agent);
     } catch (e) {
-      console.error(`[agent ${agent.id}] crashed outside runner:`, e);
+      // Outer crash guard: scrub before logging. Note that an inner
+      // execute() catch would already have written the failure to
+      // agent_runs; this outer catch is for crashes BEFORE the run row
+      // was inserted at all (e.g., Supabase connection death mid-insert).
+      console.error(`[agent ${agent.id}] crashed outside runner:`, scrubPii(String(e)));
     }
   }
 }
+
+async function sweepStuckRuns(thresholdMinutes: number) {
+  const cutoff = new Date(Date.now() - thresholdMinutes * 60 * 1000).toISOString();
+  await supabaseAdmin()
+    .from("agent_runs")
+    .update({
+      status: "timeout",
+      finished_at: new Date().toISOString(),
+      error: `runner did not finalize within ${thresholdMinutes} minutes`,
+    })
+    .eq("status", "running")
+    .lt("started_at", cutoff);
+}
 ```
+
+**Hard batch limit:** `BATCH_LIMIT = 10` is the only knob for per-tick concurrency. With 30-min cron, theoretical max = 480 runs/day. Practical: most runs finish in <30s so a single tick can clear all due agents for current user counts. Bump the constant when load profile demands it; environment variable later.
 
 > **Cron framing** (per Sneha's edit during the 3.0 lock conversation): cron fires every 30 minutes. Each invocation claims a bounded batch of due agents. Individual agent cadence is still controlled by `cadence_hours`; the cron just decides how quickly due work is noticed.
 
@@ -473,7 +579,8 @@ The 30-min cron means an agent due 35 minutes ago waits at most another 25 minut
 
 ## 11. Budget enforcement
 
-Two layers:
+Two layers, checked **both pre-flight and mid-run**:
+
 1. **Per-agent budget** (the `AgentBudget` JSONB on the `agents` row).
 2. **Unified CPAUD ceiling** (existing cross-feature daily $/user limit, currently $1.50/day).
 
@@ -490,19 +597,27 @@ export async function checkBudget(args: {
   userId: string;
   agentId: string;
   perAgentBudget: AgentBudget;
+  /** Cost accumulated *within the current run, not yet flushed to CPAUD*.
+   *  Mid-run callers pass this so the check accounts for in-flight spend
+   *  before deciding to abort with partial_success. Preflight calls pass 0. */
+  accumulatedCostUsd?: number;
 }): Promise<BudgetCheckResult> {
-  // 1. Per-agent: count runs in the rolling 24h window.
-  const { count: runsToday } = await supabaseAdmin()
-    .from("agent_runs")
-    .select("id", { count: "exact", head: true })
-    .eq("agent_id", args.agentId)
-    .gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+  // 1. Per-agent: count runs in the rolling 24h window (preflight only — once
+  // a run has started this would always be ≥ 1 from its own row).
+  if ((args.accumulatedCostUsd ?? 0) === 0) {
+    const { count: runsToday } = await supabaseAdmin()
+      .from("agent_runs")
+      .select("id", { count: "exact", head: true })
+      .eq("agent_id", args.agentId)
+      .gte("started_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
-  if ((runsToday ?? 0) >= args.perAgentBudget.maxRunsPerDay) {
-    return { ok: false, reason: `per-agent maxRunsPerDay (${args.perAgentBudget.maxRunsPerDay}) reached` };
+    if ((runsToday ?? 0) >= args.perAgentBudget.maxRunsPerDay) {
+      return { ok: false, reason: `per-agent maxRunsPerDay (${args.perAgentBudget.maxRunsPerDay}) reached` };
+    }
   }
 
-  // 2. Unified CPAUD: sum cost across all user spend today.
+  // 2. Unified CPAUD: sum cost across all user spend today, including
+  // accumulated cost from the current run that hasn't yet been recorded.
   const { data: spend } = await supabaseAdmin()
     .from("cpaud_aggregate")  // existing materialised view, includes chat_messages.cost_usd + image-out + agent_runs.cost_usd
     .select("total_usd")
@@ -510,24 +625,56 @@ export async function checkBudget(args: {
     .eq("day", new Date().toISOString().slice(0, 10))
     .single();
 
-  if ((spend?.total_usd ?? 0) >= CPAUD_DAILY_CEILING_USD) {
+  const projectedTotal = (spend?.total_usd ?? 0) + (args.accumulatedCostUsd ?? 0);
+  if (projectedTotal >= CPAUD_DAILY_CEILING_USD) {
     return { ok: false, reason: `user CPAUD ceiling ($${CPAUD_DAILY_CEILING_USD}) reached` };
   }
 
   return { ok: true };
 }
 
+/** Push a single LLM-hop cost into the CPAUD ledger. Called inline during
+ *  the run (per LLM hop), NOT batched at finalize. This is the invariant:
+ *  *if external compute is attempted, cost is recorded — even if the run
+ *  fails before persisting any finding*. Crash safety. */
 export async function recordCost(userId: string, costUsd: number, runId: string) {
-  // No-op for now: `agent_runs.cost_usd` is the durable record, and the existing
-  // CPAUD aggregation already pulls from agent_runs. This function is the seam
-  // for any future double-entry bookkeeping that doesn't fit in agent_runs alone.
+  if (costUsd <= 0) return;
+  // Append-only cost-event row. The CPAUD aggregation view consumes these
+  // alongside chat / image-out cost rows. No double-entry; the agent_runs
+  // row's cost_usd is the per-run total maintained for UI display.
+  await supabaseAdmin().from("cpaud_events").insert({
+    user_id: userId,
+    source: "agent_run",
+    source_id: runId,
+    cost_usd: costUsd,
+    occurred_at: new Date().toISOString(),
+  });
 }
 ```
 
-The locked free-tier numbers (docs/09 §7.5 — 8/day public floor + 12/day beta default):
-- 3.0 reads the per-agent `maxRunsPerDay` from each `agents` row, not from a global config. The free-tier ceiling enforcement (sum across all agents owned by one user) is a **3.1 deliverable** — for 3.0, the only template is ResearchDigest with `maxRunsPerDay: 1` per default, so a user with even 10 active research agents tops out at 10 runs/day, comfortably under 12.
+### 11.1 Run-status enum
 
-When 3.1 ships JobAgent + ShoppingAgent, the cross-agent daily-runs-per-user ceiling becomes load-bearing. Spec'd then, not now.
+`agent_runs.status` is a CHECK-constrained text column (or PG enum — implementer's choice) with these values:
+
+| Status | When | External compute may have been spent? |
+|---|---|---|
+| `running` | Row inserted at run start, before any work | No |
+| `ok` | Run completed; at least one finding persisted, no budget hit | Possibly |
+| `failed` | Runner threw an exception (template error, broker error, network) | Possibly — cost still recorded via `recordCost` |
+| `partial_success` | Mid-run budget check failed; some findings persisted before abort | Yes — partial cost recorded |
+| `skipped_budget_exceeded` | Preflight budget check failed; no external work attempted | No |
+| `skipped_disabled` | Agent state changed to `paused` / `archived` / `error` between claim and execute (rare) | No |
+| `timeout` | Sweep marked it — runner never reached finalize within the threshold | Possibly — last recorded cost in `cpaud_events` is authoritative |
+| `cancelled` | User-initiated cancellation. **Not used in 3.0** (no cancel UI yet); reserved for 3.5+ | Possibly |
+
+**Invariant — cost durability:** for every status except `running`, `agent_runs.cost_usd` reflects the total of `cpaud_events` rows for that `run_id`. The sweep and partial_success paths preserve this — `recordCost` runs inline per LLM hop, so even a runner crash post-LLM-hop leaves the cost in the ledger.
+
+### 11.2 Free-tier ceiling enforcement (3.0 vs 3.1)
+
+The locked free-tier numbers (docs/09 §7.5 — 8/day public floor + 12/day beta default):
+
+- 3.0 reads the per-agent `maxRunsPerDay` from each `agents` row, not from a global config. The free-tier *cross-agent* ceiling (sum of runs across all agents owned by one user) is a **3.1 deliverable** — for 3.0, the only template is ResearchDigest with `maxRunsPerDay: 1` default, so a user with even 10 active research agents tops out at 10 runs/day, comfortably under 12.
+- When 3.1 ships JobAgent + ShoppingAgent (each with higher per-agent budgets), the cross-agent daily-runs-per-user ceiling becomes load-bearing. Spec'd then, not now.
 
 ---
 
@@ -539,7 +686,15 @@ Use [docs/13](./13-spec-phase-3-agent-runtime.md) §4 as-is. State transitions i
 
 ## 13. ResearchDigest template
 
-Per [docs/13](./13-spec-phase-3-agent-runtime.md) §7.1. Full implementation in `src/server/agents/templates/research-digest.ts`:
+Per [docs/13](./13-spec-phase-3-agent-runtime.md) §7.1. Full implementation in `src/server/agents/templates/research-digest.ts`.
+
+**Invariant — handler vs runtime separation:** `AgentRunner.execute()` MUST NOT contain ResearchDigest-specific code. All template-specific logic lives in the `AgentTemplate` implementation. The runner dispatches purely through the four interface methods (`fetch`, `dedupeKey`, `score`, `summarise`) plus the registry lookup. Anti-patterns to grep-reject in review:
+
+- `if (agent.template_id === 'research_digest') { ... }` anywhere in `runner.ts`, `batch.ts`, `queue.ts`, or `budget.ts`.
+- Reading template-specific config keys from `agent.config` in the runner.
+- Casting `template` to a concrete type instead of `AgentTemplate<unknown, unknown>` in the runner.
+
+The runner accepts that 3.0 ships with one template; 3.1 ships three more, 3.4 ships unlimited via the AST. If the runner is overfit to ResearchDigest, every subsequent template ships its own ad-hoc runner. Hard no.
 
 ```ts
 // src/server/agents/templates/research-digest.ts
@@ -636,48 +791,110 @@ export const templates = {
 
 ---
 
-## 14. Inbox surface
+## 14. Inbox surface — minimum viable UI
 
-`/workspace/inbox` route already exists ([src/routes/workspace.index.tsx](../src/routes/workspace.index.tsx) or its inbox tab — confirm during implementation). 3.0 extends it to render `agent_findings` rows alongside the existing Gmail-derived items.
+3.0 ships the runtime first; the UI is the minimum needed to validate it works end-to-end and to manage agents enough not to require DB access. **Anything beyond this list slides to 3.1.**
 
-New server function `src/lib/agents.functions.ts`:
+### 14.1 What 3.0 ships
+
+1. **Create research agent** — single button on `/workspace/inbox`, opens a small form (topics + cadence), POSTs to a `createAgent` server fn.
+2. **List agents** — a section on `/workspace/inbox` (or a lightweight `/workspace/agents` route, implementer's choice) showing each agent: display_name, template type, state badge, last_run_at, last_useful_at.
+3. **See latest run output** — agent findings rendered read-only as cards: title (clickable → `source_url`), summary, agent that surfaced it. No accept/dismiss/snooze in 3.0.
+4. **Pause / Delete agent** — two buttons per agent. Pause → state transition to `paused`. Delete → DELETE the `agents` row (cascade removes runs + findings + state per FKs).
+5. **Basic error / degraded state visible** — state badge color: green active, yellow degraded, red error, gray paused/archived.
+
+### 14.2 What 3.0 explicitly does NOT ship
+
+- Accept / dismiss / snooze on findings → 3.1 (paired with notifications).
+- Findings filtering by agent, by urgency, by date → 3.1.
+- Read/unread tracking on findings → 3.1.
+- Agent setup wizard, template marketplace, browse-templates UI → 3.1.
+- Cadence reconfiguration UI → 3.3.
+- "Run now" manual trigger → 3.3 (when parallel-3 user-triggered guardrails land per docs/13 §18.5).
+
+### 14.3 Server functions (3.0 only)
+
+`src/lib/agents.functions.ts`:
 
 ```ts
+export const createAgent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(z.object({
+    template_id: z.literal("research_digest"),  // 3.0: ResearchDigest only
+    display_name: z.string().min(1).max(80),
+    config: z.unknown(),  // template's configSchema validates inside the handler
+  }))
+  .handler(async ({ data, context }) => {
+    const template = templates[data.template_id];
+    if (!template) throw new Error("unknown template");
+    const config = template.configSchema.parse(data.config);
+    const { data: row, error } = await context.supabaseUser
+      .from("agents")
+      .insert({
+        user_id: context.userId,
+        template_id: data.template_id,
+        display_name: data.display_name,
+        config,
+        badge: template.defaultBadge,
+        state: "active",
+        cadence_hours: template.defaultCadenceHours,
+        budget: template.defaultBudget,
+        notify: {},  // 3.1
+      })
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+export const listAgents = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabaseUser
+      .from("agents")
+      .select("id, template_id, display_name, state, cadence_hours, last_run_at, last_useful_at")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false });
+    return { agents: data ?? [] };
+  });
+
 export const fetchAgentFindings = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data } = await context.supabaseUser
       .from("agent_findings")
-      .select("id, agent_id, title, summary, source_url, urgency, score, state, created_at, payload")
+      .select("id, agent_id, title, summary, source_url, urgency, created_at")
       .eq("user_id", context.userId)
-      .in("state", ["new", "seen"])
       .order("created_at", { ascending: false })
       .limit(50);
     return { findings: data ?? [] };
   });
 
-export const setFindingState = createServerFn({ method: "POST" })
+export const pauseAgent = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .validator(z.object({ id: z.string().uuid(), state: z.enum(["seen", "accepted", "dismissed", "snoozed", "archived"]) }))
+  .validator(z.object({ id: z.string().uuid(), paused: z.boolean() }))
   .handler(async ({ data, context }) => {
     await context.supabaseUser
-      .from("agent_findings")
-      .update({ state: data.state, acted_at: new Date().toISOString() })
+      .from("agents")
+      .update({ state: data.paused ? "paused" : "active" })
+      .eq("id", data.id)
+      .eq("user_id", context.userId);
+  });
+
+export const deleteAgent = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    // FK cascade handles agent_runs, agent_findings, agent_state.
+    await context.supabaseUser
+      .from("agents")
+      .delete()
       .eq("id", data.id)
       .eq("user_id", context.userId);
   });
 ```
 
-UI: a new section in the inbox view titled "From your agents" (or similar), rendering each finding as a card with:
-- Title (clickable, opens `source_url`)
-- Summary (2-3 lines, truncated)
-- "Accept" / "Dismiss" / "Snooze" actions → call `setFindingState`
-- Tiny tag showing which agent surfaced it
-- `urgent` findings get a visual badge (red dot or "urgent" pill)
-
-Empty state: "No agent findings yet. Create your first agent in [Agents]." (Agents page is a 3.1 deliverable; for 3.0, the link can be a placeholder or hidden.)
-
-**3.0 also needs ONE way to create a ResearchDigest agent** — without it the runner has nothing to run. Simplest: a hidden dev affordance behind a feature flag, or a single hard-coded "Create research agent" button in `/workspace/inbox` that pops a small form (topics + cadence). Implementation choice for the dev; doesn't need to be marketplace-quality.
+Note that 3.0 ships NO `setFindingState` server function. Findings are read-only display until 3.1.
 
 ---
 
@@ -692,10 +909,10 @@ export type AgentRunLog = {
   agent_id: string;
   user_id: string;
   agent_type: string;
-  status: "ok" | "failed" | "budget_exceeded" | "cancelled" | "skipped";
+  status: "ok" | "failed" | "partial_success" | "skipped_budget_exceeded" | "skipped_disabled" | "timeout" | "cancelled";
   duration_ms: number;
   cost_usd: number;
-  error_code: string | null;
+  error_code: string | null;  // structured code; NEVER the error message
 };
 
 export function logRun(entry: AgentRunLog): void {
@@ -704,24 +921,28 @@ export function logRun(entry: AgentRunLog): void {
 }
 ```
 
-Schema (per Sneha's spec):
+### 15.1 Invariant — no content in logs
 
-```json
-{
-  "run_id": "...",
-  "agent_id": "...",
-  "user_id": "...",
-  "agent_type": "...",
-  "status": "success|error|skipped",
-  "duration_ms": 1234,
-  "cost_usd": 0.012,
-  "error_code": null
-}
-```
+The log payload is **IDs + metrics only**. Concretely BANNED from any log line emitted by the agent runtime:
 
-(Implementation note: `status` uses `ok` / `failed` / `budget_exceeded` / `cancelled` / `skipped` to match the DB enum; "success" in the spec maps to "ok". Same shape, slightly different label.)
+- Finding titles, summaries, payloads
+- Source URLs (they can carry user-identifying query strings)
+- User prompts, broker fragments, system prompts
+- LLM response text
+- Email subjects, calendar event titles, contact names
+- Raw exception messages (they may contain any of the above)
 
-`agent_runs` table is the durable record. Logs are for live debugging via `wrangler tail`. No log-ingestion service needed for 3.0.
+What IS allowed:
+- UUIDs: `run_id`, `agent_id`, `user_id`
+- Enum values: `agent_type`, `status`
+- Numeric metrics: `duration_ms`, `cost_usd`, `items_fetched`, `items_kept`, `llm_hops`
+- **Structured `error_code`** — a short well-known string like `"broker_unavailable"` / `"template_fetch_timeout"` / `"llm_rate_limit"`. Defined in `src/server/agents/errors.ts` as a const enum. Generated by `errorCodeFor(error)` which maps raw exceptions to known codes; falls back to `"unknown"` if the exception doesn't match any pattern.
+
+**Why this matters for GDPR (§7):** Cloudflare Workers logs are retained per CF's policy (typically 24h on free, longer on paid) and are NOT swept by `delete_user_data()`. The privacy posture (§7.1) holds only if logs contain no content. A debug commit that accidentally logs a finding title is a GDPR exposure that needs a separate sweep — easier to make the no-content rule a CI-enforceable invariant than to add log deletion infra.
+
+CI check: a test in `tests/agents/log-contents.test.ts` instantiates the runner with adversarial template fixtures (titles like "USER_PII_TITLE_DO_NOT_LOG"), captures `console.log` output, and asserts none of those strings appear.
+
+`agent_runs` table is the durable record for content-bearing fields (`error` after PII scrub, `payload` of findings). Logs are for live debugging via `wrangler tail` only.
 
 ---
 
@@ -832,9 +1053,36 @@ Total ~7 days; calendar 1.5–2 weeks with testing, breakage, and review buffer.
 
 ---
 
-## 21. Open questions
+## 21. Known assumptions
 
-None blocking. All locked decisions from docs/09 §9 and docs/13 §18 have been encoded. Any new questions that surface during implementation get filed against the runner code, not this spec.
+Runtime assumptions worth making explicit even though each has an answer somewhere in the spec. If any of these changes mid-build, the spec needs revisiting before the code does.
+
+| Assumption | Answer in 3.0 | Where |
+|---|---|---|
+| Worker invocation time budget | 15 min (CF Workers scheduled invocation hard limit). A single batch (10 agents serial, ~30s each typical) fits with margin. | §10 |
+| Retry policy on transient failures (provider timeout, 429, etc.) | **None in 3.0.** Failed runs land in `agent_runs` with `status=failed`; next cron tick re-runs the agent if it's again due. 3.1 adds exponential-backoff retries via `agent_runs.next_retry_at`. | §11.1 + §19 |
+| Max agents claimed per cron tick | `BATCH_LIMIT = 10`, hardcoded in `batch.ts`. Knob for later. | §10 |
+| CPAUD budget exhausted mid-run | `partial_success` status; persisted findings kept; recorded cost retained; remaining items not fetched. | §11 |
+| Skipped runs recorded? | **Yes for `skipped_disabled` and `partial_success`.** **No** explicit row for `skipped_not_due` — `claim_due_agents` filters them out before they reach the runner, so they never get a row. Preflight `skipped_budget_exceeded` DOES insert a row (the runner has already written `status='running'` before the check). | §11.1 |
+| Degraded / inactive vs active scheduling | Same `claim_due_agents` query path. `inactive` runs at 2× the configured cadence_hours; `degraded` runs at 1× but has its `consecutive_failures` count visible in the UI. State transitions happen in `updateAgentLifecycleState()` after each run. | §8 (SQL) + §12 |
+| Deletion behavior for agent output vs run metadata under GDPR | All deleted equally. Output (`agent_findings`), metadata (`agent_runs`), config (`agents`), cursors (`agent_state`), and per-run cost events (`cpaud_events` filtered) all wiped in one `delete_user_data` call. Structured Worker logs NOT deleted; relies on no-content invariant. | §7.1 |
+| Duplicate-run prevention if a cron overlaps a slow previous invocation | Two-layered: (1) `claim_due_agents` updates `last_run_at = now()` inside the claiming transaction, so the slow invocation's agent is invisible to subsequent ticks for `cadence_hours`. (2) `FOR UPDATE SKIP LOCKED` prevents two concurrent invocations from claiming the same row. (3) Stuck-run sweep marks `running` rows older than 30 min as `timeout` so the UI doesn't show "still running" forever. | §8 + §10 |
+
+## 22. Invariant verification checklist (for PR1 review)
+
+These are the seven invariants Sneha flagged. Each must be verifiable from the code + tests; not just "written down somewhere."
+
+| # | Invariant | How it's enforced | How it's tested |
+|---|---|---|---|
+| 1 | No duplicate runs across overlapping crons | `claim_due_agents` bumps `last_run_at` in-transaction + `FOR UPDATE SKIP LOCKED` | Integration test: two concurrent `runAgentBatch()` calls against the same DB; assert each agent's run count = 1 in a 30-min window |
+| 2 | No unbounded batches | `BATCH_LIMIT` constant, only knob | Unit test: `claimDueAgents(N)` never returns > N rows |
+| 3 | No content in logs | `logRun()` schema is IDs + metrics only; `errorCodeFor()` maps raw exceptions to enum codes | CI test in `log-contents.test.ts` runs adversarial fixtures, greps log output for forbidden strings |
+| 4 | Budget checked before AND after | `checkBudget()` called in two places: preflight (§9 step 1.5) and mid-run loop (§9 step 6) | Unit test: fixture where 3rd item pushes over CPAUD ceiling → `status=partial_success`, `items_kept=2`, cost recorded for hops 1–3 |
+| 5 | Failures are durable | `agent_runs` row inserted as `running` at start; finalize always runs (in `finally` or via sweep) | Integration test: kill the Worker mid-run; next batch tick's sweep marks the row `timeout` |
+| 6 | GDPR delete is complete | `delete_user_data` covers all 5 data classes (4 tables + cpaud_events filter); structured logs covered by no-content invariant | `gdpr-roundtrip-realdb.test.ts` extends seed + assert (per §7.2) |
+| 7 | ResearchDigest not hardcoded | Runner uses only `AgentTemplate<unknown, unknown>` dispatch; no `if (template_id === ...)` branches anywhere | Code review grep + a "second template" smoke test in 3.1 (when JobAgent lands) — if the runner needed changes to host it, this invariant was broken |
+
+PR1 ships the schema + GDPR per §20. PRs 2–5 each must demonstrate the relevant invariants are still upheld; reviewer should reject any PR that breaks one without an explicit spec revision.
 
 ---
 
