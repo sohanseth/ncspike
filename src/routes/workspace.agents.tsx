@@ -130,7 +130,17 @@ function AgentsPage() {
   async function onArchive(agentId: string) {
     setMutatingId(agentId);
     try {
-      await archiveAgent({ data: { agentId } });
+      const result = await archiveAgent({ data: { agentId } });
+      // `affected: false` on archive means the row didn't match — either
+      // already archived, owned by another user, OR currently mid-run
+      // (the server's lease guard refuses archive while a runner holds
+      // the row's lease). Surface a useful hint rather than silently
+      // letting the row reappear in the refetch.
+      if (!result.affected) {
+        setListError(
+          "Archive didn't apply. The agent may be running right now — try again in a few minutes.",
+        );
+      }
       await refreshAgents();
     } catch (err) {
       setListError((err as Error).message ?? "Archive failed");

@@ -13,7 +13,7 @@
  * Tests target the pure handlers `*For(userId, raw)` — the auth-wrapped
  * server fns are thin shims that mirror the gdpr.functions.ts pattern.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ─── In-memory supabase mock ───────────────────────────────────────────────
 //
@@ -39,6 +39,7 @@ type Row = {
   cadence_hours: number;
   last_completed_at: string | null;
   created_at: string;
+  claim_expires_at?: string | null;
 };
 
 let rows: Row[] = [];
@@ -55,7 +56,12 @@ function makeBuilder(table: string) {
   type Filter =
     | { kind: "eq"; col: string; val: unknown }
     | { kind: "neq"; col: string; val: unknown }
-    | { kind: "in"; col: string; vals: unknown[] };
+    | { kind: "in"; col: string; vals: unknown[] }
+    | { kind: "or"; predicates: OrPredicate[] };
+
+  type OrPredicate =
+    | { col: string; op: "is.null" }
+    | { col: string; op: "lt"; val: string };
 
   const filters: Filter[] = [];
   let op: "select" | "update" | null = null;
@@ -66,6 +72,14 @@ function makeBuilder(table: string) {
   function apply(): Row[] {
     return rows.filter((r) =>
       filters.every((f) => {
+        if (f.kind === "or") {
+          return f.predicates.some((p) => {
+            const v = (r as unknown as Record<string, unknown>)[p.col];
+            if (p.op === "is.null") return v === null || v === undefined;
+            if (p.op === "lt") return typeof v === "string" && v < p.val;
+            return false;
+          });
+        }
         const v = (r as unknown as Record<string, unknown>)[f.col];
         if (f.kind === "eq") return v === f.val;
         if (f.kind === "neq") return v !== f.val;
@@ -96,6 +110,19 @@ function makeBuilder(table: string) {
     },
     in(col: string, vals: unknown[]) {
       filters.push({ kind: "in", col, vals });
+      return builder;
+    },
+    or(expr: string) {
+      // Parse PostgREST .or() syntax for the limited set we use:
+      //   "claim_expires_at.is.null,claim_expires_at.lt.<iso>"
+      const predicates: OrPredicate[] = expr.split(",").map((part) => {
+        const m = part.match(/^(\w+)\.(is\.null|lt)(?:\.(.+))?$/);
+        if (!m) throw new Error(`unsupported or-predicate: ${part}`);
+        const [, col, op, val] = m;
+        if (op === "is.null") return { col, op: "is.null" as const };
+        return { col, op: "lt" as const, val: val ?? "" };
+      });
+      filters.push({ kind: "or", predicates });
       return builder;
     },
     order(col: string, opts?: { ascending?: boolean }) {
@@ -356,6 +383,104 @@ describe("archiveAgentFor — anything-but-archived → archived, owner-scoped",
     await archiveAgentFor(USER_A, { agentId: AGENT_1 });
     const out = await listAgentsFor(USER_A);
     expect(out.map((r) => r.id)).toEqual([AGENT_2]);
+  });
+});
+
+// ─── archiveAgent lease guard ─────────────────────────────────────────────
+//
+// Background: even though `agent_state_enum` has no `running` state,
+// the runner holds a `claim_expires_at` lease while mid-execute. If a
+// user archives during that window, the runner's finalize fn
+// (`update_agent_lifecycle_state`) re-reads `state` and can
+// unconditionally overwrite it on the failed-promotion path (5+
+// consecutive failures → 'degraded'), undoing the archive. The
+// server-side archive handler refuses while the lease is live to
+// close this race without touching any runtime code.
+
+describe("archiveAgentFor — lease-held race guard", () => {
+  const NOW = new Date("2026-05-18T12:00:00Z");
+  const IN_FUTURE = new Date(NOW.getTime() + 10 * 60 * 1000).toISOString();
+  const IN_PAST = new Date(NOW.getTime() - 10 * 60 * 1000).toISOString();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("refuses to archive while a runner currently holds the lease (claim_expires_at > now)", async () => {
+    rows.push({
+      id: AGENT_1,
+      user_id: USER_A,
+      template_id: "research_digest",
+      display_name: "mid-run agent",
+      state: "active",
+      cadence_hours: 24,
+      last_completed_at: null,
+      created_at: "2026-05-18T10:00:00Z",
+      claim_expires_at: IN_FUTURE,
+    });
+
+    const result = await archiveAgentFor(USER_A, { agentId: AGENT_1 });
+    expect(result.affected).toBe(false);
+    expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("active");
+  });
+
+  it("allows archive when the lease has expired (claim_expires_at < now) — stuck-run case", async () => {
+    rows.push({
+      id: AGENT_1,
+      user_id: USER_A,
+      template_id: "research_digest",
+      display_name: "stuck-lease agent",
+      state: "active",
+      cadence_hours: 24,
+      last_completed_at: null,
+      created_at: "2026-05-18T10:00:00Z",
+      claim_expires_at: IN_PAST,
+    });
+
+    const result = await archiveAgentFor(USER_A, { agentId: AGENT_1 });
+    expect(result.affected).toBe(true);
+    expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("archived");
+  });
+
+  it("allows archive when no lease is held (claim_expires_at IS NULL) — the common case", async () => {
+    rows.push({
+      id: AGENT_1,
+      user_id: USER_A,
+      template_id: "research_digest",
+      display_name: "idle agent",
+      state: "active",
+      cadence_hours: 24,
+      last_completed_at: "2026-05-17T03:30:00Z",
+      created_at: "2026-05-18T10:00:00Z",
+      claim_expires_at: null,
+    });
+
+    const result = await archiveAgentFor(USER_A, { agentId: AGENT_1 });
+    expect(result.affected).toBe(true);
+    expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("archived");
+  });
+
+  it("pause has NO lease guard (intentional) — UX intent is 'stop future runs, let current finish'", async () => {
+    rows.push({
+      id: AGENT_1,
+      user_id: USER_A,
+      template_id: "research_digest",
+      display_name: "mid-run agent",
+      state: "active",
+      cadence_hours: 24,
+      last_completed_at: null,
+      created_at: "2026-05-18T10:00:00Z",
+      claim_expires_at: IN_FUTURE,
+    });
+
+    const result = await pauseAgentFor(USER_A, { agentId: AGENT_1 });
+    expect(result.affected).toBe(true);
+    expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("paused");
   });
 });
 

@@ -183,9 +183,10 @@ export const listAgents = createServerFn({ method: "GET" })
 /**
  * Shared shape for the three state-transition handlers. Returns
  * `{affected: true}` iff exactly one row's state changed. `false` means
- * the row didn't exist, isn't owned by this user, or wasn't in the
- * expected source state — all three indistinguishable to the client by
- * design (avoid leaking row existence to a non-owner).
+ * the row didn't exist, isn't owned by this user, didn't match the
+ * expected source state, OR (archive only) is currently mid-run —
+ * indistinguishable to the client by design (avoid leaking row
+ * existence/state to a non-owner).
  */
 async function transitionAgentState(
   userId: string,
@@ -193,6 +194,7 @@ async function transitionAgentState(
   expectedSourceStates: string[] | null,
   targetState: string,
   opName: string,
+  options: { requireNoActiveLease?: boolean } = {},
 ): Promise<MutationResult> {
   const { agentId } = AgentIdSchema.parse(raw);
 
@@ -207,6 +209,19 @@ async function transitionAgentState(
     // archive: refuse to update an already-archived row (avoids a no-op
     // bump on updated_at when the user double-clicks).
     q = q.neq("state", "archived");
+  }
+  if (options.requireNoActiveLease) {
+    // Race guard for archive (Sneha PR #13 review): if a runner is
+    // currently mid-execute (lease held), its `update_agent_lifecycle_state`
+    // call at finalize re-reads `state` and can unconditionally overwrite
+    // it on the failed-promotion path (5+ consecutive failures → 'degraded').
+    // Block archive while the lease is live so that race can't undo the
+    // archive. Stale leases (claim_expires_at in the past, awaiting the
+    // stuck-run sweep) are fine to archive over.
+    const nowIso = new Date().toISOString();
+    q = q.or(
+      `claim_expires_at.is.null,claim_expires_at.lt.${nowIso}`,
+    );
   }
   const { data, error } = await q.select("id");
 
@@ -236,7 +251,9 @@ export function archiveAgentFor(
   userId: string,
   raw: unknown,
 ): Promise<MutationResult> {
-  return transitionAgentState(userId, raw, null, "archived", "archive");
+  return transitionAgentState(userId, raw, null, "archived", "archive", {
+    requireNoActiveLease: true,
+  });
 }
 
 export const pauseAgent = createServerFn({ method: "POST" })
