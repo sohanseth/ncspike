@@ -20,6 +20,7 @@ import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy
 import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
+import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
 import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
 import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
 import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
@@ -83,6 +84,11 @@ const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
   path: '/workspace/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceAgentsRoute = WorkspaceAgentsRouteImport.update({
+  id: '/workspace/agents',
+  path: '/workspace/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceInternalCpaudRoute = WorkspaceInternalCpaudRouteImport.update({
   id: '/workspace/internal/cpaud',
   path: '/workspace/internal/cpaud',
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/forgot-password'
     | '/reset-password'
+    | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/personalization'
@@ -237,6 +249,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  WorkspaceAgentsRoute: typeof WorkspaceAgentsRoute
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspacePersonalizationRoute: typeof WorkspacePersonalizationRoute
@@ -331,6 +344,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/agents': {
+      id: '/workspace/agents'
+      path: '/workspace/agents'
+      fullPath: '/workspace/agents'
+      preLoaderRoute: typeof WorkspaceAgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/internal/cpaud': {
       id: '/workspace/internal/cpaud'
       path: '/workspace/internal/cpaud'
@@ -381,6 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  WorkspaceAgentsRoute: WorkspaceAgentsRoute,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspacePersonalizationRoute: WorkspacePersonalizationRoute,
