@@ -131,6 +131,11 @@ function AgentsPage() {
     setMutatingId(agentId);
     try {
       const result = await archiveAgent({ data: { agentId } });
+      // Refetch first — `refreshAgents` clears listError as its first
+      // step. If we set the "didn't apply" message before the refetch,
+      // it would flash and disappear. Set it AFTER so the message
+      // sticks until the user's next action.
+      await refreshAgents();
       // `affected: false` on archive means the row didn't match — either
       // already archived, owned by another user, OR currently mid-run
       // (the server's lease guard refuses archive while a runner holds
@@ -141,7 +146,6 @@ function AgentsPage() {
           "Archive didn't apply. The agent may be running right now — try again in a few minutes.",
         );
       }
-      await refreshAgents();
     } catch (err) {
       setListError((err as Error).message ?? "Archive failed");
     } finally {
