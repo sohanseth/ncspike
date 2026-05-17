@@ -802,7 +802,7 @@ stays green at every step.
     re-exported from `src/server/inference/imagegen.ts` so client
     and server agree on classification.
   - `chat_message_attachments.attachment_kind` (`'image_in' |
-    'image_out'`) — see migration `20260518000000_phase29a_attachment_kind.sql`.
+    'image_out'`) — see migration `20260518000100_phase29a_attachment_kind.sql`.
   - `detectImageGenCapability()` returns `{ available, adapter }`
     or `{ available:false, reason }` per device.
   - Tests: `phase29a-image-gen-capability`, `phase29a-modality-fork`,
