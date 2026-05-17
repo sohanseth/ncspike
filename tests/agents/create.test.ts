@@ -57,7 +57,7 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 
 // ─── Imports (after mocks) ─────────────────────────────────────────────────
 
-import { createResearchDigestAgentFor } from "@/lib/agents.functions";
+import { createResearchDigestAgentFor } from "@/lib/agents.functions.server";
 import { researchDigest } from "@/server/agents/templates/research-digest";
 
 const USER = "11111111-2222-3333-4444-555555555555";
@@ -263,7 +263,10 @@ describe("PR invariant: agent-create MVP touches no runtime foundation file", ()
       // history). What we can do: check that no NEW imports point at this
       // PR's product-surface module, which would imply the runtime started
       // depending on the UI rather than the other way around.
-      expect(txt).not.toMatch(/from\s+['"]@\/lib\/agents\.functions['"]/);
+      // Match both the client-safe surface (`agents.functions`) and the
+      // server-only impl (`agents.functions.server`) — neither belongs
+      // in any runtime-foundation file.
+      expect(txt).not.toMatch(/from\s+['"]@\/lib\/agents\.functions(?:\.server)?['"]/);
       expect(txt).not.toMatch(/from\s+['"]@\/routes\/workspace\.agents['"]/);
     });
   }

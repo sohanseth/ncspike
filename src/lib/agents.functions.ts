@@ -1,45 +1,37 @@
 /**
- * Phase 3.0 — agent creation (MVP).
+ * Phase 3.0 — agents product surface (client-safe surface).
  *
- * First product surface on top of the runtime foundation (PR1 → PR3c + the
- * hardening sweep). One endpoint: `createResearchDigestAgent({display_name,
- * topics})`. Everything else is template-supplied or table-default:
+ * This file is what `/workspace/agents` (and any future agent UI) imports.
+ * It must NOT import anything under `src/server/**` at module top level,
+ * because vite's `import-protection` plugin denies those from any
+ * client-reachable module — even when the import is consumed only inside
+ * a `createServerFn` handler body (top-level imports are evaluated by
+ * static analysis before tree-shaking runs).
  *
- *   template_id    = 'research_digest'                 (the only 3.0 template)
- *   badge          = template.defaultBadge ('flash')
- *   state          = 'active'                          (overrides table 'draft')
- *   cadence_hours  = template.defaultCadenceHours (24)
- *   budget         = template.defaultBudget            (AgentBudget jsonb)
- *   config         = ResearchDigestConfigSchema.parse({topics})
- *                    → fills lookbackHours + minScore defaults
- *   last_completed_at = NULL                           (claim_due_agents
- *                                                       treats NULL as due)
+ * What lives here:
+ *   - Zod input schemas (the wire contract)
+ *   - Type exports (UI-shaped row types)
+ *   - `createServerFn` wrappers
  *
- * **Why state='active' + last_completed_at=NULL together**: a draft row
- * stays out of `claim_due_agents`' state filter; a NULL `last_completed_at`
- * is what tells that filter the row has never run, so it's eligible on the
- * very next cron tick. Both pieces are required for a freshly-created
- * agent to actually run.
+ * What lives in the companion `agents.functions.server.ts`:
+ *   - The pure `*For(userId, raw)` handlers
+ *   - Every server-only dep they pull in (researchDigest template,
+ *     scrubErrorMessage)
  *
- * Validation is split into two layers — top-level input validates
- * display_name + topics shape (rejects empty strings and >5 topics);
- * `ResearchDigestConfigSchema.parse(...)` re-validates topics and supplies
- * the template-internal defaults. The latter is the source of truth for
- * what shape the runner consumes.
+ * Each `createServerFn` handler body dynamically imports its impl from
+ * `./agents.functions.server`. Dynamic imports inside the handler body
+ * are NOT walked by the client-side import-protection check, AND the
+ * entire handler body is replaced with an RPC stub on the client at
+ * build time — so the server-only module never reaches the browser.
  *
- * Advanced config (cadence, budget, minScore, lookback) is deliberately
- * NOT surfaced in this MVP — see PR body for the rationale + follow-ups.
+ * Tests target the `*For` handlers directly via `@/lib/agents.functions.server`.
  */
 import { z } from "zod";
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import {
-  researchDigest,
-  ResearchDigestConfigSchema,
-} from "@/server/agents/templates/research-digest";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+
+// ─── Wire schemas (client-safe — no server imports) ──────────────────────
 
 export const CreateResearchDigestAgentInputSchema = z.object({
   display_name: z.string().trim().min(1).max(80),
@@ -50,6 +42,14 @@ export type CreateResearchDigestAgentInput = z.infer<
   typeof CreateResearchDigestAgentInputSchema
 >;
 
+export const AgentIdSchema = z.object({
+  agentId: z.string().uuid(),
+});
+
+export type AgentIdInput = z.infer<typeof AgentIdSchema>;
+
+// ─── Return shapes (types — erased at runtime, safe everywhere) ──────────
+
 export type CreatedAgentSummary = {
   id: string;
   template_id: string;
@@ -58,79 +58,6 @@ export type CreatedAgentSummary = {
   state: string;
   cadence_hours: number;
 };
-
-/**
- * Pure handler — auth-free, input is already-known userId + raw payload.
- * Mirrors the gdpr.functions.ts handler-pair pattern so tests can exercise
- * the data path without mocking @tanstack/react-start middleware.
- */
-export async function createResearchDigestAgentFor(
-  userId: string,
-  raw: unknown,
-): Promise<CreatedAgentSummary> {
-  // Layer 1 — input shape validation (display_name + topics).
-  const input = CreateResearchDigestAgentInputSchema.parse(raw);
-
-  // Layer 2 — template's own config validation. This also fills the
-  // default lookbackHours + minScore so the persisted config matches
-  // exactly what the runner expects to read.
-  const config = ResearchDigestConfigSchema.parse({ topics: input.topics });
-
-  const row = {
-    user_id: userId,
-    template_id: researchDigest.id,
-    display_name: input.display_name,
-    config,
-    badge: researchDigest.defaultBadge,
-    state: "active",
-    cadence_hours: researchDigest.defaultCadenceHours,
-    budget: researchDigest.defaultBudget,
-    // notify left to the JSONB default '{}'.
-    // last_completed_at left NULL → due immediately on next cron tick.
-  };
-
-  const { data, error } = await (supabaseAdmin as any)
-    .from("agents")
-    .insert(row)
-    .select("id, template_id, display_name, badge, state, cadence_hours")
-    .single();
-
-  if (error) {
-    // Don't echo Supabase error envelopes raw — they can carry constraint
-    // values (e.g., a unique-key violation could include the display_name).
-    throw new Error(
-      `Agent create failed: ${scrubErrorMessage(error.message ?? String(error))}`,
-    );
-  }
-  return data as CreatedAgentSummary;
-}
-
-export const createResearchDigestAgent = createServerFn({ method: "POST" })
-  .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: CreateResearchDigestAgentInput) => d)
-  .handler(({ data, context }): Promise<CreatedAgentSummary> =>
-    createResearchDigestAgentFor(context.userId, data),
-  );
-
-// ─── List / pause / resume / archive ─────────────────────────────────────
-//
-// Manage surface for the user's own agents. Conventions, applied to every
-// handler below:
-//
-//   1. user_id is taken from auth context (never from client payload).
-//   2. Every UPDATE/SELECT WHERE includes `.eq('user_id', userId)`. RLS
-//      already gates this (policy `agents_owner_all`), but admin client
-//      bypasses RLS — the explicit filter is the load-bearing guard.
-//   3. State transitions are strict:
-//        pause   : 'active'   → 'paused'    (no-op on already paused)
-//        resume  : 'paused'   → 'active'    (no-op if not paused)
-//        archive : !archived  → 'archived'  (terminal state for the UI)
-//      The WHERE clauses encode these so a stale client click can't
-//      accidentally bump a runner-managed state ('degraded', 'inactive',
-//      'error') into 'active'. Stale-click → 0 rows affected → caller
-//      sees `affected: false` and can refetch.
-//   4. No hard delete affordance. Archive is the terminal user action.
-//      `agents_runs`/`agent_findings` history is preserved.
 
 export type AgentListItem = {
   id: string;
@@ -144,135 +71,49 @@ export type AgentListItem = {
 
 export type MutationResult = { affected: boolean };
 
-const AgentIdSchema = z.object({
-  agentId: z.string().uuid(),
-});
+// ─── createServerFn wrappers ─────────────────────────────────────────────
+//
+// Handler bodies do a dynamic import of the server-only impl so the
+// server-only deps never reach the client bundle. The createServerFn
+// machinery already replaces the body with an RPC stub on the client,
+// but vite's static import-analysis runs first and would still deny
+// a top-level server import — hence the dynamic form.
 
-export type AgentIdInput = z.infer<typeof AgentIdSchema>;
-
-/**
- * Pure handler — returns the user's non-archived agents, newest first.
- * Archived agents are hidden from the default list per Sneha's
- * archive-over-delete decision; a future "Show archived" toggle can
- * call this with `{includeArchived: true}` (not in MVP).
- */
-export async function listAgentsFor(userId: string): Promise<AgentListItem[]> {
-  const { data, error } = await (supabaseAdmin as any)
-    .from("agents")
-    .select(
-      "id, display_name, template_id, state, cadence_hours, last_completed_at, created_at",
-    )
-    .eq("user_id", userId)
-    .neq("state", "archived")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    throw new Error(
-      `Agent list failed: ${scrubErrorMessage(error.message ?? String(error))}`,
-    );
-  }
-  return (data ?? []) as AgentListItem[];
-}
+export const createResearchDigestAgent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: CreateResearchDigestAgentInput) => d)
+  .handler(async ({ data, context }): Promise<CreatedAgentSummary> => {
+    const mod = await import("./agents.functions.server");
+    return mod.createResearchDigestAgentFor(context.userId, data);
+  });
 
 export const listAgents = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .handler(({ context }): Promise<AgentListItem[]> =>
-    listAgentsFor(context.userId),
-  );
-
-/**
- * Shared shape for the three state-transition handlers. Returns
- * `{affected: true}` iff exactly one row's state changed. `false` means
- * the row didn't exist, isn't owned by this user, didn't match the
- * expected source state, OR (archive only) is currently mid-run —
- * indistinguishable to the client by design (avoid leaking row
- * existence/state to a non-owner).
- */
-async function transitionAgentState(
-  userId: string,
-  raw: unknown,
-  expectedSourceStates: string[] | null,
-  targetState: string,
-  opName: string,
-  options: { requireNoActiveLease?: boolean } = {},
-): Promise<MutationResult> {
-  const { agentId } = AgentIdSchema.parse(raw);
-
-  let q = (supabaseAdmin as any)
-    .from("agents")
-    .update({ state: targetState })
-    .eq("id", agentId)
-    .eq("user_id", userId);
-  if (expectedSourceStates !== null) {
-    q = q.in("state", expectedSourceStates);
-  } else {
-    // archive: refuse to update an already-archived row (avoids a no-op
-    // bump on updated_at when the user double-clicks).
-    q = q.neq("state", "archived");
-  }
-  if (options.requireNoActiveLease) {
-    // Race guard for archive (Sneha PR #13 review): if a runner is
-    // currently mid-execute (lease held), its `update_agent_lifecycle_state`
-    // call at finalize re-reads `state` and can unconditionally overwrite
-    // it on the failed-promotion path (5+ consecutive failures → 'degraded').
-    // Block archive while the lease is live so that race can't undo the
-    // archive. Stale leases (claim_expires_at in the past, awaiting the
-    // stuck-run sweep) are fine to archive over.
-    const nowIso = new Date().toISOString();
-    q = q.or(
-      `claim_expires_at.is.null,claim_expires_at.lt.${nowIso}`,
-    );
-  }
-  const { data, error } = await q.select("id");
-
-  if (error) {
-    throw new Error(
-      `Agent ${opName} failed: ${scrubErrorMessage(error.message ?? String(error))}`,
-    );
-  }
-  return { affected: Array.isArray(data) && data.length > 0 };
-}
-
-export function pauseAgentFor(
-  userId: string,
-  raw: unknown,
-): Promise<MutationResult> {
-  return transitionAgentState(userId, raw, ["active"], "paused", "pause");
-}
-
-export function resumeAgentFor(
-  userId: string,
-  raw: unknown,
-): Promise<MutationResult> {
-  return transitionAgentState(userId, raw, ["paused"], "active", "resume");
-}
-
-export function archiveAgentFor(
-  userId: string,
-  raw: unknown,
-): Promise<MutationResult> {
-  return transitionAgentState(userId, raw, null, "archived", "archive", {
-    requireNoActiveLease: true,
+  .handler(async ({ context }): Promise<AgentListItem[]> => {
+    const mod = await import("./agents.functions.server");
+    return mod.listAgentsFor(context.userId);
   });
-}
 
 export const pauseAgent = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: AgentIdInput) => d)
-  .handler(({ data, context }): Promise<MutationResult> =>
-    pauseAgentFor(context.userId, data),
-  );
+  .handler(async ({ data, context }): Promise<MutationResult> => {
+    const mod = await import("./agents.functions.server");
+    return mod.pauseAgentFor(context.userId, data);
+  });
 
 export const resumeAgent = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: AgentIdInput) => d)
-  .handler(({ data, context }): Promise<MutationResult> =>
-    resumeAgentFor(context.userId, data),
-  );
+  .handler(async ({ data, context }): Promise<MutationResult> => {
+    const mod = await import("./agents.functions.server");
+    return mod.resumeAgentFor(context.userId, data);
+  });
 
 export const archiveAgent = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: AgentIdInput) => d)
-  .handler(({ data, context }): Promise<MutationResult> =>
-    archiveAgentFor(context.userId, data),
-  );
+  .handler(async ({ data, context }): Promise<MutationResult> => {
+    const mod = await import("./agents.functions.server");
+    return mod.archiveAgentFor(context.userId, data);
+  });
