@@ -36,6 +36,7 @@
  * retention sweep.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type AdapterAlert = {
   adapter: string;
@@ -123,7 +124,7 @@ async function postWebhook(url: string, body: unknown): Promise<boolean> {
     });
     return res.ok;
   } catch (e) {
-    console.warn("[cpaud-alerts] webhook POST threw:", e);
+    console.warn("[cpaud-alerts] webhook POST threw:", scrubErrorMessage(e));
     return false;
   }
 }
@@ -180,7 +181,7 @@ export async function runImageBlockedAlertCheck(
   try {
     counts = await fetchCounts(WINDOW_HOURS);
   } catch (e) {
-    console.warn("[cpaud-alerts] count query failed:", e);
+    console.warn("[cpaud-alerts] count query failed:", scrubErrorMessage(e));
     return empty;
   }
 

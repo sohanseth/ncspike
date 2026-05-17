@@ -1,27 +1,33 @@
 /**
- * Invariant: no raw `error.message` in server-side logs.
+ * Invariant: no raw error content in server-side logs.
  *
  * The no-content-in-logs invariant (docs/16 §15.1, §22 #3): user-supplied
  * content must never appear in `agent_runs.error`, `inference_usage.*`, or
  * structured stdout/stderr logs. Supabase echoes the conflicting value back
  * on constraint violations — `agent_findings (agent_id, dedupe_key)` unique
  * collisions, for example, will include the conflicting `dedupe_key` (often
- * a URL — user content) in `error.message`.
+ * a URL — user content) in `error.message`. Caught `Error` instances can
+ * also carry user content in their messages (LLM-thrown errors that quote
+ * the offending prompt, network errors that echo the URL, etc.).
  *
- * PR3a wrapped 4 sites in `src/server/agents/runner.ts` and `batch.ts`. The
- * follow-up swept the rest of `src/server/` and now this test stops the
- * pattern from coming back.
+ * Two patterns covered:
  *
- * Rule: inside any `console.error|warn|log|info|debug` call, an interpolated
- * `.message` must be wrapped in `scrubErrorMessage(...)`. The scrubber
- * (`src/server/agents/error-scrub.ts`) strips quoted spans, URLs, emails,
- * and long digit runs, then truncates to 500 chars.
+ *   1. **Interpolated `.message`** (PR3a + PR #7) — inside any console call,
+ *      an interpolated `.message` must be wrapped in `scrubErrorMessage(...)`.
+ *   2. **Bare error variable** (post-PR3c hardening) — inside any console
+ *      call, a bare positional `e` / `err` / `error` argument must also be
+ *      wrapped. Catches the `console.error("[x] failed:", e)` pattern.
  *
- * Allowlist (NOT flagged): `error.message` inside `throw new Error(...)`.
- * Thrown errors re-enter the caller's catch and the runner runs them
- * through scrubErrorMessage at the outer layer before persistence.
+ * The scrubber (`src/server/agents/error-scrub.ts`) strips quoted spans,
+ * URLs, emails, and long digit runs, then truncates to 500 chars.
  *
- * Excluded files: the scrubber itself (`error-scrub.ts`) and tests.
+ * Allowlist (NOT flagged):
+ *   - `.message` inside `throw new Error(...)` — thrown errors re-enter
+ *     the caller's catch and the runner runs them through scrubErrorMessage
+ *     at the outer layer before persistence.
+ *
+ * Scanned: `src/server/**\/*.ts` + `src/worker.ts` (the cron entry point).
+ * Excluded: the scrubber itself (`error-scrub.ts`) and tests.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -29,6 +35,7 @@ import { join, relative } from "node:path";
 
 const REPO_ROOT = join(__dirname, "..", "..");
 const SERVER_DIR = join(REPO_ROOT, "src", "server");
+const WORKER_ENTRY = join(REPO_ROOT, "src", "worker.ts");
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -43,6 +50,16 @@ function walk(dir: string): string[] {
   }
   return out;
 }
+
+/**
+ * Bare-error positional argument inside a console call body. Catches the
+ * common `console.error("[x] failed:", e)` / `console.warn(..., error)` /
+ * `console.error(..., err)` shapes. The match requires a literal `,`
+ * before the identifier and a terminating `,` or `)` after — so it
+ * doesn't trip on `e.message`, `someFn(e)`, or identifier substrings
+ * like `parseError`.
+ */
+const BARE_ERROR_RE = /,\s*(?:e|err|error)\s*[,)]/;
 
 /**
  * Extract every `console.(error|warn|log|info|debug)( ... )` call body from
@@ -138,16 +155,20 @@ function lineOf(src: string, offset: number): number {
   return line;
 }
 
-describe("Invariant: no raw error.message in server-side logs (docs/16 §15.1, §22 #3)", () => {
-  const FILES = walk(SERVER_DIR).filter(
-    (f) =>
-      // The scrubber itself is the sink — it owns the regex constants.
-      !f.endsWith("agents/error-scrub.ts") &&
-      !f.endsWith("agents\\error-scrub.ts"),
-  );
+describe("Invariant: no raw error content in server-side logs (docs/16 §15.1, §22 #3)", () => {
+  const FILES = [
+    ...walk(SERVER_DIR).filter(
+      (f) =>
+        // The scrubber itself is the sink — it owns the regex constants.
+        !f.endsWith("agents/error-scrub.ts") &&
+        !f.endsWith("agents\\error-scrub.ts"),
+    ),
+    WORKER_ENTRY,
+  ];
 
   it("collects at least one source file (sanity)", () => {
     expect(FILES.length).toBeGreaterThan(10);
+    expect(FILES).toContain(WORKER_ENTRY);
   });
 
   it("no console.error|warn|log|info|debug call interpolates raw .message", () => {
@@ -174,6 +195,37 @@ describe("Invariant: no raw error.message in server-side logs (docs/16 §15.1, �
         .join("\n");
       throw new Error(
         `Found ${offenders.length} console call(s) leaking raw .message into logs.\n` +
+          `Wrap with scrubErrorMessage(...) from src/server/agents/error-scrub.ts:\n${formatted}`,
+      );
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("no console.error|warn|log|info|debug call takes a bare e/err/error positional arg", () => {
+    const offenders: Array<{ file: string; line: number; snippet: string }> = [];
+    for (const file of FILES) {
+      const src = readFileSync(file, "utf8");
+      const calls = extractConsoleCalls(src);
+      for (const call of calls) {
+        // Match a bare error variable in positional argument position
+        // (after a comma, terminated by `,` or `)`). The scrubErrorMessage
+        // allowlist applies the same way as for the .message rule — wrapping
+        // the bare arg in the scrubber is the canonical fix.
+        if (!BARE_ERROR_RE.test(call.body)) continue;
+        if (/scrubErrorMessage\s*\(/.test(call.body)) continue;
+        offenders.push({
+          file: relative(REPO_ROOT, file),
+          line: lineOf(src, call.offset),
+          snippet: call.body.replace(/\s+/g, " ").slice(0, 160),
+        });
+      }
+    }
+    if (offenders.length > 0) {
+      const formatted = offenders
+        .map((o) => `  ${o.file}:${o.line}\n    ${o.snippet}`)
+        .join("\n");
+      throw new Error(
+        `Found ${offenders.length} console call(s) logging a bare e/err/error.\n` +
           `Wrap with scrubErrorMessage(...) from src/server/agents/error-scrub.ts:\n${formatted}`,
       );
     }
@@ -217,5 +269,20 @@ describe("Invariant: no raw error.message in server-side logs (docs/16 §15.1, �
     expect(calls.length).toBe(1);
     expect(calls[0].body.endsWith(")")).toBe(true);
     expect(calls[0].body).toContain("scrubErrorMessage(error.message)");
+  });
+
+  it("bare-error regex catches bare e/err/error, ignores accessors and lookalikes", () => {
+    // Positive cases — should all match.
+    expect(BARE_ERROR_RE.test('console.error("msg", e)')).toBe(true);
+    expect(BARE_ERROR_RE.test('console.warn("msg", err)')).toBe(true);
+    expect(BARE_ERROR_RE.test('console.error("msg", error)')).toBe(true);
+    expect(BARE_ERROR_RE.test('console.error("msg", error, extra)')).toBe(true);
+
+    // Negative cases — must not match.
+    expect(BARE_ERROR_RE.test('console.error("msg", e.message)')).toBe(false);
+    expect(BARE_ERROR_RE.test('console.error("msg", scrubErrorMessage(e))')).toBe(false);
+    expect(BARE_ERROR_RE.test('console.error("msg", parseError)')).toBe(false);
+    expect(BARE_ERROR_RE.test('console.error("msg", e2)')).toBe(false);
+    expect(BARE_ERROR_RE.test('console.error("msg", errno)')).toBe(false);
   });
 });

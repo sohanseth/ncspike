@@ -27,6 +27,7 @@ import {
 } from "@/lib/trait-schema";
 import type { Badge } from "./inference/router";
 import type { PrivacyTier } from "@/lib/provider-tiers";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type AssembleArgs = {
   userId: string;
@@ -180,7 +181,7 @@ async function loadTraitBlocks(userId: string): Promise<CategoryBlocksMap> {
     data = res.data;
     error = res.error;
   } catch (e) {
-    console.warn(`[context-broker] trait-block load threw for ${userId}:`, e);
+    console.warn(`[context-broker] trait-block load threw for ${userId}:`, scrubErrorMessage(e));
     throw new BlockListUnavailableError(
       "trait",
       `user_trait_blocks load threw: ${(e as Error)?.message ?? String(e)}`,
@@ -190,7 +191,7 @@ async function loadTraitBlocks(userId: string): Promise<CategoryBlocksMap> {
     // Fail-closed: a blocklist we can't read is indistinguishable from a
     // missing blocklist, and silently injecting traits the user explicitly
     // forgot would violate the privacy contract.
-    console.warn(`[context-broker] trait-block load failed for ${userId}:`, error);
+    console.warn(`[context-broker] trait-block load failed for ${userId}:`, scrubErrorMessage(error.message ?? String(error)));
     throw new BlockListUnavailableError(
       "trait",
       `user_trait_blocks load failed: ${error.message ?? error}`,
@@ -222,7 +223,7 @@ async function loadProviderCategoryBlocks(
     data = res.data;
     error = res.error;
   } catch (e) {
-    console.warn(`[context-broker] provider-block load threw for ${userId}:`, e);
+    console.warn(`[context-broker] provider-block load threw for ${userId}:`, scrubErrorMessage(e));
     throw new BlockListUnavailableError(
       "provider-category",
       `user_provider_category_blocks load threw: ${(e as Error)?.message ?? String(e)}`,
@@ -230,7 +231,7 @@ async function loadProviderCategoryBlocks(
   }
   if (error) {
     // Fail-closed (see BlockListUnavailableError above).
-    console.warn(`[context-broker] provider-block load failed for ${userId}:`, error);
+    console.warn(`[context-broker] provider-block load failed for ${userId}:`, scrubErrorMessage(error.message ?? String(error)));
     throw new BlockListUnavailableError(
       "provider-category",
       `user_provider_category_blocks load failed: ${error.message ?? error}`,
@@ -352,7 +353,7 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
     if (!embeddings[0] || embeddings[0].length !== 384) return { ...empty, traitSheetVersion: version };
     queryEmbedding = embeddings[0];
   } catch (e) {
-    console.warn(`[context-broker] query embed failed for ${args.userId}:`, e);
+    console.warn(`[context-broker] query embed failed for ${args.userId}:`, scrubErrorMessage(e));
     return { ...empty, traitSheetVersion: version };
   }
 
@@ -536,6 +537,6 @@ export async function logContextDecision(args: LogContextDecisionArgs): Promise<
       trait_sheet_version: args.traitSheetVersion,
     });
   } catch (e) {
-    console.warn(`[context-broker] context-log write failed for ${args.userId}:`, e);
+    console.warn(`[context-broker] context-log write failed for ${args.userId}:`, scrubErrorMessage(e));
   }
 }

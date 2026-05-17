@@ -18,6 +18,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runResearchBatch } from "@/server/research-queue";
 import { runTraitExtractionAllUsers } from "@/server/trait-extraction";
 import { runImageBlockedAlertCheck } from "@/server/cpaud-alerts";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type CronSummary = {
   users: number;
@@ -73,7 +74,7 @@ async function sweepRetention(): Promise<void> {
       "cleanup_phase2_retention",
     );
     if (error) {
-      console.warn("[research-cron] retention sweep failed:", error);
+      console.warn("[research-cron] retention sweep failed:", scrubErrorMessage(error.message ?? String(error)));
       return;
     }
     const row = Array.isArray(cleaned) ? cleaned[0] : cleaned;
@@ -81,7 +82,7 @@ async function sweepRetention(): Promise<void> {
       `[research-cron] retention swept: research_tasks=${row?.research_tasks_deleted ?? 0} tool_invocations=${row?.tool_invocations_deleted ?? 0} device_tokens=${row?.device_tokens_deleted ?? 0} cron_run=${row?.cron_run_deleted ?? 0} push_permission_events=${row?.push_permission_events_deleted ?? 0} auth_callback_rejections=${row?.auth_callback_rejections_deleted ?? 0} chat_context_log=${row?.chat_context_log_deleted ?? 0} pii_scrub_events=${row?.pii_scrub_events_deleted ?? 0} extraction_failures=${row?.extraction_failures_deleted ?? 0}`,
     );
   } catch (e) {
-    console.warn("[research-cron] retention sweep threw:", e);
+    console.warn("[research-cron] retention sweep threw:", scrubErrorMessage(e));
   }
 }
 
@@ -103,7 +104,7 @@ export async function runResearchBatchAllUsers(
     .lte("scheduled_for", new Date().toISOString());
 
   if (error) {
-    console.error("[research-cron] list users failed:", error);
+    console.error("[research-cron] list users failed:", scrubErrorMessage(error.message ?? String(error)));
     summary.errors.push({ userId: "<list>", error: error.message ?? String(error) });
     return summary;
   }
@@ -128,7 +129,7 @@ export async function runResearchBatchAllUsers(
   try {
     await runTraitExtractionAllUsers();
   } catch (e) {
-    console.error("[research-cron] trait extraction batch threw:", e);
+    console.error("[research-cron] trait extraction batch threw:", scrubErrorMessage(e));
   }
 
   await sweepRetention();
@@ -143,7 +144,7 @@ export async function runResearchBatchAllUsers(
       );
     }
   } catch (e) {
-    console.warn("[research-cron] image-blocked alert check threw:", e);
+    console.warn("[research-cron] image-blocked alert check threw:", scrubErrorMessage(e));
   }
 
   console.log(

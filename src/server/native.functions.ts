@@ -16,6 +16,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { runResearchBatchForUserId } from "@/server/research-cron";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -161,7 +162,7 @@ export const unregisterDeviceToken = createServerFn({ method: "POST" })
       .eq("user_id", userId);
 
     if (error) {
-      console.error("[native:unregisterDeviceToken] delete failed:", error);
+      console.error("[native:unregisterDeviceToken] delete failed:", scrubErrorMessage(error.message ?? String(error)));
       throw new Response("Failed to unregister device", { status: 500 });
     }
 
@@ -223,7 +224,7 @@ export const recordCronRun = createServerFn({ method: "POST" })
     });
 
     if (error) {
-      console.error("[native:recordCronRun] insert failed:", error);
+      console.error("[native:recordCronRun] insert failed:", scrubErrorMessage(error.message ?? String(error)));
       // Don't throw — telemetry failure must not break the actual cron path.
       return { ok: false as const };
     }
@@ -264,7 +265,7 @@ export const recordPushPermissionEvent = createServerFn({ method: "POST" })
       });
 
     if (error) {
-      console.warn("[native:recordPushPermissionEvent] insert failed:", error);
+      console.warn("[native:recordPushPermissionEvent] insert failed:", scrubErrorMessage(error.message ?? String(error)));
       return { ok: false as const };
     }
     return { ok: true as const };
@@ -359,7 +360,7 @@ export const recordAuthCallbackRejection = createServerFn({ method: "POST" })
       });
 
     if (error) {
-      console.warn("[native:recordAuthCallbackRejection] insert failed:", error);
+      console.warn("[native:recordAuthCallbackRejection] insert failed:", scrubErrorMessage(error.message ?? String(error)));
       return { ok: false as const };
     }
     return { ok: true as const };

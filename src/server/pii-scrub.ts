@@ -13,6 +13,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { INJECTION_SENTINELS } from "@/lib/trait-schema";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type ScrubPatternClass =
   | "email"
@@ -249,7 +250,7 @@ export async function logScrubEvent(args: {
       provider_tier: args.providerTier ?? null,
     });
   } catch (e) {
-    console.warn(`[pii-scrub] audit write failed for ${args.userId}:`, e);
+    console.warn(`[pii-scrub] audit write failed for ${args.userId}:`, scrubErrorMessage(e));
   }
 }
 
@@ -268,7 +269,7 @@ export async function loadKnownNames(userId: string): Promise<string[]> {
     .select("name")
     .eq("user_id", userId);
   if (error) {
-    console.warn(`[pii-scrub] known-names load failed for ${userId}:`, error);
+    console.warn(`[pii-scrub] known-names load failed for ${userId}:`, scrubErrorMessage(error.message ?? String(error)));
     return [];
   }
   return ((data ?? []) as Array<{ name: string }>).map((r) => r.name);
