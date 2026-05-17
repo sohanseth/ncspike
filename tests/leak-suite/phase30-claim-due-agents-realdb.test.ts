@@ -134,6 +134,23 @@ describeIfDb("Phase 3.0 claim_due_agents invariants (docs/16 §22)", () => {
     ).toBeGreaterThan(Date.now());
   });
 
+  // ─── I0: empty due set returns clean empty array ───────────────────────
+  //
+  // Catches the 2026-05-18 array-aggregation bug regressing — if the SQL
+  // ever reverts to `RETURNING a.id INTO claimed_ids` without the CTE +
+  // array_agg pattern, this case is the easiest reproducer because it
+  // exercises both halves of the broken behaviour: zero updates (would
+  // leave claimed_ids NULL → final SELECT errors on `id = any(NULL)`) and
+  // any updates (would error on uuid → uuid[] coercion). The coalesce(...,
+  // '{}'::uuid[]) in the fix keeps the empty case clean.
+
+  it("I0: no due agents → claim_due_agents returns an empty set without error", async () => {
+    // beforeEach already wiped this user's agents; assert the fn is happy
+    // with literally nothing to claim.
+    const r = await claim(10);
+    expect(r).toEqual([]);
+  });
+
   // ─── I2: bounded batches ────────────────────────────────────────────────
 
   it("I2: claim_due_agents respects p_limit when more agents are due", async () => {
