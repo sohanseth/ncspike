@@ -57,6 +57,45 @@ async function querySearxng(instance: string, q: string, signal: AbortSignal): P
     .filter((r) => r.url);
 }
 
+/**
+ * Pure search call — no auth, no logging. Extracted so the agent runtime
+ * (cron-triggered, no user session) can call SearXNG directly without
+ * going through the user-auth-wrapped `webSearch` server-fn.
+ *
+ * Returns `{results, instance, lastError}` so callers that want to log
+ * the query themselves can (e.g., the agent runtime tags via
+ * inference_usage.metadata, the user-facing webSearch logs to
+ * search_queries).
+ *
+ * Same instance-rotation + 6s-per-instance timeout as webSearch.
+ */
+export async function searxngSearch(
+  query: string,
+): Promise<{ results: SearchHit[]; instance: string | null; lastError: string | null }> {
+  let results: SearchHit[] = [];
+  let usedInstance: string | null = null;
+  let lastError: string | null = null;
+
+  for (const instance of SEARXNG_INSTANCES) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const hits = await querySearxng(instance, query, ctrl.signal);
+      if (hits.length > 0) {
+        results = hits;
+        usedInstance = instance;
+        break;
+      }
+    } catch (e) {
+      lastError = (e as Error).message;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
+  return { results, instance: usedInstance, lastError };
+}
+
 export const webSearch = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d) => InputSchema.parse(d))
@@ -64,26 +103,7 @@ export const webSearch = createServerFn({ method: "POST" })
     const { supabase, userId } = context;
     const q = data.query.trim();
 
-    let results: SearchHit[] = [];
-    let usedInstance: string | null = null;
-    let lastError: string | null = null;
-
-    for (const instance of SEARXNG_INSTANCES) {
-      const ctrl = new AbortController();
-      const t = setTimeout(() => ctrl.abort(), 6000);
-      try {
-        const hits = await querySearxng(instance, q, ctrl.signal);
-        if (hits.length > 0) {
-          results = hits;
-          usedInstance = instance;
-          break;
-        }
-      } catch (e) {
-        lastError = (e as Error).message;
-      } finally {
-        clearTimeout(t);
-      }
-    }
+    const { results, instance: usedInstance, lastError } = await searxngSearch(q);
 
     // Log the query (best-effort — never block the user on a log failure).
     try {
