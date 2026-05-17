@@ -111,3 +111,151 @@ export const createResearchDigestAgent = createServerFn({ method: "POST" })
   .handler(({ data, context }): Promise<CreatedAgentSummary> =>
     createResearchDigestAgentFor(context.userId, data),
   );
+
+// ─── List / pause / resume / archive ─────────────────────────────────────
+//
+// Manage surface for the user's own agents. Conventions, applied to every
+// handler below:
+//
+//   1. user_id is taken from auth context (never from client payload).
+//   2. Every UPDATE/SELECT WHERE includes `.eq('user_id', userId)`. RLS
+//      already gates this (policy `agents_owner_all`), but admin client
+//      bypasses RLS — the explicit filter is the load-bearing guard.
+//   3. State transitions are strict:
+//        pause   : 'active'   → 'paused'    (no-op on already paused)
+//        resume  : 'paused'   → 'active'    (no-op if not paused)
+//        archive : !archived  → 'archived'  (terminal state for the UI)
+//      The WHERE clauses encode these so a stale client click can't
+//      accidentally bump a runner-managed state ('degraded', 'inactive',
+//      'error') into 'active'. Stale-click → 0 rows affected → caller
+//      sees `affected: false` and can refetch.
+//   4. No hard delete affordance. Archive is the terminal user action.
+//      `agents_runs`/`agent_findings` history is preserved.
+
+export type AgentListItem = {
+  id: string;
+  display_name: string;
+  template_id: string;
+  state: string;
+  cadence_hours: number;
+  last_completed_at: string | null;
+  created_at: string;
+};
+
+export type MutationResult = { affected: boolean };
+
+const AgentIdSchema = z.object({
+  agentId: z.string().uuid(),
+});
+
+export type AgentIdInput = z.infer<typeof AgentIdSchema>;
+
+/**
+ * Pure handler — returns the user's non-archived agents, newest first.
+ * Archived agents are hidden from the default list per Sneha's
+ * archive-over-delete decision; a future "Show archived" toggle can
+ * call this with `{includeArchived: true}` (not in MVP).
+ */
+export async function listAgentsFor(userId: string): Promise<AgentListItem[]> {
+  const { data, error } = await (supabaseAdmin as any)
+    .from("agents")
+    .select(
+      "id, display_name, template_id, state, cadence_hours, last_completed_at, created_at",
+    )
+    .eq("user_id", userId)
+    .neq("state", "archived")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(
+      `Agent list failed: ${scrubErrorMessage(error.message ?? String(error))}`,
+    );
+  }
+  return (data ?? []) as AgentListItem[];
+}
+
+export const listAgents = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(({ context }): Promise<AgentListItem[]> =>
+    listAgentsFor(context.userId),
+  );
+
+/**
+ * Shared shape for the three state-transition handlers. Returns
+ * `{affected: true}` iff exactly one row's state changed. `false` means
+ * the row didn't exist, isn't owned by this user, or wasn't in the
+ * expected source state — all three indistinguishable to the client by
+ * design (avoid leaking row existence to a non-owner).
+ */
+async function transitionAgentState(
+  userId: string,
+  raw: unknown,
+  expectedSourceStates: string[] | null,
+  targetState: string,
+  opName: string,
+): Promise<MutationResult> {
+  const { agentId } = AgentIdSchema.parse(raw);
+
+  let q = (supabaseAdmin as any)
+    .from("agents")
+    .update({ state: targetState })
+    .eq("id", agentId)
+    .eq("user_id", userId);
+  if (expectedSourceStates !== null) {
+    q = q.in("state", expectedSourceStates);
+  } else {
+    // archive: refuse to update an already-archived row (avoids a no-op
+    // bump on updated_at when the user double-clicks).
+    q = q.neq("state", "archived");
+  }
+  const { data, error } = await q.select("id");
+
+  if (error) {
+    throw new Error(
+      `Agent ${opName} failed: ${scrubErrorMessage(error.message ?? String(error))}`,
+    );
+  }
+  return { affected: Array.isArray(data) && data.length > 0 };
+}
+
+export function pauseAgentFor(
+  userId: string,
+  raw: unknown,
+): Promise<MutationResult> {
+  return transitionAgentState(userId, raw, ["active"], "paused", "pause");
+}
+
+export function resumeAgentFor(
+  userId: string,
+  raw: unknown,
+): Promise<MutationResult> {
+  return transitionAgentState(userId, raw, ["paused"], "active", "resume");
+}
+
+export function archiveAgentFor(
+  userId: string,
+  raw: unknown,
+): Promise<MutationResult> {
+  return transitionAgentState(userId, raw, null, "archived", "archive");
+}
+
+export const pauseAgent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: AgentIdInput) => d)
+  .handler(({ data, context }): Promise<MutationResult> =>
+    pauseAgentFor(context.userId, data),
+  );
+
+export const resumeAgent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: AgentIdInput) => d)
+  .handler(({ data, context }): Promise<MutationResult> =>
+    resumeAgentFor(context.userId, data),
+  );
+
+export const archiveAgent = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .inputValidator((d: AgentIdInput) => d)
+  .handler(({ data, context }): Promise<MutationResult> =>
+    archiveAgentFor(context.userId, data),
+  );
