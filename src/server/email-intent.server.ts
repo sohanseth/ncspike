@@ -15,6 +15,7 @@
  */
 import { generate, InferenceError } from "@/server/inference";
 import type { IncomingEmail } from "@/server/voice-profile.server";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type EmailIntent =
   | "interview"
@@ -231,9 +232,9 @@ export async function analyzeEmailForDraft(email: IncomingEmail): Promise<EmailA
     return coerceAnalysis(JSON.parse(json));
   } catch (e) {
     if (e instanceof InferenceError) {
-      console.warn("analyzeEmailForDraft: inference failed, skipping:", e.message);
+      console.warn("analyzeEmailForDraft: inference failed, skipping:", scrubErrorMessage(e.message));
     } else {
-      console.warn("analyzeEmailForDraft: parse/other failure, skipping:", e);
+      console.warn("analyzeEmailForDraft: parse/other failure, skipping:", scrubErrorMessage(e));
     }
     return EMPTY_ANALYSIS;
   }

@@ -35,6 +35,7 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { CPAUD_CEILING_USD } from "@/lib/cpaud.functions";
 import type { AgentBudget, BudgetCheckResult } from "./types";
 import type { Badge } from "@/server/inference/router";
+import { scrubErrorMessage } from "./error-scrub";
 
 const MICRO_PER_USD = 1_000_000;
 
@@ -231,7 +232,7 @@ export async function recordCost(args: RecordCostArgs): Promise<void> {
   if (error) {
     console.error(
       `[inference_usage] CAP-CRITICAL agent recordCost insert failure (status=${args.status}, run=${args.agentRunId}):`,
-      error.message,
+      scrubErrorMessage(error.message),
     );
   }
 }
