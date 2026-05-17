@@ -187,7 +187,7 @@ import {
   pauseAgentFor,
   resumeAgentFor,
   archiveAgentFor,
-} from "@/lib/agents.functions";
+} from "@/lib/agents.functions.server";
 
 const USER_A = "11111111-1111-1111-1111-aaaaaaaaaaaa";
 const USER_B = "22222222-2222-2222-2222-bbbbbbbbbbbb";
