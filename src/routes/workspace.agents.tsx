@@ -1,6 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Loader, Plus, X } from "lucide-react";
+import { useAuth } from "@/lib/auth-context";
 import {
   createResearchDigestAgent,
   type CreatedAgentSummary,
@@ -25,6 +26,16 @@ const MAX_NAME_LEN = 80;
 const MAX_TOPIC_LEN = 120;
 
 function AgentsPage() {
+  // Auth gate — matches workspace.connections.tsx. Server fn is also
+  // gated by requireSupabaseAuth middleware (the authoritative check);
+  // this redirect is the UX layer so an unauthed visitor doesn't see
+  // a form that would silently fail on submit.
+  const { user, loading } = useAuth();
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (!loading && !user) navigate({ to: "/auth" });
+  }, [user, loading, navigate]);
+
   const [name, setName] = useState("");
   const [topicDraft, setTopicDraft] = useState("");
   const [topics, setTopics] = useState<string[]>([]);
