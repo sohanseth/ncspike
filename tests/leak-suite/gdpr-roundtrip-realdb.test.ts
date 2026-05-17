@@ -119,6 +119,35 @@ const SEEDS: Record<string, SeedRow> = {
     columns: ["user_id", "query", "engine"],
     values: [userId, "seed query", "perplexity"],
   }),
+  // ─── Phase 3.0 agent runtime (migration 20260601000000_*) ────────────────
+  // These four tables FK-chain: agent_findings → agent_runs + agents,
+  // agent_state → agents, agent_runs → agents. The seedUser() function
+  // below inserts them in FK order; the SEEDS entries here are stub shapes
+  // used only by the EXPORT_TABLES coverage assertion above. Real inserts
+  // happen inline in seedUser() because they need ids passed between rows.
+  agents: (userId) => ({
+    columns: ["user_id", "template_id", "display_name", "badge", "budget"],
+    values: [userId, "research_digest", "Test agent", "private", {}],
+  }),
+  agent_runs: (userId) => ({
+    columns: ["agent_id", "user_id"],
+    values: ["00000000-0000-0000-0000-000000000000", userId],
+  }),
+  agent_findings: (userId) => ({
+    columns: ["agent_id", "user_id", "run_id", "dedupe_key", "title", "score"],
+    values: [
+      "00000000-0000-0000-0000-000000000000",
+      userId,
+      "00000000-0000-0000-0000-000000000000",
+      "seed",
+      "seed finding",
+      0.5,
+    ],
+  }),
+  agent_state: (userId) => ({
+    columns: ["agent_id", "user_id", "key", "value"],
+    values: ["00000000-0000-0000-0000-000000000000", userId, "cursor", { v: 1 }],
+  }),
 };
 
 // ─── Ensure every EXPORT_TABLES entry has a seed strategy ──────────────────
@@ -153,6 +182,11 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
     await client.query("begin");
     try {
       for (const t of [
+        // FK-safe: children first within each subsystem.
+        "agent_findings",
+        "agent_state",
+        "agent_runs",
+        "agents",
         "chat_messages",
         "chat_context_log",
         "chat_threads",
@@ -255,6 +289,7 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
       "extraction_failures",
       "inference_usage",
       "inference_usage_daily",
+      "search_queries",
     ];
     for (const t of independent) {
       const seed = SEEDS[t](userId, { threadId, messageId });
@@ -264,6 +299,36 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
         seed.values,
       );
     }
+
+    // 4. Phase 3.0 agent runtime — chain agents → agent_runs → agent_findings,
+    // with agent_state hanging off agents. FK-ordered inserts using returned ids.
+    const agentRes = await client.query(
+      `insert into public.agents
+         (user_id, template_id, display_name, badge, budget, state)
+       values ($1, 'research_digest', 'Test agent', 'private', '{}'::jsonb, 'active')
+       returning id`,
+      [userId],
+    );
+    const agentId: string = agentRes.rows[0].id;
+
+    const runRes = await client.query(
+      `insert into public.agent_runs (agent_id, user_id) values ($1, $2) returning id`,
+      [agentId, userId],
+    );
+    const runId: string = runRes.rows[0].id;
+
+    await client.query(
+      `insert into public.agent_findings
+         (agent_id, user_id, run_id, dedupe_key, title, score)
+       values ($1, $2, $3, 'seed-dedupe', 'seed finding', 0.5)`,
+      [agentId, userId, runId],
+    );
+
+    await client.query(
+      `insert into public.agent_state (agent_id, user_id, key, value)
+       values ($1, $2, 'cursor', '{"v":1}'::jsonb)`,
+      [agentId, userId],
+    );
 
     // user_settings was auto-created by the on_auth_user_created trigger,
     // so it already has exactly one row for this user. Don't insert again.

@@ -123,6 +123,11 @@
     -moz-osx-font-smoothing: grayscale;
     background-color: var(--color-background);
     color: var(--color-foreground);
+    /* Prevent the iOS rubber-band overscroll from exposing the page above
+       the sticky top bar (which makes the bar look like it's moving when
+       you scroll near the top). `contain` blocks scroll-chaining without
+       disabling overscroll inside scrollable descendants. */
+    overscroll-behavior-y: contain;
   }
 
   body {
@@ -163,4 +168,27 @@
     color: transparent;
   }
   .ring-glow { box-shadow: var(--shadow-glow); }
+
+  /* Bento grid used by HomeCanvas.
+     md+: explicit 3-column bento with named template areas. The min-width is
+     re-enforced so the cards keep their proportions even if the parent column
+     shrinks.
+     Mobile (< md): single-column stack via grid-cols-1 utility on the parent.
+     Children carry inline `grid-area: s0..s5` for the desktop bento — on mobile
+     those custom-idents create *implicit* grid tracks (one per unique name), so
+     we have to override the children's grid-area to `auto` with !important to
+     stop the implicit tracks from forming. */
+  @media (min-width: 768px) {
+    .nc-bento-grid {
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: 1fr 1fr 110px;
+      grid-template-areas: "s0 s0 s1" "s0 s0 s2" "s3 s4 s5";
+      min-width: 580px;
+    }
+  }
+  @media (max-width: 767px) {
+    .nc-bento-grid > * {
+      grid-area: auto !important;
+    }
+  }
 }

@@ -248,7 +248,16 @@ export const Route = createFileRoute("/api/chat/stream")({
             .eq("id", threadId)
             .eq("user_id", userId)
             .maybeSingle();
-          if (oErr) return new Response("Thread lookup failed", { status: 500 });
+          if (oErr) {
+            console.error("[chat/stream] chat_threads lookup failed", {
+              userId, threadId, code: oErr.code, message: oErr.message,
+              details: oErr.details, hint: oErr.hint,
+            });
+            return new Response(
+              `Thread lookup failed: ${oErr.code ?? ""} ${oErr.message ?? ""}`.trim(),
+              { status: 500 },
+            );
+          }
           if (!existing) return new Response("Thread not found", { status: 404 });
         } else {
           const title = v.content.slice(0, 60).replace(/\s+/g, " ").trim() || "New chat";
@@ -257,7 +266,16 @@ export const Route = createFileRoute("/api/chat/stream")({
             .insert({ user_id: userId, title })
             .select("id")
             .single();
-          if (tErr) return new Response("Thread create failed", { status: 500 });
+          if (tErr) {
+            console.error("[chat/stream] chat_threads insert failed", {
+              userId, code: tErr.code, message: tErr.message,
+              details: tErr.details, hint: tErr.hint,
+            });
+            return new Response(
+              `Thread create failed: ${tErr.code ?? ""} ${tErr.message ?? ""}`.trim(),
+              { status: 500 },
+            );
+          }
           threadId = t.id;
         }
 

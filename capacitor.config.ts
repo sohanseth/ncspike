@@ -48,6 +48,17 @@ const config: CapacitorConfig = {
     androidScheme: "https",
     // iosScheme defaults to "capacitor"; leave it.
     allowNavigation: ["app.neuralconnexions.com", "neuralconnexions.com"],
+    // DEV ONLY — point the WebView at the Mac's Vite dev server so the
+    // real app renders on-device. REMOVE before any TestFlight / store
+    // build (per N6 — production must bundle the reviewed JS).
+    // NOTE: this URL bakes into the native build at `cap sync` time, so
+    // when the Mac's LAN IP changes (DHCP renewal, Wi-Fi switch) you have
+    // to update here + cap sync + rebuild. To avoid that churn use the
+    // Mac's mDNS hostname instead, e.g. `http://REM-LGM7KQ4RJG-2.local:5173`
+    // (works on the same LAN regardless of DHCP). For now using the
+    // explicit IP — simpler debugging.
+    url: "http://192.168.1.101:5173",
+    cleartext: true,
   },
 
   // Plugin-specific tuning. Each plugin we install must opt in here if it
@@ -66,12 +77,29 @@ const config: CapacitorConfig = {
       splashFullScreen: true,
       splashImmersive: true,
     },
+    Keyboard: {
+      // `native` mode makes the iOS WKWebView itself shrink when the keyboard
+      // appears. Combined with the chat panel using `fixed inset-x-0 top-0`
+      // + dvh height, the panel reflows above the keyboard without fixed-
+      // position scrolling glitches. Without this, WKWebView leaves the
+      // WebView at full height and scrolls the focused input into view,
+      // pushing the chat header above the visible area.
+      resize: "native",
+      // Hide the keyboard's accessory bar (the ↑↓✓ strip above the keys)
+      // — also done at runtime via Keyboard.setAccessoryBarVisible in
+      // native-bootstrap.ts, but the static config helps for first launch.
+      resizeOnFullScreen: true,
+    },
   },
 
   ios: {
     // Capacitor will write Info.plist defaults; supplemental keys (NSUser
     // TrackingUsageDescription etc.) are added in Xcode after `cap add ios`.
     contentInset: "automatic",
+    // backgroundColor: shows through during iOS rubber-band overscroll at the
+    // top/bottom of the page. Default is white. Pin to the app's dark surface
+    // so a pull-down doesn't expose a white pane behind the WebView.
+    backgroundColor: "#0b0b0f",
   },
 
   android: {

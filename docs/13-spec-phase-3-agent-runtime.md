@@ -1,8 +1,10 @@
 # Spec — Phase 3.0–3.5: Agent runtime + curated template marketplace
 
-**Status:** Draft v1. Supersedes docs/09 §4.2 (the single overnight
-agent) with a multi-agent runtime; the rest of docs/09 (Inbox,
-adaptive UI, behavioural ingestion) stays as written.
+**Status:** **v1 LOCKED — 2026-05-15.** Open questions in §18 closed in
+coordination with Sneha; decisions are now binding for implementation.
+Supersedes docs/09 §4.2 (the single overnight agent) with a multi-agent
+runtime; the rest of docs/09 (Inbox, adaptive UI, behavioural ingestion)
+stays as written.
 **Owner:** main agent (runtime, scheduling, broker integration,
 GDPR wiring, template framework, JobAgent + ResearchDigest); native
 dev for the iOS background-fetch hooks if/when 3.x adds them.
@@ -767,49 +769,122 @@ network contract.
 
 ---
 
-## 18. Open questions
+## 18. Locked decisions (v1, 2026-05-15)
 
-1. **Affiliate network choice for 3.2.** Skimlinks (broader
-   coverage, easier integration, 25% revenue share) vs Rakuten
-   (better brand list for premium retailers, longer onboarding)
-   vs Awin (best for European retailers, weaker US). We need a
-   business call before engineering starts on 3.2. *Recommendation:
-   Skimlinks for v1 — fastest path, broadest catalogue.*
-2. **JobAgent: include freelance / contract platforms?** Upwork has
-   no public board API; Toptal is invitation-only. Realistic v1:
-   permanent roles only. Freelance is a separate template later.
-   *Recommendation: permanent only in 3.1; FreelanceAgent as a
-   separate Phase 3.6 if user demand surfaces.*
-3. **Notification delivery channels.** Web push is universal but
-   weak on iOS Safari (PWA push only landed in iOS 16.4 and is
-   throttled). Email is reliable but feels heavy for digests.
-   Native push needs the iOS/Android shells from docs/11. *Decision
-   needed before 3.1: which channel(s) for v1?*
-4. **Cross-agent trait sheet pollution.** A user with 5 agents
-   creates 5 streams of "what this user cares about" signal that
-   currently all flow into the trait sheet via the existing
-   memory pipeline. Should agent activity write back to the trait
-   sheet (compounds personalization), or stay siloed in
-   `agent_state` (cleaner separation)? *Recommendation: siloed
-   in 3.0–3.4; explicit "promote to trait sheet" as a Phase 3.5
-   user-controlled action.*
-5. **Per-user concurrency cap.** §9.1 sets it to 1. For power
-   users with 10+ agents this means up to 5 hours of serial
-   running per cadence cycle if each agent takes 30 minutes
-   (rare but possible for JobAgent against many ATS sources). Do
-   we raise to 2 for users with > 5 active agents, or keep strict
-   serial? *Recommendation: keep serial for v1; revisit if real
-   users hit the latency.*
-6. **Generative agent surface (Phase 4).** Out of scope for this
-   phase, but we should flag now: when we eventually ship "describe
-   any agent and we synthesize the workflow," the constraint
-   surface (which tools, which sources, which write-actions) needs
-   to be a first-class type system. Designing 3.4's natural-language
-   config with a forward-compatible internal representation now
-   would save a rewrite later. *Recommendation: 3.4's parsed
-   config is stored as a structured AST, not just template_id +
-   blob, so 4.x can extend the AST instead of replacing it.*
+Closed in coordination with Sneha on 2026-05-15. Each item was an open
+question in the draft spec; the answer below is binding for v1
+implementation per §17.
 
-These are the six decisions that need a human call before the
-implementation work in §17 starts. Everything else in this spec is
-build-ready as written.
+### 18.1 Affiliate network — LOCKED: Skimlinks for v1
+
+Skimlinks at v1 launch. Re-evaluate a Rakuten swap when monthly
+affiliate gross margin exceeds **a TBD business threshold** —
+product/finance to set the actual figure before Phase 3.2 ships. Do
+not leave a vague placeholder in the implementation tickets; either
+a concrete number (e.g. £500/mo gross margin) or an explicit "TBD —
+business decision blocking 3.2 swap evaluation."
+
+Rationale: Skimlinks is broadest catalogue + fastest onboarding.
+Rakuten's premium retailer list may capture more value per impression
+for NC's affluent audience, but onboarding delay (~3 months) doesn't
+fit a v1 launch. Lock Skimlinks; track affiliate revenue; swap if
+Rakuten justifies it.
+
+### 18.2 JobAgent freelance support — LOCKED: permanent only
+
+Permanent roles only in Phase 3.1.
+
+Freelance support requires user-provided credentials, not public API
+(Upwork has no usable board API; Toptal is invitation-only; Fiverr's
+gig API is limited). Designed separately as Phase 3.6 if user demand
+materialises — do not couple to 3.1 JobAgent.
+
+### 18.3 Notification channels — LOCKED: email digest + web push for v1; native push to 3.5
+
+**Email digest + web push for v1.**
+
+- **Email digest:** morning briefing delivery. Reliable, no permission
+  grant, universal. Base channel for all users.
+- **Web push:** mid-day discovery alerts (deal found, job match) for
+  users who grant permission. Higher urgency than email; instant on
+  desktop, weak on iOS Safari (PWA push only landed in iOS 16.4 and is
+  throttled — accept as known limitation for v1).
+- **In-app inbox:** "agent finished overnight" lands here, surfaced on
+  next device interaction.
+
+**Native push (FCM/APNs) deferred to Phase 3.5**, explicitly gated on:
+- TestFlight readiness (currently in flight via `native/bootstrap`
+  branch — iOS shell exists, signing works, Capacitor keyboard + status
+  bar wired).
+- Firebase service-account wiring (per `docs/04` Day 3 push spec).
+
+### 18.4 Cross-agent trait sheet pollution — LOCKED: siloed + suggested-promotion
+
+Agent activity siloed in `agent_state` for Phase 3.0–3.4. **No silent
+writes to the trait sheet from agent behavior.**
+
+Phase 3.5 introduces promotion via two paths:
+
+- **Explicit:** user clicks "promote this finding" on an individual
+  `agent_findings` row.
+- **Suggested:** 3+ accepted findings in a single category over a
+  rolling 30-day window generates a **user-reviewable promotion
+  suggestion** in the inbox. User approves or dismisses — **not a
+  silent write.**
+
+Rationale: Trait sheet is too privacy-sensitive for behavioral inference
+to write without user awareness. Suggested-via-approval preserves the
+user's mental model of "I know what's in my trait sheet" while still
+capturing implicit signal.
+
+### 18.5 Per-user concurrency cap — LOCKED: serial scheduled, parallel-3 user-triggered with guardrails
+
+**Scheduled runs:** serial per user (concurrency = 1). 10pm–3am window
+has time. §9.1 stays as written.
+
+**User-triggered "run all":** may run up to 3 concurrently, **only**
+when ALL of the following hold:
+
+1. All agents in the batch are read-only (no write-action races between
+   parallel runs).
+2. The user is under their daily task budget.
+3. The user is shown a clear cost/latency warning when the batch would
+   consume most of the remaining daily allowance.
+
+Rationale: Concurrency is not just cost — provider failure modes,
+duplicate discoveries, and rate-limit complexity compound with parallel
+runs. Read-only constraint is the safety floor; budget gate prevents
+runaway spend; warning preserves user agency. Different code paths,
+different constraints.
+
+### 18.6 Generative agent AST — LOCKED: structured AST + 1-week design prelude
+
+Phase 3.4's parsed natural-language config is stored as a **structured
+AST**, not template_id + opaque blob. Phase 4 generative agents will
+read and modify existing agent definitions; that requires a stable,
+composable representation.
+
+**Pre-implementation milestone:** explicit **1-week AST schema design
+sprint** BEFORE Phase 3.4 implementation begins. Deliverables:
+
+- AST grammar definition (nodes: tools, sources, schedule, write-actions,
+  budget constraints; edges: conditional flows).
+- Validation rules: which tools / sources / write-actions are reachable
+  from any node; safety floor for generated ASTs.
+- Migration story for schema evolution (so Phase 4.x can extend the AST
+  rather than replacing it).
+
+Do not start 3.4 implementation until this design milestone lands.
+
+### Locked-decision summary (v1, 2026-05-15)
+
+| § | Locked answer |
+| --- | --- |
+| 18.1 | Skimlinks for v1; Rakuten swap on a concrete (not vague) revenue trigger |
+| 18.2 | Permanent JobAgent only; freelance is 3.6+ with user-provided credentials |
+| 18.3 | Email digest + web push for v1; native push deferred to 3.5 (gated on TestFlight + Firebase) |
+| 18.4 | Siloed `agent_state` for 3.0–3.4; suggested-via-approval promotion at 3.5; **no silent trait-sheet writes** |
+| 18.5 | Serial scheduled; parallel-3 user-triggered ONLY if read-only + under budget + with cost/latency warning |
+| 18.6 | Structured AST in 3.4; 1-week AST schema design sprint as pre-implementation milestone |
+
+Implementation work in §17 is now unblocked.

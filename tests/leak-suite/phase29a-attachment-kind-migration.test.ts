@@ -17,7 +17,7 @@ const SQL_PATH = join(
   process.cwd(),
   "supabase",
   "migrations",
-  "20260518000000_phase29a_attachment_kind.sql",
+  "20260518000100_phase29a_attachment_kind.sql",
 );
 
 describe("Phase 2.9a — attachment_kind migration", () => {

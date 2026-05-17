@@ -1,4 +1,4 @@
-# Spec — Phase 3: The Agentic Layer (vision draft)
+# Spec — Phase 3: The Agentic Layer (v1 LOCKED — 2026-05-15)
 
 *Status: **Draft v0** — discussion document, not yet locked · Owner: Sneha · Depends on: Phase 2.7 D8 (trait sheet + context broker), Phase 2.8 (voice), Phase 2.6 (chat) · Target: 4-6 weeks of focused build after Phase 2 lands · Pairs with: future docs/10 (extension spec), docs/11 (morning-surface spec)*
 
@@ -201,123 +201,128 @@ pins both behaviours; vitest baseline is now 122/122 + 3 skipped real-DB.
 Architect re-review: APPROVED. CPAUD viewer remains up at
 `/workspace/internal/cpaud`.
 
-The §7 questions are listed below with my **proposed answer** (so you can
-reply with one round of "yes / no / change to X" instead of writing them
-from scratch). Anything marked **NEEDS YOU** is a genuinely product call
-I can't make alone; everything else I'm willing to lock if you just say
-"agree."
+**STATUS: v1 LOCKED — 2026-05-15.** Decisions below are binding for Phase 3
+implementation. The original framing (proposals + NEEDS-YOU markers) is
+preserved for archaeology where it differs materially from the locked
+answer.
 
-### 7.1 Browser support priority
+### 7.1 Browser support priority — LOCKED
 
-**Proposal: Chrome MV3 only at launch.**
+**Decision: Chrome-first launch. Firefox-portable architecture. Firefox is a Phase 3.6 *candidate*, not a public commitment.**
 
-Rationale: Firefox MV3 support landed but is materially behind on the
-declarative-net-request and content-script lifecycle bits we need; the
-~3% audience does not pay for the maintenance second-axis. We can revisit
-once Phase 3.7 is shipped and we have actual user telemetry on browser mix.
+- Ship Chrome MV3 at launch.
+- Keep the extension architecture Firefox-portable from day one — avoid
+  Chrome-specific APIs where MV3-compatible alternatives exist.
+- Firefox support is a Phase 3.6 candidate, **gated by extension-usage
+  telemetry and privacy-audience demand signal**.
+- No public roadmap promise until telemetry justifies it.
 
-**Locks if you agree.** No further input needed.
+Rationale: NC's privacy-first positioning overlaps Firefox's audience
+meaningfully (estimated 10–25% of NC's potential audience vs. ~3% of
+global desktop). Hard-locking Chrome-only signals contradictory values.
+But a public "Firefox in 3.6" promise creates maintenance debt before we
+know whether the extension is central to the product. Portable now;
+ship-decision later.
 
-### 7.2 Importers list
+### 7.2 Importers list — LOCKED
 
-**Proposal for v1 (Phase 3.2 + 3.6 spillover):**
+**Decision: Calendar + Contacts + Email-headers-only + manual CSV for v1. Body ingestion deferred to Phase 3.5+ as a separate skill.**
 
 | Importer | Why | Effort | Phase |
 | --- | --- | --- | --- |
 | Calendar (Google) | already have OAuth | S | 3.2 |
 | Contacts (Google) | already have OAuth | S | 3.2 |
-| Email metadata (Gmail, headers + label only — no bodies) | high-signal for "what is this person to me" | M | 3.2 stretch |
+| Email metadata (Gmail, headers + label only — **no bodies in v1**) | high-signal for "what is this person to me" | M | 3.2 stretch |
 | Manual CSV uploads (banking, fitness, etc.) | covers the long tail without per-vendor OAuth | M | 3.6 |
 
-**Explicitly out for v1**: Spotify, YouTube history, banking-API
-integrations (Plaid-class). They're either privacy-spicy (bank), low
-trait-density (Spotify play history rarely changes a recommendation), or
-require a vendor relationship we don't have (YouTube watch history is
-not a public API).
+**Marketing-language preservation:** write "email bodies, if you grant
+access, stay on your device" — NOT "email bodies never leave the
+device." Phase 3.5+ body ingestion is gated on broker T3 ingestion
+work; do not foreclose the option in copy now.
 
-**NEEDS YOU**: confirm "email metadata, headers + label only, never bodies"
-is the right floor. The risk is users will *want* the agent to read their
-inbox, but that crosses the broker's T3-blocked-content line and would
-need a separate spec.
+**Explicitly out for v1:** Spotify, YouTube history, banking-API
+integrations (Plaid-class). Either privacy-spicy (banking), low
+trait-density (Spotify), or no public API (YouTube watch history).
 
-### 7.3 Bookmark / Library ergonomics
+### 7.3 Library ergonomics — LOCKED
 
-**Proposal: auto-organised with manual override.**
+**Decision: Flat reverse-chronological default. Suggested clusters as a separate, accessible "Auto-grouped" tab, not the default surface.**
 
-- Default view is "Recently saved" (flat reverse-chronological).
-- Agent runs a nightly clusterer (cheap embedding-based, T0 only) that
-  proposes 3-7 collections per ~50 saved items. The user accepts/rejects
-  each suggestion.
-- Manual folders are always allowed and never auto-mutated.
-- No tag system in v1 — too much UI surface area for unproven value.
+- Default Library view is **flat reverse-chronological** (the simplest
+  mental model).
+- Nightly clusterer (cheap embedding-based, T0 only) runs and surfaces
+  suggestions in a separate **"Auto-grouped" tab** — not as the default.
+- User discovers the tab when curious. **No notifications about cluster
+  suggestions.**
+- Manual folders always allowed and never auto-mutated.
+- No tag system in v1.
 
-**Locks if you agree.** Rejection means I default to flat list + manual
-folders, no auto-organisation, which is shippable in half the time.
+Rationale: Auto-organisation as the *default* view risks the "AI doing
+things without being asked" feel that conflicts with the calm-OS
+framing. Surfacing it as an opt-in tab preserves the utility for users
+who want it without imposing cognitive load on users who don't.
 
-### 7.4 Trust gate threshold for write-actions
+### 7.4 Trust gate threshold for write-actions — LOCKED
 
-**Proposal: behaviour-based, not count-based, with an explicit on/off.**
-
-Replacing the original "50 accepted inbox items" with:
+**Decision: Per-skill opt-in trust gate. Telemetry trigger to redesign if needed.**
 
 - Write-actions (compose draft, set calendar event, send email) are
   **opt-in per skill**, off by default.
-- The first time a skill wants to write, the inbox surfaces a one-time
-  "always allow this skill to write?" toggle.
-- No global threshold. Counts are gameable and time-based gates feel
-  arbitrary; per-skill explicit consent is what users will actually
-  trust.
+- First-time-use surfaces a "always allow this skill to write?" toggle.
+- No global threshold.
 
-**Locks if you agree.** This also simplifies the Phase 3.3 task-queue
-spec — no per-user trust-score column.
+**Telemetry escalation:** track prompt-acceptance rate. If acceptance
+is below **40%** at the Phase 3.5 review, redesign to a tiered gate
+(read-only / in-product write / external write). Otherwise lock the
+per-skill model.
 
-### 7.5 Pricing model implication (overnight agent budget)
+### 7.5 Free-tier agent budget — LOCKED
 
-**Proposal for free tier:**
+**Decision: 8/day public entitlement (default). Remote-configurable up to 12/day during beta. Default beta cohort: 12/day, max 2 PRO. Public product entitlement NOT locked until telemetry.**
 
-- Daily agent-task budget = **8 task-runs/day**, with at most **2 of
-  those at PRO badge** (the rest must complete on FLASH or PRIVATE).
-- Hard kill at the budget — no fallback to a lower tier, the task just
-  defers to tomorrow with an inbox notice.
-- CPAUD ceiling stays $1.50/user/day per Phase 2.6 §2; agent runs count
-  the same as user-initiated runs.
+- Free tier starts at **8 scheduled/user-triggered runs per day** as the
+  public entitlement floor.
+- Remote-configurable ceiling up to 12 during beta.
+- **Default beta cohort: 12/day, max 2 PRO.**
+- Hard kill at the configured ceiling — no fallback to a lower tier;
+  task defers to tomorrow with an inbox notice.
+- CPAUD ceiling stays $1.50/user/day per Phase 2.6 §2.
 
-Justification: 8 tasks × ~$0.04 (PRO median) = $0.32 if everything went
-PRO; with the 2-PRO cap it's ~$0.20/day worst case for an idle user the
-agent runs jobs for. Comfortably under target.
+Math: 12 × ~$0.04 (PRO median) = $0.48/day worst case; well under
+$1.50/day CPAUD ceiling. **But:** agent runs are bursty and future
+skills may not all cost $0.04. Remote-config keeps us safe — we get
+the abundant beta experience without baking a costly entitlement promise
+into the public product. Lock the public number once usage and cost
+telemetry exist.
 
-**NEEDS YOU**: confirm 8 is the right number, or pick another. I'd argue
-against any number > 12 (CPAUD risk) and against any number < 5 (agent
-becomes useless).
+### 7.6 Marketing language — APPROVED AS DRAFT, NOT LOCKED
 
-### 7.6 Public stance on "the agent watches your browsing"
+**Decision: Approve the proposed copy as working draft, single source of truth for Lovable. Re-review at Phase 3.7 (pre-launch).**
 
-**Proposal: lock the language now, in this doc, exactly as drafted in §7.**
-
-Reproduced for clarity:
+Working copy:
 
 > **NeuralConnexions watches only what you let it. You name every
 > domain, you can revoke any of them in one tap, and your raw browsing
 > never leaves your device — only the patterns the agent learned from
 > it.**
 
-This becomes the canonical copy used in: the browser-extension install
-screen, the Phase 3.9 privacy-posture doc, the App Store description,
-and the marketing site. Locking it now means Lovable's onboarding work
-in 3.8 cites a single source of truth.
+Used by: browser-extension install screen, Phase 3.9 privacy-posture
+doc, App Store description draft, marketing-site working pages.
 
-**Locks if you agree.** Edits welcome.
+**Lock at Phase 3.7 (pre-launch), not now.** Real product behavior may
+contradict specific promises — in particular, "you name every domain"
+depends on Phase 3.2's actual ingestion model. If implicit
+category-based ingestion ships, this copy needs updating before launch.
 
-### Summary of what I need from you to lock v1
+---
 
-You can answer in one round:
+### Locked-decision summary (v1, 2026-05-15)
 
-1. §7.1 Chrome-only? **(default: yes)**
-2. §7.2 importers list as above + "email headers only, never bodies" floor? **(NEEDS YOU)**
-3. §7.3 auto-organised Library? **(default: yes)**
-4. §7.4 per-skill opt-in trust gate? **(default: yes)**
-5. §7.5 free-tier agent budget = 8/day with 2 PRO max? **(NEEDS YOU on the number)**
-6. §7.6 lock the marketing language as written? **(default: yes)**
-
-Any "yes" or silence on a default-yes line will be taken as approval and
-locked into v1. The two NEEDS YOU items genuinely block v1.
+| § | Locked answer |
+| --- | --- |
+| 7.1 | Chrome-first; Firefox-portable architecture; Firefox candidate for 3.6 gated by telemetry |
+| 7.2 | Headers-only for v1; marketing language preserves future T3 body-ingestion option |
+| 7.3 | Flat default; auto-grouped clusters as separate tab; no notifications |
+| 7.4 | Per-skill opt-in trust gate; telemetry trigger to redesign if acceptance < 40% |
+| 7.5 | 8/day public floor; 12/day beta default via remote config; entitlement not locked until telemetry |
+| 7.6 | Working copy approved; re-review at Phase 3.7 pre-launch |

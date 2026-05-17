@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
 import { useAuth } from "@/lib/auth-context";
+import { webSearch, logOpenedSearchUrl } from "@/lib/search.functions";
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen, Heart, MessageCircle, Briefcase, ShoppingBag,
@@ -10,7 +12,7 @@ import {
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, ListTodo,
-  ShieldAlert,
+  ShieldAlert, Camera as CameraIcon,
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
@@ -438,6 +440,10 @@ function TopBar({
   const handleSignOut = async () => { await signOut(); navigate({ to: "/auth" }); };
 
   return (
+    // Header is wrapped in a sticky container in MainApp's render
+    // (around line 3967) which handles the pinning + safe-area-inset and
+    // backdrop blur. Don't add `sticky top-0` here — duplicating it broke
+    // sticky on the wrapper because of nested-positioning interactions.
     <header className="h-14 flex items-center px-4 gap-3 border-b border-border flex-shrink-0 relative z-30">
       {/* Logo */}
       <button onClick={()=>{ setMapView(null); setTool(null); }} className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0">
@@ -451,8 +457,14 @@ function TopBar({
       {/* Domain tiles moved out of the header — they now live under the
           greeting on the home canvas, where they have room to breathe. */}
 
-      {/* Primary actions — Search, Voice, Chat, Compose */}
-      <div className="ml-auto flex items-center gap-1.5">
+      {/* Primary actions row.
+          Mobile (< md): HIDDEN. Mobile gets a Brief + bottom action bar
+          (MobileQuickBar below) to reduce information overload — 14 pills
+          crammed into a phone is the noise we're trying to drop.
+          md+: row scrolls horizontally; min-w-0 stops the container from
+          forcing the header wider than the viewport.
+          lg+: reverts to right-aligned, no scroll needed. */}
+      <div className="hidden md:flex flex-1 min-w-0 lg:flex-initial lg:ml-auto items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {/* Search — opens Google in a new tab */}
         <ActionPill
           icon={<Search size={14}/>}
@@ -557,6 +569,40 @@ function TopBar({
   );
 }
 
+// ─── Mobile quick bar ─────────────────────────────────────────────────────────
+//
+// A focused, always-visible entry point pinned to the bottom of the viewport on
+// mobile. Matches the "Brief + bottom input" pattern that reduces information
+// overload — one place to type whatever you want, plus a voice shortcut.
+// Hidden on md+ where the top action rail covers the same intents.
+//
+// Bottom safe-area padding (pb-[max(...)]) so the bar clears the iPhone home
+// indicator without leaving a gap on Androids without the inset.
+
+function MobileQuickBar({ onChat }: { onChat: () => void }) {
+  return (
+    <div
+      className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-background/95 backdrop-blur-md border-t border-border pt-2 px-3"
+      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
+    >
+      {/* Single primary entry point. The other intents (Search / Add Task /
+          Draft) live as chips inside the ChatPanel empty state — surfacing
+          them on home would compete with the Brief + ambient bento for
+          attention. Two-tap path is acceptable for those non-primary actions. */}
+      <button
+        type="button"
+        onClick={onChat}
+        aria-label="Open chat"
+        className="w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border border-primary/40 bg-primary/[0.07] text-left text-[14px] text-foreground/90 active:bg-primary/[0.13] transition-colors"
+      >
+        <Sparkles size={16} className="text-primary flex-shrink-0" />
+        <span className="flex-1 truncate">Ask anything…</span>
+        <Send size={15} className="text-primary flex-shrink-0" />
+      </button>
+    </div>
+  );
+}
+
 // ─── Bento domain card ────────────────────────────────────────────────────────
 
 type UrgencyCounts = { urgent: number; today: number; proactive: number };
@@ -602,7 +648,7 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinn
         <button
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </button>
       )}
@@ -674,7 +720,7 @@ function IconBtn({ icon: Icon, label, onClick, color="default" }: {
   };
   return (
     <button onClick={onClick} title={label}
-      className={`w-7 h-7 rounded-lg flex items-center justify-center border border-transparent transition-all flex-shrink-0 ${colors[color]}`}>
+      className={`relative w-7 h-7 rounded-lg flex items-center justify-center border border-transparent transition-all flex-shrink-0 after:content-[''] after:absolute after:-inset-2 after:md:hidden ${colors[color]}`}>
       <Icon size={12}/>
     </button>
   );
@@ -1953,9 +1999,63 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
   const slots = ["xl", "md", "md", "sm", "sm", "sm"] as const;
 
+  // Brief: the single thing that should be on the user's mind right now.
+  // Walk the already-ranked tiles and return the *first item with actual
+  // content*. Prefers urgent items in the top tile when present. Falls back
+  // to the DOMAINS fixture data when no live data is loaded (e.g. Gmail not
+  // yet connected) so the surface stays demonstrable. Mobile shows this
+  // prominently; desktop still gets the original pill.
+  const briefText = useMemo<string>(() => {
+    for (const tile of tiles) {
+      if (tile.kind === "domain") {
+        const live = liveByDomain[tile.id];
+        if (live && live.length > 0) {
+          // Prefer the first urgent item if any exist in the top tile.
+          const urgent = live.find(i => i.urgent);
+          return (urgent ?? live[0]).text;
+        }
+        // Fixture fallback so the Brief reads meaningful when nothing real
+        // is pending (e.g. before the user connects Gmail).
+        const fx = DOMAINS[tile.id].items;
+        if (fx && fx.length > 0) {
+          const urgent = fx.find(i => i.urgent);
+          return (urgent ?? fx[0]).text;
+        }
+      } else if (tile.kind === "other" && otherList.length > 0) {
+        return otherList[0].subject;
+      }
+    }
+    return "Nothing pending. Want to plan tomorrow?";
+  }, [tiles, liveByDomain, otherList]);
+
   return (
-    <div className="flex flex-col p-3 lg:p-4 gap-3">
-      <div className="flex-shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
+    // pb-28 leaves room for the fixed MobileQuickBar on mobile; md:pb-3 reverts.
+    // pt-[env(safe-area-inset-top)] keeps the Brief card clear of the iOS notch
+    // when the TopBar is hidden on mobile (desktop has its own sticky wrapper).
+    <div className="flex flex-col p-3 lg:p-4 gap-3 pb-28 md:pb-3 pt-[max(env(safe-area-inset-top),0.75rem)] md:pt-3">
+      {/* Mobile-only Brief card. Larger and more prominent than the desktop
+          greeting pill — this is the "one thing right now" that the personal-OS
+          framing depends on. */}
+      <div className="md:hidden flex-shrink-0 flex flex-col gap-2 px-4 py-3.5 rounded-2xl border border-white/[0.06]"
+        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(30,25,52,0.6)"}}>
+        <div className="flex items-center justify-between text-[10.5px] font-mono">
+          <span className="text-muted-foreground/60">{greet}, {firstName}</span>
+          <span className="text-muted-foreground/40">{dateLabel}</span>
+        </div>
+        <p className="text-[15px] font-medium text-foreground/95 leading-snug" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          {briefText}
+        </p>
+        {totalUrgent > 0 && (
+          <span className="self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border"
+            style={{background:"rgba(248,113,113,0.16)", borderColor:"rgba(248,113,113,0.4)", color:"#fca5a5"}}>
+            <span className="w-1 h-1 rounded-full bg-rose-300"/>
+            {totalUrgent} urgent
+          </span>
+        )}
+      </div>
+
+      {/* Desktop pill: original compact format — greeting + urgent count + date. */}
+      <div className="hidden md:flex flex-shrink-0 items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
         style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
         <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
@@ -1968,7 +2068,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
             {totalUrgent} urgent
           </span>
         )}
-        <span className="text-[10.5px] text-muted-foreground/40 hidden md:block font-mono">{dateLabel}</span>
+        <span className="text-[10.5px] text-muted-foreground/40 font-mono">{dateLabel}</span>
       </div>
 
       {/* Domain tiles — moved here from the header so they sit right under the
@@ -1983,9 +2083,15 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
         </div>
       )}
 
-      <div className="flex-shrink-0 overflow-x-auto">
-        <motion.div layout className="min-w-[580px] min-h-[420px] grid gap-2.5"
-          style={{gridTemplateColumns:"repeat(3,1fr)",gridTemplateRows:"1fr 1fr 110px",gridTemplateAreas:`"s0 s0 s1" "s0 s0 s2" "s3 s4 s5"`}}>
+      <div className="flex-shrink-0 md:overflow-x-auto">
+        {/* Bento layout. Responsive rules live in src/styles.css under `.nc-bento-grid`
+            (Tailwind arbitrary value couldn't express grid-template-areas with quoted
+            strings, hence the CSS class).
+            Mobile (< md): grid-cols-1 utility → children stack vertically; children's
+            inline `gridArea: s${i}` falls back to auto since no areas are defined.
+            md+: `.nc-bento-grid` defines a 3-column bento with named areas s0..s5,
+            so children's inline gridArea snaps them into the bento positions. */}
+        <motion.div layout className="nc-bento-grid min-h-[420px] grid gap-2.5 grid-cols-1">
           <AnimatePresence initial={false}>
             {tiles.slice(0, 6).map((tile, i) => {
               const size = slots[i];
@@ -2050,7 +2156,7 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
           role="button"
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </span>
       )}
@@ -2481,14 +2587,36 @@ type LiveChatMsg = {
   /** On-device PRIVATE: WebLLM model-load progress in [0,100]. Cleared
    *  when the first real delta arrives. Never persisted to the DB. */
   loadProgressPct?: number | null;
+  /** Web search results — when present, the assistant message renders as a
+   *  structured list (title / url / snippet) instead of plain text. Comes
+   *  from SearXNG via webSearch; client-only, not persisted to the DB. */
+  searchResults?: Array<{ title: string; url: string; snippet: string; engine?: string }>;
+  /** SearXNG instance the results came from — rendered as a "via …" footer. */
+  searchInstance?: string | null;
+  /** The original query (used for click-logging and as the human-readable
+   *  caption above the results list). */
+  searchQuery?: string;
 };
 
-function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
+function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose:()=>void; onSwitchToCompose?:()=>void }) {
+  const { addTask } = useManualTasks();
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [uploadingAttachments, setUploadingAttachments] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Separate ref for the camera-capture file input on web. Uses the
+  // `capture="environment"` attribute so mobile browsers open the rear camera
+  // directly. On native (Capacitor) we go through @capacitor/camera instead
+  // for a richer permission flow + retake UI.
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // Input mode — drives placeholder + send dispatch. Set by the intent chips
+  // in the empty state (Search / Task). Reverts to "chat" after a successful
+  // send for those modes.
+  const [inputMode, setInputMode] = useState<"chat" | "search" | "task">("chat");
+  // SearXNG bindings for in-thread search results.
+  const runWebSearch = useServerFn(webSearch);
+  const logSearchClick = useServerFn(logOpenedSearchUrl);
 
   const addFiles = useCallback((files: FileList | File[]) => {
     const arr = Array.from(files);
@@ -2519,6 +2647,49 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
       return prev.filter(p => p.id !== id);
     });
   }, []);
+
+  // Camera capture — adds a photo from the device camera as a chat attachment.
+  // Native (Capacitor): @capacitor/camera getPhoto for a real permission flow
+  // and retake UI. The plugin handles iOS/Android permission prompts.
+  // Web: fall back to a hidden <input capture="environment"> which mobile
+  // Safari/Chrome handle by opening the camera directly. Desktop browsers
+  // open a file picker — acceptable degradation; desktop users have the
+  // existing paperclip path anyway.
+  const handleCameraCapture = useCallback(async () => {
+    const { Capacitor } = await import("@capacitor/core");
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          quality: 85,
+          allowEditing: false,
+          resultType: CameraResultType.Uri,
+          source: CameraSource.Camera,
+          saveToGallery: false,
+          // Default to rear camera; Capacitor lets the user toggle within the
+          // native UI before capture.
+        });
+        if (!photo.webPath) return;
+        const res = await fetch(photo.webPath);
+        const blob = await res.blob();
+        const ext = (photo.format || "jpeg").replace(/^\./, "");
+        const file = new File([blob], `camera-${Date.now()}.${ext}`, {
+          type: blob.type || `image/${ext}`,
+        });
+        addFiles([file]);
+      } catch (err: unknown) {
+        // User cancelled the camera UI → silently no-op. Other errors:
+        // surface via toast so it doesn't fail silently.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!/cancelled|denied|user/i.test(msg)) {
+          void import("sonner").then(({ toast }) => toast.error(`Camera: ${msg}`));
+        }
+      }
+    } else {
+      // Web fallback — click the hidden input with capture attribute.
+      cameraInputRef.current?.click();
+    }
+  }, [addFiles]);
 
   // Cleanup object URLs on unmount
   useEffect(() => () => {
@@ -2566,6 +2737,29 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     window.addEventListener("keydown",handler);
     return ()=>window.removeEventListener("keydown",handler);
   },[onClose]);
+
+  // Keyboard-aware height via VisualViewport API.
+  // 100dvh is unreliable in Capacitor WKWebView — the unit doesn't always
+  // shrink when the iOS keyboard appears, so the chat header gets pushed
+  // above the viewport when an input is focused. VisualViewport.height is
+  // the *visible* viewport (excludes keyboard), supported iOS Safari/WKWebView
+  // 13+. We mirror it into a CSS variable `--chat-h` that the outer panel
+  // binds to. Cleanup on close so the variable doesn't leak to other surfaces.
+  useEffect(() => {
+    if (!open || typeof window === "undefined" || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const update = () => {
+      document.documentElement.style.setProperty("--chat-h", `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.documentElement.style.removeProperty("--chat-h");
+    };
+  }, [open]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -2752,6 +2946,66 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && attachments.length === 0) || sending) return;
+
+    // Mode dispatch — Search and Task short-circuit the chat pipeline.
+    if (inputMode === "search" && text) {
+      // Push the query as a user message + a "Searching…" assistant
+      // placeholder, then call SearXNG and replace the placeholder with the
+      // structured result list. Client-only — not persisted to chat_messages
+      // because search history doesn't belong in chat history.
+      setInput("");
+      setInputMode("chat");
+      const userMsg: LiveChatMsg = { role: "user", text };
+      const loadingMsg: LiveChatMsg = {
+        role: "assistant",
+        text: "Searching the web…",
+        searchQuery: text,
+      };
+      setMessages(m => [...m, userMsg, loadingMsg]);
+      void (async () => {
+        try {
+          const res = await runWebSearch({ data: { query: text } });
+          setMessages(m => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && last.searchQuery === text) {
+              next[next.length - 1] = {
+                ...last,
+                text: "", // hide "Searching…" once results land — render flips to the list
+                searchResults: res.results.slice(0, 8),
+                searchInstance: res.instance,
+              };
+            }
+            return next;
+          });
+        } catch {
+          setMessages(m => {
+            const next = [...m];
+            const last = next[next.length - 1];
+            if (last?.role === "assistant" && last.searchQuery === text) {
+              next[next.length - 1] = {
+                ...last,
+                text: "Couldn't reach search providers. Try again in a moment.",
+              };
+            }
+            return next;
+          });
+        }
+      })();
+      return;
+    }
+    if (inputMode === "task" && text) {
+      const added = addTask(text);
+      setInput("");
+      setInputMode("chat");
+      if (added) {
+        void import("sonner").then(({ toast }) =>
+          toast.success(`Added: ${added.text.slice(0, 60)}${added.text.length > 60 ? "…" : ""}`),
+        );
+      }
+      return;
+    }
+
     // Fail-closed for PRIVATE + attachments: refuse before the upload starts
     // so we don't leave orphan bytes in the chat-attachments bucket. The
     // server-side runner has the same guard (defense-in-depth); this one
@@ -2768,7 +3022,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     setInput("");
     setAttachments([]);
     void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, attachments, sending, model, runChatTurn]);
+  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask, runWebSearch]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
@@ -2803,10 +3057,17 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   if(!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+    // Mobile: full-screen — chat is a destination, not a transient sheet.
+    // Matches iMessage / WhatsApp / ChatGPT / Claude on iOS.
+    // Height: `--chat-h` is set by the VisualViewport useEffect above (the
+    // *visible* viewport, excludes the iOS keyboard). Fallback to 100dvh for
+    // browsers without VisualViewport (older iOS / non-iOS desktop).
+    // Desktop (md+): centered modal — `md:h-auto` overrides height so the
+    // inner panel's max-h-[85vh] takes over.
+    <div className="fixed inset-x-0 top-0 h-[var(--chat-h,100dvh)] md:inset-0 md:h-auto z-[60] flex items-stretch md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className={`w-full max-w-[520px] max-h-[85vh] rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
+      <div className={`w-full md:max-w-[520px] md:max-h-[85vh] md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}
         onDragOver={e => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
@@ -2823,8 +3084,9 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           </div>
         )}
 
-        {/* Header */}
-        <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-shrink-0">
+        {/* Header. pt picks up the iOS status-bar inset on mobile full-screen;
+            md:pt-4 restores the original padding for desktop's modal. */}
+        <div className="flex items-center gap-2 px-5 pt-[max(env(safe-area-inset-top),1rem)] md:pt-4 pb-4 border-b border-border flex-shrink-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
             style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
             <MessageCircle size={11} style={{color:"#ddd6fe"}}/>
@@ -2845,13 +3107,13 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-4 scrollbar-none min-h-0">
           {messages.length === 0 && !sending && (
             <div className="flex-1 flex items-center justify-center text-center px-6">
-              <div className="max-w-[260px]">
+              <div className="max-w-[320px] w-full">
                 <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center"
                   style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
                   <Zap size={16} style={{color:"#ddd6fe"}}/>
                 </div>
                 <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
-                  Ask anything. Pick a badge below to choose how I think — fast, deep, or fully on-device.
+                  Ask anything, or pick an action below — Search, Add task, or Draft.
                 </p>
               </div>
             </div>
@@ -2937,7 +3199,44 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                               ))}
                             </div>
                           )}
-                          {msg.text && (
+                          {msg.searchResults ? (
+                            <div className="flex flex-col gap-2.5">
+                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-muted-foreground/55">
+                                <Search size={10} className="text-sky-400/70" />
+                                <span>Search results</span>
+                                {msg.searchInstance && (
+                                  <span className="opacity-60">· via {(() => { try { return new URL(msg.searchInstance).host; } catch { return "searxng"; } })()}</span>
+                                )}
+                              </div>
+                              {msg.searchResults.length === 0 ? (
+                                <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>No results.</p>
+                              ) : (
+                                <ul className="flex flex-col gap-2">
+                                  {msg.searchResults.map((h, k) => (
+                                    <li key={k}>
+                                      <a
+                                        href={h.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        onClick={() => {
+                                          void logSearchClick({
+                                            data: { query: msg.searchQuery ?? "", url: h.url },
+                                          }).catch(() => {});
+                                        }}
+                                        className="block group rounded-lg p-2 -mx-2 hover:bg-white/[0.03] transition-colors"
+                                      >
+                                        <div className="text-[13px] font-medium text-foreground/95 group-hover:text-primary leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.title}</div>
+                                        <div className="text-[10.5px] font-mono text-primary/70 truncate mt-0.5">{h.url}</div>
+                                        {h.snippet && (
+                                          <div className="text-[11.5px] text-muted-foreground/75 leading-snug line-clamp-2 mt-0.5" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.snippet}</div>
+                                        )}
+                                      </a>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </div>
+                          ) : msg.text && (
                             <p
                               className={isImageBlocked
                                 ? "text-[12.5px] text-amber-200/85 leading-relaxed whitespace-pre-wrap"
@@ -3022,7 +3321,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         </div>
 
         {/* Mode toggle + active input + model selector */}
-        <div className="p-4 border-t border-border flex-shrink-0 flex flex-col gap-2.5">
+        <div className="px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)] border-t border-border flex-shrink-0 flex flex-col gap-2.5">
           {/* Text ↔ Voice segmented control */}
           <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] self-start">
             {(["text","voice"] as const).map(m => (
@@ -3042,8 +3341,82 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             ))}
           </div>
 
+          {/* Persistent intent chips — always visible during a chat session,
+              not just in the empty state. Hidden when an action mode is
+              already active (search / task pill takes their slot). Sets the
+              mode + forces text-input over voice; Draft hands off to the
+              ComposePanel (closes chat). */}
+          {mode === "text" && inputMode === "chat" && (
+            <div className="flex flex-wrap items-center gap-1.5 -mt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode("search");
+                  setMode("text");
+                  setTimeout(() => inputRef.current?.focus(), 60);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+              >
+                <Search size={10.5} className="text-sky-400/80" />
+                Search
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setInputMode("task");
+                  setMode("text");
+                  setTimeout(() => inputRef.current?.focus(), 60);
+                }}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+              >
+                <Plus size={10.5} className="text-emerald-400/80" />
+                Task
+              </button>
+              {onSwitchToCompose && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onSwitchToCompose();
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+                >
+                  <PenLine size={10.5} className="text-rose-400/80" />
+                  Draft
+                </button>
+              )}
+            </div>
+          )}
           {mode === "text" ? (
             <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+              {/* Mode indicator — only shown when Search or Task mode is
+                  active (set by the empty-state chips). Tapping X reverts to
+                  chat. Visually a small pill with the mode's accent color. */}
+              {inputMode !== "chat" && (
+                <div className="flex items-center gap-1.5 -mt-0.5">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-mono border ${
+                      inputMode === "search"
+                        ? "border-sky-400/40 bg-sky-500/10 text-sky-200"
+                        : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                    }`}
+                  >
+                    {inputMode === "search" ? (
+                      <><Search size={10} /> Search</>
+                    ) : (
+                      <><Plus size={10} /> Add task</>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setInputMode("chat")}
+                      aria-label="Cancel mode"
+                      className="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-white/15 transition-colors"
+                    >
+                      <X size={9} />
+                    </button>
+                  </span>
+                </div>
+              )}
               {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {attachments.map(a => (
@@ -3052,7 +3425,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                       <button
                         type="button"
                         onClick={() => removeAttachment(a.id)}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground"
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground after:content-[''] after:absolute after:-inset-3.5 after:md:hidden"
                         aria-label="Remove image"
                       >
                         <X size={9}/>
@@ -3076,15 +3449,40 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                     e.target.value = "";
                   }}
                 />
+                {/* Web fallback for the camera button — `capture="environment"`
+                    asks mobile browsers to open the rear camera directly.
+                    Native uses @capacitor/camera; this input is only the
+                    fallback path on web / desktop. */}
+                <input
+                  ref={cameraInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={e => {
+                    if (e.target.files) addFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   aria-label="Attach image"
                   title="Attach image"
                 >
                   <Paperclip size={13}/>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { void handleCameraCapture(); }}
+                  disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
+                  aria-label="Take photo with camera"
+                  title="Take photo"
+                >
+                  <CameraIcon size={13}/>
                 </button>
                 <input ref={inputRef} value={input} onChange={e=>setInput(e.target.value)}
                   onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); handleSend(); } }}
@@ -3102,11 +3500,17 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
                     }
                   }}
                   disabled={sending}
-                  placeholder={sending ? "Sending…" : attachments.length ? "Add a caption…" : "Message your assistant…"}
+                  placeholder={
+                    sending ? "Sending…"
+                    : attachments.length ? "Add a caption…"
+                    : inputMode === "search" ? "Search the web for…"
+                    : inputMode === "task" ? "Remind me to…"
+                    : "Message your assistant…"
+                  }
                   className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
                   style={{fontFamily:"'DM Sans',sans-serif"}}/>
                 <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
-                  className="w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
                   <Send size={11}/>
                 </button>
@@ -3187,7 +3591,7 @@ function ChatPanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
           <button
             type="button"
             onClick={() => setLightboxSrc(null)}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80 after:content-[''] after:absolute after:-inset-1 after:md:hidden"
             aria-label="Close expanded image"
           >
             <X size={16} />
@@ -3228,10 +3632,11 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4"
+    // Mobile: bottom sheet. Desktop (md+): centered modal.
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4"
       onClick={onClose}
       style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full max-w-[540px] max-h-[88vh] rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
+      <div className="w-full md:max-w-[540px] max-h-[90vh] md:max-h-[88vh] rounded-t-3xl md:rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
         style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}>
 
@@ -3661,9 +4066,10 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
 
   if(!open) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center px-4" onClick={onClose}
+    // Mobile: bottom sheet. Desktop (md+): centered modal.
+    <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4" onClick={onClose}
       style={{background:"rgba(10,5,24,0.75)",backdropFilter:"blur(12px)"}}>
-      <div className="w-full max-w-[620px] flex flex-col gap-0 rounded-2xl border border-primary/25 overflow-hidden shadow-2xl"
+      <div className="w-full md:max-w-[620px] max-h-[90vh] md:max-h-none flex flex-col gap-0 rounded-t-2xl md:rounded-2xl border border-primary/25 overflow-hidden shadow-2xl"
         style={{background:"rgba(22,18,38,0.98)",boxShadow:"0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,109,250,0.18)"}}
         onClick={e=>e.stopPropagation()}>
 
@@ -3932,7 +4338,15 @@ export function MainApp() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full overflow-x-hidden bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
+    // overflow-x: clip (NOT hidden) — clip prevents horizontal page scroll
+    // without turning this div into a scroll container. `overflow-x: hidden`
+    // implicitly sets `overflow-y: auto`, which traps `position: sticky`
+    // descendants (they pin relative to *this* container instead of the
+    // window, and since this container's min-height is 100dvh but content
+    // can grow taller, the container doesn't actually scroll internally —
+    // the page does — so sticky never engages). `clip` doesn't create a
+    // scroll context, so sticky elements correctly resolve to the window.
+    <div className="min-h-[100dvh] w-full overflow-x-clip bg-background text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
       {/* Ambient */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute top-[-8%] left-[15%] w-[700px] h-[550px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(109,40,217,0.11) 0%,transparent 65%)"}}/>
@@ -3941,7 +4355,12 @@ export function MainApp() {
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
-        <div className="sticky top-0 z-30 bg-background/80 backdrop-blur-md pt-4 lg:pt-6" style={{paddingTop:"max(env(safe-area-inset-top), 1rem)"}}>
+        {/* TopBar — desktop only. On mobile the logo + nav pills aren't doing
+            functional work (pills hidden, logo isn't a back button anywhere
+            you'd navigate from on the home), so it just wastes the area
+            below the iOS status bar. HomeCanvas handles safe-area inset
+            directly on mobile (pt-[env(safe-area-inset-top)]). */}
+        <div className="hidden md:block sticky top-0 z-30 bg-background backdrop-blur-md pt-4 lg:pt-6">
           <TopBar
             mapView={mapView} setMapView={handleMap}
             tool={tool} setTool={setTool}
@@ -3968,11 +4387,18 @@ export function MainApp() {
         </div>
       </div>
 
+      {/* Mobile-only bottom action bar — single primary entry to chat.
+          Hides when any modal is open. Other intents (Search/Task/Draft)
+          are chips inside the ChatPanel empty state, two taps away. */}
+      {tool === null && !voiceOpen && !exploreOpen && !domain && (
+        <MobileQuickBar onChat={() => setTool("chat")} />
+      )}
+
       {/* Modals */}
       <VoiceBar   open={voiceOpen}     onClose={()=>setVoiceOpen(false)} onSubmitTask={handleSubmitTask}/>
-      <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)}/>
+      <ChatPanel  open={tool==="chat"}    onClose={()=>setTool(null)} onSwitchToCompose={()=>setTool("compose")}/>
       <ComposePanel open={tool==="compose"} onClose={()=>setTool(null)}/>
-      
+
 
       <div className="pointer-events-none fixed top-0 inset-x-0 h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent"/>
     </div>
@@ -4260,7 +4686,7 @@ function AddTaskButton() {
                 title={listening ? "Stop dictation" : speechSupported ? "Dictate tasks" : "Voice not supported in this browser"}
                 aria-label={listening ? "Stop dictation" : "Start dictation"}
                 disabled={!speechSupported}
-                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
+                className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-1.5 after:md:hidden ${
                   listening
                     ? "border-rose-400/50 bg-rose-500/15 text-rose-300 animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
                     : "border-white/10 bg-white/[0.04] text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10"

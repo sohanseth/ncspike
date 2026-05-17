@@ -58,6 +58,10 @@ export const EXPORT_TABLES = [
   "inference_usage_daily",
   "user_settings",
   "search_queries",
+  "agents",
+  "agent_runs",
+  "agent_findings",
+  "agent_state",
 ] as const;
 
 /**
@@ -131,6 +135,10 @@ export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   inference_usage_daily_deleted: "inference_usage_daily",
   user_settings_deleted: "user_settings",
   search_queries_deleted: "search_queries",
+  agent_findings_deleted: "agent_findings",
+  agent_state_deleted: "agent_state",
+  agent_runs_deleted: "agent_runs",
+  agents_deleted: "agents",
 };
 
 /**
