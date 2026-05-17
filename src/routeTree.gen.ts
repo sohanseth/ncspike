@@ -18,6 +18,7 @@ import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.v
 import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
 import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy'
 import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
+import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
@@ -74,6 +75,11 @@ const WorkspacePersonalizationRoute =
     path: '/workspace/personalization',
     getParentRoute: () => rootRouteImport,
   } as any)
+const WorkspaceInboxRoute = WorkspaceInboxRouteImport.update({
+  id: '/workspace/inbox',
+  path: '/workspace/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
   id: '/workspace/drafts',
   path: '/workspace/drafts',
@@ -128,6 +134,7 @@ export interface FileRoutesByFullPath {
   '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
@@ -148,6 +155,7 @@ export interface FileRoutesByTo {
   '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
@@ -169,6 +177,7 @@ export interface FileRoutesById {
   '/workspace/agents': typeof WorkspaceAgentsRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
+  '/workspace/inbox': typeof WorkspaceInboxRoute
   '/workspace/personalization': typeof WorkspacePersonalizationRoute
   '/workspace/privacy': typeof WorkspacePrivacyRoute
   '/workspace/usage': typeof WorkspaceUsageRoute
@@ -191,6 +200,7 @@ export interface FileRouteTypes {
     | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/inbox'
     | '/workspace/personalization'
     | '/workspace/privacy'
     | '/workspace/usage'
@@ -211,6 +221,7 @@ export interface FileRouteTypes {
     | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/inbox'
     | '/workspace/personalization'
     | '/workspace/privacy'
     | '/workspace/usage'
@@ -231,6 +242,7 @@ export interface FileRouteTypes {
     | '/workspace/agents'
     | '/workspace/connections'
     | '/workspace/drafts'
+    | '/workspace/inbox'
     | '/workspace/personalization'
     | '/workspace/privacy'
     | '/workspace/usage'
@@ -252,6 +264,7 @@ export interface RootRouteChildren {
   WorkspaceAgentsRoute: typeof WorkspaceAgentsRoute
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
+  WorkspaceInboxRoute: typeof WorkspaceInboxRoute
   WorkspacePersonalizationRoute: typeof WorkspacePersonalizationRoute
   WorkspacePrivacyRoute: typeof WorkspacePrivacyRoute
   WorkspaceUsageRoute: typeof WorkspaceUsageRoute
@@ -330,6 +343,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspacePersonalizationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/inbox': {
+      id: '/workspace/inbox'
+      path: '/workspace/inbox'
+      fullPath: '/workspace/inbox'
+      preLoaderRoute: typeof WorkspaceInboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/workspace/drafts': {
       id: '/workspace/drafts'
       path: '/workspace/drafts'
@@ -404,6 +424,7 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceAgentsRoute: WorkspaceAgentsRoute,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
+  WorkspaceInboxRoute: WorkspaceInboxRoute,
   WorkspacePersonalizationRoute: WorkspacePersonalizationRoute,
   WorkspacePrivacyRoute: WorkspacePrivacyRoute,
   WorkspaceUsageRoute: WorkspaceUsageRoute,
