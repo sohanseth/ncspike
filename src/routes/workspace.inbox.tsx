@@ -136,6 +136,12 @@ type SafeBriefingV2 = {
   synthesis: string;
   delta: BriefingDeltaV2 | null;
   qualityNote: string | null;
+  /** Present only on failure briefings — visible-failure marker. The
+   *  inbox uses this to render the failure styling and open the
+   *  <details> sources by default. The server side ALSO uses it
+   *  (via the briefing JSONB) so fetchPriorBriefingV2() can skip
+   *  failure briefings as prior context. */
+  failureClass: string | null;
   memorableTakeaways: BriefingTakeawayV2[];
   readFirst: BriefingReadFirstV2[];
   skipOrCollapse: BriefingSkipGroupV2[];
@@ -265,6 +271,7 @@ function safeBriefingV2(raw: unknown): SafeBriefingV2 | null {
     synthesis,
     delta,
     qualityNote: asString(r.qualityNote, 600),
+    failureClass: asString(r.failureClass, 40),
     memorableTakeaways,
     readFirst,
     skipOrCollapse,
@@ -273,16 +280,14 @@ function safeBriefingV2(raw: unknown): SafeBriefingV2 | null {
   };
 }
 
-/** Heuristic: detect a failure briefing (docs/20 §6 copy). v2 failure
- *  briefings have empty content arrays AND a headline matching the
- *  "I couldn't complete" prefix. The inbox renders these with the
- *  sources `<details>` open by default. */
+/** Detect a failure briefing via the explicit `failureClass` marker.
+ *  Set by failureBriefing() in research-digest.ts; empty-batch briefings
+ *  do NOT set it (they're real synthesis of zero results). The inbox
+ *  uses this to render failure styling and open the `<details>` sources
+ *  by default so the user can still scan titles when synthesis didn't
+ *  complete. */
 function isFailureBriefingV2(b: SafeBriefingV2): boolean {
-  const noContent =
-    b.memorableTakeaways.length === 0 &&
-    b.readFirst.length === 0 &&
-    b.distinctIdeas.length === 0;
-  return noContent && /couldn'?t complete this check/i.test(b.headline);
+  return b.failureClass !== null;
 }
 
 // ─── v1 briefing shape + narrowing (legacy, kept for back-compat) ─────────
@@ -769,9 +774,13 @@ function InboxPage() {
 // cards. No fake badges. Load-bearing principle: reduce repeated
 // cognition across runs, don't summarise every source.
 
+// Per Sneha review (2026-05-18): "NEW" alone implies new-to-the-world,
+// which we cannot claim. The agent only sees its own watched context.
+// "NEW THIS RUN" makes the scoping explicit. "RESURFACED" makes it
+// clear we're talking about something previously seen, not new info.
 const PROVENANCE_BADGE: Record<BriefingProvenanceV2, { label: string; cls: string }> = {
   new: {
-    label: "NEW",
+    label: "NEW THIS RUN",
     cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
   },
   continuing: {

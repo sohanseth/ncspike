@@ -180,16 +180,24 @@ export function parseScoreReply(reply: string): number {
 const BRIEFING_PROVENANCE = ["new", "continuing", "recurring"] as const;
 type BriefingProvenance = (typeof BRIEFING_PROVENANCE)[number];
 
+const BRIEFING_FAILURE_CLASSES = [
+  "rate_limited",
+  "chain_exhausted",
+  "malformed",
+  "generic",
+] as const;
+
 /** Source-input cap per docs/19 §10.2 / docs/20 §11.2 — score-desc top 20. */
 const BRIEFING_INPUT_CAP = 20;
 
 /** Failure classification → user-facing copy. Docs/20 §6. No HTTP codes
- *  in user surface; diagnostics go to agent_runs.error only. */
-type FailureClass =
-  | "rate_limited"      // provider 429s, single provider or whole chain
-  | "chain_exhausted"   // all providers in the chain failed
-  | "malformed"         // LLM responded, output unparseable / Zod-invalid
-  | "generic";          // anything else
+ *  in user surface; diagnostics go to agent_runs.error only.
+ *
+ *  ALSO persisted on the briefing payload (as `failureClass`) so the
+ *  next run's prior-briefing fetch can skip failure briefings — they
+ *  shouldn't pollute the LLM's prior-context memory with "I couldn't
+ *  complete this check..." text (Sneha review feedback, 2026-05-18). */
+type FailureClass = (typeof BRIEFING_FAILURE_CLASSES)[number];
 type FailureCopy = { headline: string; synthesis: string };
 const FAILURE_COPY: Record<FailureClass, FailureCopy> = {
   rate_limited: {
@@ -225,6 +233,13 @@ export const ResearchDigestBriefingV2Schema = z.object({
   synthesis: z.string().min(1).max(600),
   delta: BriefingDeltaSchema.optional(),
   qualityNote: z.string().min(1).max(400).optional(),
+  /** Present ONLY on failure briefings — marks the briefing as the
+   *  output of the failure-handling path rather than real LLM synthesis.
+   *  The next run's prior-briefing fetch filters these out so failure
+   *  language doesn't pollute the LLM's "what you said last time"
+   *  context. Empty-batch briefings (legitimate "nothing matched")
+   *  do NOT set this field; they're real synthesis of zero results. */
+  failureClass: z.enum(BRIEFING_FAILURE_CLASSES).optional(),
 
   // ─── Research-specific (docs/20 §2) ──────────────────────────────────
   memorableTakeaways: z
@@ -328,7 +343,8 @@ function failureBriefing(
   cause: unknown,
   prior: ResearchDigestBriefingV2 | null,
 ): ResearchDigestBriefingV2 {
-  const copy = FAILURE_COPY[classifyFailure(cause)];
+  const failureClass = classifyFailure(cause);
+  const copy = FAILURE_COPY[failureClass];
   const out: ResearchDigestBriefingV2 = {
     version: 2,
     kind: "research",
@@ -339,6 +355,7 @@ function failureBriefing(
     skipOrCollapse: [],
     distinctIdeas: [],
     nextSearchSuggestions: [],
+    failureClass, // marks this as a failure for fetchPriorBriefingV2 to skip
   };
   // Failure briefings still carry a delta envelope if we have a prior — the
   // inbox can render "I couldn't update; last time you saw…" if desired.
@@ -447,8 +464,8 @@ function briefingPromptV2(
       : "";
 
   const priorBlock = prior
-    ? `\n\n${compactPriorForPrompt(prior)}\n\nFrame this run as a delta against the prior briefing. Tag items as 'continuing' when they restate the prior, 'recurring' if they appeared 2+ runs back, 'new' otherwise.`
-    : `\n\nThis is the FIRST briefing for this agent — there is no prior briefing. All items are provenance='new'. Omit the 'delta' field.`;
+    ? `\n\n${compactPriorForPrompt(prior)}\n\nFrame this run as a delta against the prior briefing. Provenance tags are scoped to THIS agent's watched context — they do NOT claim "new to the world":\n  - 'new'        = NOT present in the prior briefing context above (new to this agent's record, not necessarily to the world).\n  - 'continuing' = present in the prior briefing context above AND still appears in this batch.\n  - 'recurring'  = previously seen theme that's resurfacing after being absent in the immediately prior run.`
+    : `\n\nThis is the FIRST briefing for this agent — there is no prior briefing context. All items are provenance='new' (meaning new to this agent's record; we make no claim about novelty to the world). Omit the 'delta' field.`;
 
   return [
     `You are producing a memory-oriented briefing for a user who watches these topics recurrently. Your job is to reduce repeated cognition across runs, NOT to summarise every source.`,
@@ -531,12 +548,21 @@ async function fetchPriorBriefingV2(
       .limit(10);
     if (error || !data) return null;
     // Iterate newest-first; return the first row whose briefing parses
-    // as v2. v1 rows are silently skipped (they don't satisfy the
-    // version literal). This keeps cross-run continuity working even
-    // when there are interleaved v1 / v2 rows in the history.
+    // as v2 AND is NOT a failure briefing. v1 rows are silently skipped
+    // (they don't satisfy the version literal). Failure briefings carry
+    // the `failureClass` field and are explicitly excluded — feeding
+    // "I couldn't complete this check..." into the next run's prompt
+    // as "prior context" would corrupt the LLM's understanding of what
+    // it actually knew last time (Sneha review feedback, 2026-05-18).
+    //
+    // Empty-batch briefings ("Nothing worth keeping...") are NOT skipped
+    // — they're real synthesis of zero results, and "still nothing" is
+    // useful prior context for the next run to acknowledge.
     for (const row of data as Array<{ briefing: unknown }>) {
       const parsed = ResearchDigestBriefingV2Schema.safeParse(row.briefing);
-      if (parsed.success) return parsed.data;
+      if (!parsed.success) continue;
+      if (parsed.data.failureClass !== undefined) continue;
+      return parsed.data;
     }
     return null;
   } catch (e) {

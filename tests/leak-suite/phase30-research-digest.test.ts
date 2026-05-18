@@ -1394,8 +1394,112 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
     expect(b.readFirst).toEqual([]);
     // No qualityNote on failure (per docs/20 §6).
     expect(b.qualityNote).toBeUndefined();
+    // failureClass marker is set — used by next run's fetchPriorBriefingV2
+    // to skip this briefing as prior context (Sneha review 2026-05-18).
+    expect(b.failureClass).toBe("chain_exhausted");
 
     consoleSpy.mockRestore();
+  });
+
+  /**
+   * Failure-isolation: a prior failure briefing must NOT be fetched as
+   * prior context for the next run. Otherwise the LLM gets fed "I
+   * couldn't complete this check..." as "what you said last time" and
+   * the next briefing inherits failure language as legitimate memory.
+   * (Sneha review feedback, 2026-05-18.)
+   */
+  it("failure briefings are NOT included in the next run's prior-context fetch", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    // Seed a PRIOR failure briefing for this agent — older timestamp so
+    // ordering matters, and a successful one even further back. The
+    // fetch should walk past the failure and return the older success.
+    agentRunsRows.push({
+      id: "old-success-run-id",
+      agent_id: AGENT_ID,
+      user_id: USER,
+      started_at: new Date("2026-05-15T12:00:00Z").toISOString(),
+      briefing: {
+        version: 2,
+        kind: "research",
+        headline: "Older successful briefing.",
+        synthesis: "Sources discussed methodology.",
+        memorableTakeaways: [
+          {
+            text: "Older real takeaway.",
+            supportSourceKeys: ["old-key-1"],
+            provenance: "new",
+          },
+        ],
+        readFirst: [],
+        skipOrCollapse: [],
+        distinctIdeas: [],
+        nextSearchSuggestions: [],
+        // failureClass intentionally absent — this is a real success.
+      },
+    });
+    agentRunsRows.push({
+      id: "recent-failure-run-id",
+      agent_id: AGENT_ID,
+      user_id: USER,
+      // More recent than the success above.
+      started_at: new Date("2026-05-17T12:00:00Z").toISOString(),
+      briefing: {
+        version: 2,
+        kind: "research",
+        headline: "I couldn't complete this check — the search provider was rate-limited.",
+        synthesis: "I'll try again on the next run.",
+        memorableTakeaways: [],
+        readFirst: [],
+        skipOrCollapse: [],
+        distinctIdeas: [],
+        nextSearchSuggestions: [],
+        failureClass: "rate_limited",
+      },
+    });
+
+    let promptIncludedFailureLanguage = false;
+    let promptIncludedOlderSuccess = false;
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens >= 400) {
+        const userMsg = (req.messages ?? []).find(
+          (m: { role: string; content: string }) => m.role === "user",
+        );
+        const promptText = (userMsg?.content as string) ?? "";
+        if (/couldn'?t complete this check/i.test(promptText)) {
+          promptIncludedFailureLanguage = true;
+        }
+        if (/Older successful briefing/.test(promptText)) {
+          promptIncludedOlderSuccess = true;
+        }
+        // Return valid v2 JSON so the run completes ok.
+        return {
+          text: buildDefaultBriefingJsonV2(promptText),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 200,
+        };
+      }
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+      return {
+        text: String(nextScore),
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 80,
+        outputTokens: 4,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+    expect(run.status).toBe("ok");
+
+    // Failure briefing was NOT fed in as prior context.
+    expect(promptIncludedFailureLanguage).toBe(false);
+    // Older successful briefing WAS fed in (the fetch walked past the failure).
+    expect(promptIncludedOlderSuccess).toBe(true);
   });
 
   /**
