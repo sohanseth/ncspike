@@ -16,7 +16,8 @@ import {
   type InferenceRequest,
   type InferenceResult,
 } from "./types";
-import type { ProviderId } from "@/lib/provider-tiers";
+import { chainFor, modalityFor, type Badge } from "./router";
+import { isOnDeviceProvider, type ProviderId } from "@/lib/provider-tiers";
 
 export type { InferenceMessage, InferenceRequest, InferenceResult } from "./types";
 export { InferenceError } from "./types";
@@ -84,14 +85,83 @@ export function getProvider(id: ProviderId): Promise<InferenceProvider> {
 }
 
 /**
- * Legacy provider-agnostic generation. Used by non-chat callers (briefings,
- * voice drafts, research-cron) that don't need badge-based routing.
+ * Provider-agnostic generation. Two modes:
  *
- * Selects via INFERENCE_PROVIDER env var (default "lovable"). Chat traffic
- * should call `getProvider(id).generate(...)` directly via the router.
+ *   - With `opts.badge` (preferred for agent/template callers): walks
+ *     `chainFor(badge).chain` with the same 429/5xx fall-through semantics
+ *     as `runChain` in chat.ts — retriable errors advance to the next
+ *     provider, non-retriable errors throw immediately, failClosed badges
+ *     never silently fall through. Chain exhaustion re-throws the last
+ *     provider's InferenceError so callers can scrub + record it.
+ *
+ *   - Without a badge (legacy callers — voice drafts, email intent,
+ *     agent-tools): single-provider via INFERENCE_PROVIDER env (default
+ *     "lovable"). No retry, no fallback. Same behaviour as before
+ *     2026-05-18.
+ *
+ * Chat traffic still calls `runChain` directly — that path needs the cap
+ * accounting + per-hop inference_usage rows that this dispatcher
+ * deliberately doesn't replicate.
  */
-export async function generate(req: InferenceRequest): Promise<InferenceResult> {
+export async function generate(
+  req: InferenceRequest,
+  opts?: { badge?: Badge },
+): Promise<InferenceResult> {
+  if (opts?.badge) {
+    return generateViaChain(req, opts.badge);
+  }
   const id = ((process.env.INFERENCE_PROVIDER || "lovable").toLowerCase() as ProviderId);
   const provider = await getProvider(id);
   return provider.generate(req);
+}
+
+async function generateViaChain(
+  req: InferenceRequest,
+  badge: Badge,
+): Promise<InferenceResult> {
+  const cfg = chainFor(badge);
+  if (modalityFor(cfg) === "image-out") {
+    throw new InferenceError(
+      `Badge '${badge}' resolves to an image-out chain; not callable via generate().`,
+      "router",
+      { errorClass: "unknown", retriable: false },
+    );
+  }
+  // Mirror chat.ts's defense-in-depth guard. Agent templates default to
+  // 'flash' so this branch is dormant today, but a future template that
+  // sets defaultBadge='private' would otherwise resolve to on-device
+  // stubs that always throw — surface the misroute loudly.
+  const onDevice = cfg.chain.find(isOnDeviceProvider);
+  if (onDevice !== undefined) {
+    throw new InferenceError(
+      `Badge '${badge}' resolves to an on-device chain (${onDevice}); ` +
+        `generate() cannot run on-device providers server-side.`,
+      "router",
+      { errorClass: "unknown", retriable: false },
+    );
+  }
+
+  let lastError: unknown = new InferenceError(
+    `Chain for badge '${badge}' is empty`,
+    "router",
+    { errorClass: "unknown", retriable: false },
+  );
+  for (let i = 0; i < cfg.chain.length; i++) {
+    const providerId = cfg.chain[i];
+    try {
+      const provider = await getProvider(providerId);
+      return await provider.generate(req);
+    } catch (e) {
+      lastError = e;
+      // Fail-closed badges (PRIVATE) MUST NOT silently fall through.
+      if (cfg.failClosed) throw e;
+      // Non-retriable errors (bad shape, missing creds) are adapter/config
+      // bugs that further providers won't fix — re-throw rather than
+      // burning the rest of the chain.
+      const retriable = e instanceof InferenceError ? e.retriable : false;
+      if (!retriable) throw e;
+      // Otherwise: advance to next provider.
+    }
+  }
+  throw lastError;
 }

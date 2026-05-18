@@ -248,7 +248,21 @@ export async function execute(
       const dedupeKey = template.dedupeKey(item);
       if (seen.has(dedupeKey)) continue;
 
-      const score = await template.score(item, ctx);
+      let score: number;
+      try {
+        score = await template.score(item, ctx);
+      } catch (e) {
+        // Symmetric with the summarise per-item catch below: one unlucky
+        // LLM failure (e.g. an entire provider chain 429-ing transiently)
+        // skips this item, not the whole run. Deliberately do NOT push
+        // dedupeKey here so the next run re-scores it; the chain may be
+        // healthy by then.
+        console.error(
+          `[runner] template.score failed for agent ${agent.id} run ${runId}:`,
+          scrubErrorMessage(e),
+        );
+        continue;
+      }
       if (score < minScore) {
         // Remember it anyway — re-scoring next run wastes budget.
         newKeysToRemember.push(dedupeKey);

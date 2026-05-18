@@ -435,16 +435,29 @@ describe("execute() — error handling", () => {
     expect(updateAgentLifecycleState).toHaveBeenCalledWith(AGENT_ID, "failed", 0);
   });
 
-  it("thrown error in score → status='failed'", async () => {
+  it("per-item score throw does NOT fail the whole run", async () => {
+    // 2026-05-18: symmetric with the summarise per-item catch. One unlucky
+    // provider-chain exhaustion on score() (e.g. transient 429s across every
+    // provider) should skip that item, not kill the whole run. Before this
+    // change the score throw bubbled up to the runner's outer catch and
+    // stamped status='failed' — the briefing layer was never reached.
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const run = await execute(
       makeAgent(),
       makeDeps(fakeTemplate({ throwOn: "score" })),
     );
 
-    expect(run.status).toBe("failed");
-    expect(run.error).not.toMatch(/sekret value/);
+    // Items fetched + each score() throws → all skipped, none summarised.
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBe(0);
+    expect(consoleSpy).toHaveBeenCalled();
+    // The thrown string must still be scrubbed in the log even though
+    // the run finished ok.
+    const errorLog = consoleSpy.mock.calls.map((c) => String(c[1])).join(" ");
+    expect(errorLog).not.toMatch(/sekret value/);
+    consoleSpy.mockRestore();
   });
 
   it("per-item summarise throw does NOT fail the whole run", async () => {
