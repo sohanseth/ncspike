@@ -19,7 +19,7 @@
  * structured logs (errors that bubble out hit the runner's scrubber).
  */
 import { z } from "zod";
-import { searxngSearch } from "@/lib/search.functions";
+import { runSearch } from "@/lib/search.functions";
 import { generate } from "@/server/inference";
 import { costMicroUsd as pricingCostMicroUsd } from "@/server/inference/pricing";
 import type { ProviderId } from "@/lib/provider-tiers";
@@ -193,11 +193,16 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
     let anyTopicReturned = false;
 
     for (const topic of config.topics) {
-      const { results, instance, lastError } = await searxngSearch(topic);
+      // runSearch dispatches by SEARCH_PROVIDER env (docs/18):
+      // tavily → tavilySearch, anything else → searxngSearch (dev fallback).
+      // Return shape is identical to the old direct searxngSearch call so
+      // the per-topic failure tracking below is unchanged.
+      const { results, instance, lastError } = await runSearch(topic);
 
       if (results.length === 0 && lastError !== null) {
-        // Every instance threw for this topic. Record + continue — a
-        // later topic might still succeed and we'll yield those items.
+        // Provider returned nothing AND signalled an error for this
+        // topic. Record + continue — a later topic might still succeed
+        // and we'll yield those items.
         providerErrors.push({ topic, error: lastError });
         continue;
       }
@@ -229,8 +234,12 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
       const summary = providerErrors
         .map((e) => `${e.topic}: ${e.error}`)
         .join("; ");
+      // Provider-agnostic error wording — runSearch may have dispatched
+      // to Tavily or SearXNG depending on SEARCH_PROVIDER env. The
+      // per-topic error string already names the provider via its
+      // prefix (e.g. "Tavily HTTP 401" / "HTTP 429").
       throw new Error(
-        `SearXNG providers failed for all ${providerErrors.length} topic(s): ${summary}`,
+        `Search provider failed for all ${providerErrors.length} topic(s): ${summary}`,
       );
     }
   },
