@@ -1,6 +1,6 @@
 # docs/20 — ResearchDigest Template v2 (briefing-first instance)
 
-**Status:** SPEC IN REVIEW — 2026-05-18 (Sneha)
+**Status:** SPEC LOCKED — 2026-05-18 (Sneha)
 **Owner:** Sneha
 **Implementation PR:** TBD (next PR after this + docs/19 merge; must reference both)
 **Depends on:** docs/19 (architecture)
@@ -189,21 +189,37 @@ Per docs/19 §3 — failures are visible, never silently masked.
 
 | Failure mode | Behaviour | User sees |
 |---|---|---|
-| LLM throws (429, 5xx, chain exhausted) | One retry; if retry fails, persist a failure briefing | `headline: "Briefing could not be generated for this run."` + sources uncollapsed |
+| LLM throws (429, 5xx, chain exhausted) | One retry; if retry fails, persist a failure briefing | Human copy per below + sources uncollapsed |
 | LLM returns malformed JSON | One retry; if retry fails, persist a failure briefing | Same as above |
 | LLM returns valid JSON, invalid sourceKeys | Strip invalid sourceKeys; if any takeaway loses all its support, drop it; if all takeaways drop, treat as malformed | Best-effort render: surviving valid content shows |
 | Prior-briefing fetch fails | Log + scrub + treat as first-run (omit `delta`) | First-run render; no banner |
-| `items_kept === 0` | NO LLM call. Persist briefing with empty arrays + `synthesis: "I checked N sources today and nothing matched your topics above the relevance threshold."` | Empty-batch briefing, no sources disclosure |
+| `items_kept === 0` | NO LLM call. Persist empty-batch briefing per below | Empty-batch briefing, no sources disclosure |
 | Run crashes mid-flight | `briefing IS NULL`, `agent_runs.status='failed'`. Inbox uses legacy flat path for this section. | Legacy flat list (PR #24) |
 
-**Failure-mode briefing copy** (open question 4 in docs/19 — proposed
-wording, review at implementation PR time):
+**Failure-mode briefing copy (LOCKED by Sneha 2026-05-18).** Human voice,
+no HTTP codes or provider names in the user surface. Diagnostics go to
+run-history / debug only (`agent_runs.error` already carries the scrubbed
+reason).
 
-- `headline`: `"Briefing couldn't be generated for this run."`
-- `synthesis`: `"I checked {N} sources but my synthesis step failed. The
-  raw sources are below if you want to scan them yourself."`
-- `qualityNote`: `"Synthesis failure: {scrubbed-reason-class}"` (where
-  reason-class is e.g. `provider_429`, `malformed_json`, `chain_exhausted`)
+| Failure class | `headline` | `synthesis` |
+|---|---|---|
+| Provider 429 / rate-limited | `"I couldn't complete this check — the search provider was rate-limited."` | `"I'll try again on the next run. Raw sources are below if you want to scan them yourself."` |
+| Chain exhausted (all providers failed) | `"I couldn't complete this check — none of my LLM providers were available."` | `"This usually clears within an hour. Raw sources are below."` |
+| Malformed JSON / Zod validation | `"I couldn't complete this check — my synthesis step produced unusable output."` | `"Raw sources are below if you want to scan them yourself."` |
+| Generic / unclassified | `"I couldn't complete this check for this run."` | `"I'll try again on the next run. Raw sources are below."` |
+
+`qualityNote` is omitted on failure briefings (the failure IS the message,
+nothing to add). The classification of failure → headline is done in the
+template's catch block by inspecting `e.errorClass` from `InferenceError`.
+
+**Empty-batch briefing copy (`items_kept === 0`, LOCKED).**
+
+- `headline`: `"Nothing worth keeping in today's check."`
+- `synthesis`: `"I checked this topic, but this run did not find anything
+  worth keeping. Try narrowing the topic or changing the search angle."`
+- All template-specific arrays empty.
+- `delta` populated only if a prior briefing exists, with
+  `whatsNew: "Nothing relevant this run."`
 
 ---
 
@@ -381,18 +397,24 @@ Any other file touched = scope drift; review should bounce.
 
 ---
 
-## 11. Open questions inherited from docs/19
+## 11. Resolved decisions (was: open questions)
 
-This template instance owns concrete answers for the architecture's open
-questions:
+All inherited questions from docs/19 are LOCKED by Sneha 2026-05-18.
 
-1. **Empty-batch briefing:** YES — persist a v2 briefing with the "nothing
-   matched" synthesis (Example D). Spec position; Sneha confirm.
+1. **Empty-batch briefing:** YES. Three-state behaviour per docs/19 §10.1.
+   Empty-batch copy locked in §6 above.
 
-2. **Token-budget cap:** cap kept-source input at 20 items, score-desc
-   tiebreak. If hit, set `qualityNote = "Capped at 20 of N sources by
-   relevance score."` Spec position; Sneha confirm.
+2. **Token-budget cap:** 20 sources, score desc, top 20 win. Per
+   docs/19 §10.2. If hit, set `qualityNote = "Capped at 20 of N sources
+   by relevance score."` Diversification deferred until simple top-20
+   demonstrably underperforms.
 
 3. **Provenance taxonomy:** ship with all three values (`new` /
-   `continuing` / `recurring`). Revisit after first 4 weeks of real
-   usage.
+   `continuing` / `recurring`) per docs/19 §10.5. Revisit after first
+   4 weeks of real usage.
+
+4. **Failure copy:** human voice, no HTTP codes in user surface.
+   Locked table in §6 above (classified by `InferenceError.errorClass`).
+   Per docs/19 §10.4.
+
+5. **Cross-run window:** most-recent prior briefing only. Per docs/19 §10.6.

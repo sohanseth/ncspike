@@ -1,6 +1,6 @@
 # docs/19 — Briefing-First Agent Architecture (template-agnostic)
 
-**Status:** SPEC IN REVIEW — 2026-05-18 (Sneha)
+**Status:** SPEC LOCKED — 2026-05-18 (Sneha)
 **Owner:** Sneha
 **Implementation PRs:** none directly; this is the architecture layer.
 Concrete template instances live in sibling docs (docs/20+).
@@ -39,6 +39,29 @@ a sibling spec — see Roadmap.
 > The briefing is the product. Findings are evidence.
 > Each run is a delta against the prior run's briefing, not a fresh start.
 > Failures are visible; nothing is silently masked with canned scaffolding.
+
+---
+
+## Load-bearing principle
+
+> **The agent's job is to reduce repeated cognition across time, not to
+> summarise every source in the current batch.**
+
+This is the prevention rule against regressing back into expanded-Google-
+results. Any future change to a template, prompt, or render component that
+expands the user's per-run reading load is a violation of this principle
+and should be questioned in review. Cognitive load should monotonically
+trend DOWN over runs as the corpus stabilises, not up.
+
+The principle implies, concretely:
+- Per-source paragraphs in the user surface are forbidden by default.
+- Repetition across runs MUST be acknowledged ("still true") and
+  collapsed, not re-presented as new.
+- New items that genuinely add to the corpus get explicit attention
+  (the `provenance: 'new'` tag + `[NEW]` badge); everything else
+  fades into the sources disclosure.
+- The briefing's job is to make the user fluent in their watched topics
+  with the minimum re-reading possible.
 
 ---
 
@@ -237,35 +260,80 @@ Existing data:
 - `briefing.version === 1` (PR #22-era runs, including their fallback briefings)
 
 These are rendered via PR #24's flat findings list (no fabricated badges,
-no fake briefing block, just title + summary + timestamp). That code path
-stays as-is indefinitely. Sunset condition is TBD (open question 3).
+no fake briefing block, just title + summary + timestamp).
+
+**Sunset condition (LOCKED by Sneha 2026-05-18):**
+
+> Keep the v1 legacy render path until all beta-created ResearchDigest
+> runs produce `briefing.version >= 2` for two consecutive weeks.
+
+No migration, no cleanup until that condition is met. The check is a
+simple SQL query against `agent_runs.briefing->>'version'` ordered by
+`started_at desc`; can be wired into the CI dashboard or just run
+manually before any sunset PR opens.
 
 ---
 
 ## 7. Roadmap of sibling specs
 
-| Doc | Scope | Status | Notes |
-|---|---|---|---|
-| docs/20 | ResearchDigest v2 template instance | In review (this PR) | Was previously in this doc; lifted out. |
-| docs/21 | OutfitDigest template (sketch) | Queued | Visual-grid agent; sibling template instance to validate the architecture's extensibility. |
-| docs/22 | Agent on-demand trigger ("Run now") | Queued | Small. Just a button + serverFn wrapping the existing claim+execute. |
-| docs/23 | Agent auto-creation from user behaviour | Queued | Phase 3.5 scope. User search/chat signal → topic extraction → propose-an-agent flow. |
-| docs/24 | Findings library / favourites | Queued | "Save" action, Library view, favourites feed back into briefing as positive examples. |
+Order LOCKED by Sneha 2026-05-18 — "Run now" promoted ahead of OutfitDigest
+because it improves every existing agent immediately, while the second
+template instance can wait until the core loop feels usable.
 
-Order of operations (recommendation, not commitment):
-1. Merge docs/19 + docs/20 (this PR).
-2. Implement docs/20 (ResearchDigest v2). This is the load-bearing
-   implementation that validates the architecture on a real template.
-3. Implement docs/22 (Run now) as a small parallel PR — useful regardless
-   of v2 timing; closes the operational gap of "no way to trigger a run."
-4. Sketch docs/21 (OutfitDigest) once docs/20 ships. This is the
-   architecture's second customer; if anything painful surfaces, fix it
-   in the architecture, not the template.
-5. docs/24 (favourites) and docs/23 (auto-creation) on their own cycles.
+| Order | Doc | Scope | Notes |
+|---|---|---|---|
+| 1 | docs/20 | ResearchDigest v2 template instance | In review (this PR). The load-bearing first instantiation. |
+| 2 | docs/22 | Agent on-demand trigger ("Run now") | Small. Button + serverFn wrapping the existing claim+execute. Closes the operational gap of "no way to trigger a run" — useful for every agent regardless of template. |
+| 3 | docs/21 | OutfitDigest / ProductWatcher template (sketch) | Second template instance to validate the architecture's extensibility. Sketch first, full spec when implementation interest justifies it. |
+| 4 | docs/23 | Findings library / favourites + save / dismiss | "Save" / "Dismiss" actions, Library view, favourites + dismissals feed back into briefings as positive/negative examples. |
+| 5 | docs/24 | Suggested draft agents from observed patterns | Phase 3.5 scope. See §7.1 — strict draft-only boundary. |
+
+### 7.1 Hard boundary on agent auto-creation
+
+LOCKED by Sneha 2026-05-18 — trust boundary, do not relax in implementation.
+
+> **The system may suggest DRAFT agents based on observed patterns. It
+> must NOT silently create active recurring agents without user
+> confirmation.**
+
+Allowed flow:
+```
+detected topic → draft suggestion → user confirms → active agent
+```
+
+Forbidden flow:
+```
+detected topic → active agent starts running overnight (no confirmation)
+```
+
+This applies to docs/24 specifically but is recorded here as an
+architecture-level constraint because it governs WHAT the agent runtime
+is allowed to do on the user's behalf without explicit consent.
+Implementation must surface drafts in a clearly distinguishable UI state
+("Suggested for you — confirm to activate") and never auto-promote them.
 
 ---
 
-## 8. Non-goals for this architecture spec
+## 8. Implementation guardrail
+
+The implementation PR that follows docs/19 + docs/20 merge must touch
+ResearchDigest v2 ONLY:
+
+- No runtime changes (batch, queue, lease, budget, cron untouched).
+- No new schema unless explicitly justified in docs/20.
+- No new product route.
+- No favourites or save/dismiss (docs/23).
+- No auto-agent suggestions (docs/24).
+- No outfit / product template (docs/21).
+- No "Run now" trigger (docs/22 — separate PR).
+
+The next code PR proves the new architecture with one template. Scope
+discipline is enforced by the bounded-files list in docs/20 §10; review
+should bounce any PR that touches files outside it.
+
+---
+
+## 9. Non-goals for this architecture spec
 
 - Defining specific output shape for ANY single template (that's the
   template's spec)
@@ -276,38 +344,77 @@ Order of operations (recommendation, not commitment):
   or cron layers
 - Schema migrations
 - Cross-AGENT synthesis (multi-agent briefings)
-- User-feedback ingestion into briefings (favourites is docs/24)
+- User-feedback ingestion into briefings (favourites is docs/23)
 - Persistent topic models / corpus-level summary tables (the corpus IS
   the agent_runs + agent_findings rows; we don't need a new table for it)
 
 ---
 
-## 9. Open questions
+## 10. Resolved decisions (was: open questions)
 
-1. **Persist a v2 briefing even when `items_kept === 0`?** Default
-   position: yes, with template-specific "nothing matched" synthesis.
-   Alternative: leave NULL and let legacy path render. Sneha to confirm.
+All six open questions from the original draft were resolved by Sneha
+2026-05-18 before this doc was locked. Reproduced here so the
+implementation PR has authoritative answers.
 
-2. **Token-budget cap on briefing input.** Including the prior run's
-   briefing adds ~400 tokens, and the source bundles can be 6k+. Default
-   position: cap kept-source input at 20 items (highest score wins); flag
-   in `qualityNote` if hit. Sneha to confirm.
+### 10.1 — Persist a v2 briefing on `items_kept === 0`?
 
-3. **Sunset date / condition for the v1 legacy render path.** Default
-   position: kept indefinitely. Sunset only after 90+ days with no v1
-   briefings in any user's inbox. Sneha to confirm.
+**YES.** Locked as a three-state behaviour:
 
-4. **Exact failure-mode copy.** Voice / tone of the "Briefing could not
-   be generated" wording. Proposed in implementation PR for review.
+```
+items_kept > 0
+  → normal v2 briefing
 
-5. **Provenance taxonomy.** Three values (`new` / `continuing` /
-   `recurring`) feels right but is untested. Could be just two
-   (`new` / `existing`). Revisit after first template instance ships.
+items_kept === 0  AND  provider/search succeeded
+  → empty-batch v2 briefing (template-specific honest copy)
 
-6. **Cross-run window.** "Most recent prior briefing" is the default.
-   Could be "the last 3" for richer delta context, but adds prompt tokens.
-   Default position: just the most recent. Revisit after observed
-   behaviour.
+provider/search failed (chain exhausted, network down, etc.)
+  → visible failure briefing (per §3)
+```
+
+No fake insight. The empty-batch case must be useful and honest. Template-
+specific copy lives in the template spec (e.g. docs/20 §6 for research).
+The architecture mandates only: NEVER silently leave briefing NULL on a
+successful-but-empty run; ALWAYS distinguish empty-but-OK from failure.
+
+### 10.2 — Token-budget cap on briefing input
+
+**Cap at 20 sources, sorted by score desc, top 20 win.**
+
+For v2 ship: simple `sort(score desc).slice(0, 20)`. If hit, set
+template-specific `qualityNote` flagging the cap (e.g. "Capped at 20
+of N sources by relevance score.").
+
+Diversification (by domain or idea cluster) is deferred until simple
+top-20 demonstrably underperforms in practice. Out of scope for ship.
+
+### 10.3 — Sunset condition for v1 legacy render path
+
+**Condition, not date.** See §6.
+
+### 10.4 — Failure-mode copy voice
+
+**Human copy in the inbox; no error codes in the user surface.**
+
+Failure-mode briefings render with human-language synthesis. Example:
+
+> "I couldn't complete this check because the search provider was rate-
+> limited. I'll try again on the next run."
+
+Diagnostics (HTTP codes, provider names, retry counts) belong in run
+history / debug, never in the user-facing briefing. Templates own the
+exact copy for each failure mode — see docs/20 §6 for ResearchDigest's
+table.
+
+### 10.5 — Provenance taxonomy
+
+**Ship with three values (`new` / `continuing` / `recurring`).**
+Revisit after the first 4 weeks of real usage. If the LLM never produces
+`recurring` in practice, collapse to two values then.
+
+### 10.6 — Cross-run window
+
+**Just the most recent prior briefing.** No look-back beyond 1.
+Revisit only if observed delta quality is poor.
 
 ---
 
@@ -315,10 +422,10 @@ Order of operations (recommendation, not commitment):
 
 This doc is mergeable when:
 
-- [ ] Sneha confirms the architectural shift (briefing-first +
-  corpus-centric + visible-failure) is what she's signing up for
-- [ ] The 6 open questions have defaults that are either accepted or
-  overridden
-- [ ] The roadmap of sibling specs reflects the order Sneha wants
-- [ ] docs/20 (in this same PR) is reviewable as the first concrete
-  instantiation
+- [x] Architectural shift (briefing-first + corpus-centric + visible-failure) confirmed by Sneha
+- [x] All 6 open questions resolved with locked answers (§10)
+- [x] Load-bearing principle recorded as a regression guard
+- [x] Roadmap of sibling specs ordered per Sneha (Run now ahead of OutfitDigest)
+- [x] Auto-agent-creation boundary locked (§7.1, draft-only)
+- [x] Implementation guardrail locked (§8, ResearchDigest v2 only)
+- [x] docs/20 reviewable as the first concrete instantiation
