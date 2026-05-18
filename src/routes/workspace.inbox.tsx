@@ -70,13 +70,17 @@ function priorityBadgeClass(p: string): string {
   }
 }
 
+// Source-type labels — only the MEANINGFUL ones get rendered. 'other' is
+// the runner's default-when-unclassified value; surfacing it as a badge
+// labelled "Source" is pure noise (every link has a source). We
+// deliberately omit 'other' from this map so the render guard
+// `SOURCE_TYPE_LABELS[t]` falsy-checks for us.
 const SOURCE_TYPE_LABELS: Record<string, string> = {
   expert: "Expert",
   company: "Company",
   directory: "Directory",
   opinion: "Opinion",
   encyclopedia: "Reference",
-  other: "Source",
 };
 function sourceBadgeClass(t: string): string {
   switch (t) {
@@ -90,7 +94,6 @@ function sourceBadgeClass(t: string): string {
       return "border-pink-500/40 bg-pink-500/10 text-pink-200";
     case "encyclopedia":
       return "border-teal-500/40 bg-teal-500/10 text-teal-200";
-    case "other":
     default:
       return "border-muted/40 bg-muted/10 text-muted-foreground";
   }
@@ -201,23 +204,72 @@ function groupByAgent(
   return order.map((id) => buckets.get(id)!);
 }
 
+/**
+ * Detects the deterministic-fallback briefing that ResearchDigest produces
+ * when LLM synthesis fails. We treat fallback briefings the same as
+ * no-briefing-at-all (Sneha UX review, 2026-05-18): the fallback's
+ * "headline = N items found for M topics" + score-derived priority labels
+ * are scaffolding-grade text, not real synthesis. Rendering them as if
+ * they were real briefings is the worst case — fake authority + visual
+ * noise + no actual information.
+ *
+ * Signature comes from `deterministicBriefing()` in
+ * src/server/agents/templates/research-digest.ts — the qualityNote is the
+ * stable marker (the headline + synthesis vary by item count).
+ */
+function isFallbackBriefing(b: {
+  qualityNote: string | null;
+}): boolean {
+  return (
+    b.qualityNote !== null &&
+    /fallback briefing/i.test(b.qualityNote)
+  );
+}
+
+/**
+ * Bucket findings by their briefing-assigned priority. Only called when
+ * a REAL briefing exists (caller filters fallback). Items without a label
+ * fall into a separate 'unlabeled' bucket rendered without a priority
+ * header — we don't fabricate a 'useful' default any more (Sneha UX
+ * review, 2026-05-18: faking a label users can't distinguish from a real
+ * one is dishonest UX).
+ */
 function partitionByPriority(
   items: FindingItem[],
   labels: Record<string, BriefingLabel>,
 ): Array<{ priority: string; items: FindingItem[] }> {
-  // Bucket by label.priority — default to 'useful' for any finding
-  // whose dedupe_key isn't in labels (back-compat for pre-briefing runs).
   const buckets = new Map<string, FindingItem[]>();
   for (const p of PRIORITY_ORDER) buckets.set(p, []);
+  const unlabeled: FindingItem[] = [];
   for (const f of items) {
-    const p = labels[f.dedupe_key]?.priority ?? "useful";
-    if (!buckets.has(p)) buckets.set(p, []);
-    buckets.get(p)!.push(f);
+    const p = labels[f.dedupe_key]?.priority;
+    if (p && buckets.has(p)) {
+      buckets.get(p)!.push(f);
+    } else if (p) {
+      // Real briefing assigned a priority we don't recognise — keep
+      // it bucketed by that exact string so the render path uses
+      // the raw label rather than silently dropping the item.
+      if (!buckets.has(p)) buckets.set(p, []);
+      buckets.get(p)!.push(f);
+    } else {
+      unlabeled.push(f);
+    }
   }
-  return PRIORITY_ORDER.map((priority) => ({
+  const ordered = PRIORITY_ORDER.map((priority) => ({
     priority,
     items: buckets.get(priority) ?? [],
   })).filter((g) => g.items.length > 0);
+  // Any extra priorities the LLM invented (not in PRIORITY_ORDER) get
+  // appended after the canonical ones, in insertion order.
+  for (const [priority, items] of buckets) {
+    if (PRIORITY_ORDER.includes(priority)) continue;
+    if (items.length === 0) continue;
+    ordered.push({ priority, items });
+  }
+  if (unlabeled.length > 0) {
+    ordered.push({ priority: "__unlabeled", items: unlabeled });
+  }
+  return ordered;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────
@@ -340,11 +392,32 @@ function InboxPage() {
       ) : (
         <div className="space-y-10">
           {groups.map((g) => {
-            const b = g.briefing ? safeBriefing(g.briefing.briefing) : null;
-            const groupedItems = partitionByPriority(
-              g.items,
-              b?.findingLabels ?? {},
-            );
+            // Three render states (Sneha UX review, 2026-05-18):
+            //   1. realBriefing  — LLM-synthesized briefing JSON. Render
+            //                      the briefing block + grouped findings
+            //                      with priority/source badges + star
+            //                      on items the LLM marked as top picks.
+            //   2. fallback      — deterministic fallback briefing (LLM
+            //                      failed). Treated identically to (3):
+            //                      no briefing block, flat findings, no
+            //                      fabricated labels. The fallback's
+            //                      score-derived priorities are NOT
+            //                      opinion data — surfacing them as
+            //                      labels would be dishonest.
+            //   3. no-briefing   — column IS NULL (pre-PR-22 runs OR
+            //                      briefing skipped because items_kept=0).
+            //                      Same flat render.
+            const rawB = g.briefing ? safeBriefing(g.briefing.briefing) : null;
+            const realBriefing = rawB && !isFallbackBriefing(rawB) ? rawB : null;
+            const topPickIds = realBriefing
+              ? new Set(realBriefing.topPicks.map((p) => p.findingId))
+              : null;
+            // Only bucket when we have real labels; otherwise render flat
+            // (no priority headers, no fake "Useful" bucket).
+            const grouped = realBriefing
+              ? partitionByPriority(g.items, realBriefing.findingLabels)
+              : [{ priority: "__flat", items: g.items }];
+
             return (
               <section key={g.agentId} className="space-y-4">
                 <h2 className="text-sm font-medium text-muted-foreground">
@@ -354,133 +427,138 @@ function InboxPage() {
                   </span>
                 </h2>
 
-                {/* ─── Briefing block ──────────────────────────────── */}
-                {b && (b.headline || b.synthesis || b.topPicks.length > 0) && (
-                  <div className="rounded-xl border bg-card/60 p-5 space-y-3">
-                    {b.headline && (
-                      <p className="text-base font-medium leading-snug">
-                        {b.headline}
-                      </p>
-                    )}
-                    {b.synthesis && (
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        {b.synthesis}
-                      </p>
-                    )}
-                    {b.topPicks.length > 0 && (
-                      <div className="pt-1 space-y-2">
-                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                          Read first
+                {/* ─── Briefing block (real briefings only) ────────── */}
+                {realBriefing &&
+                  (realBriefing.headline ||
+                    realBriefing.synthesis ||
+                    (realBriefing.qualityNote &&
+                      !/fallback/i.test(realBriefing.qualityNote))) && (
+                    <div className="rounded-xl border bg-card/60 p-5 space-y-3">
+                      {realBriefing.headline && (
+                        <p className="text-base font-medium leading-snug">
+                          {realBriefing.headline}
                         </p>
-                        <ul className="space-y-2">
-                          {b.topPicks.map((p) => (
-                            <li
-                              key={p.findingId}
-                              className="flex items-start gap-2 text-sm"
-                            >
-                              <Star className="h-3.5 w-3.5 mt-0.5 text-emerald-300 shrink-0" />
-                              <div>
-                                <span className="font-medium">{p.title}</span>
-                                {p.reason && (
-                                  <span className="text-muted-foreground">
-                                    {" "}
-                                    — {p.reason}
-                                  </span>
-                                )}
-                              </div>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                    {b.qualityNote && (
-                      <p className="text-xs text-muted-foreground italic pt-1">
-                        {b.qualityNote}
-                      </p>
-                    )}
-                  </div>
-                )}
+                      )}
+                      {realBriefing.synthesis && (
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          {realBriefing.synthesis}
+                        </p>
+                      )}
+                      {/* Top picks are marked inline on the cards below
+                          (star icon) — no duplicated list here. */}
+                      {realBriefing.qualityNote &&
+                        !/fallback/i.test(realBriefing.qualityNote) && (
+                          <p className="text-xs text-muted-foreground italic pt-1">
+                            {realBriefing.qualityNote}
+                          </p>
+                        )}
+                    </div>
+                  )}
 
-                {/* ─── Findings grouped by priority ────────────────── */}
-                {groupedItems.map((bucket) => (
-                  <div key={bucket.priority} className="space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                      {PRIORITY_LABELS[bucket.priority] ?? bucket.priority}{" "}
-                      <span className="text-muted-foreground/60">
-                        · {bucket.items.length}
-                      </span>
-                    </p>
-                    <ul className="space-y-3">
-                      {bucket.items.map((f) => {
-                        const label = b?.findingLabels[f.dedupe_key];
-                        const sourceType = label?.sourceType ?? "other";
-                        const priority = label?.priority ?? "useful";
-                        return (
-                          <li
-                            key={f.id}
-                            className="rounded-xl border bg-card/40 p-4 space-y-2"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="space-y-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  {isSafeHttpUrl(f.source_url) ? (
-                                    <a
-                                      href={f.source_url!}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-flex items-center gap-1 font-medium hover:underline underline-offset-4"
-                                    >
-                                      {f.title}
-                                      <ExternalLink className="h-3 w-3 opacity-60" />
-                                    </a>
-                                  ) : (
-                                    <span className="font-medium">{f.title}</span>
+                {/* ─── Findings ────────────────────────────────────── */}
+                {grouped.map((bucket) => {
+                  const showBucketHeader =
+                    bucket.priority !== "__flat" &&
+                    bucket.priority !== "__unlabeled";
+                  return (
+                    <div key={bucket.priority} className="space-y-2">
+                      {showBucketHeader && (
+                        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                          {PRIORITY_LABELS[bucket.priority] ?? bucket.priority}{" "}
+                          <span className="text-muted-foreground/60">
+                            · {bucket.items.length}
+                          </span>
+                        </p>
+                      )}
+                      <ul className="space-y-3">
+                        {bucket.items.map((f) => {
+                          const label = realBriefing?.findingLabels[f.dedupe_key];
+                          const priority = label?.priority;
+                          const sourceType = label?.sourceType;
+                          // Only show source badge when sourceType is
+                          // MEANINGFUL — i.e. one of the known categories.
+                          // "other" / missing → no badge (a tautological
+                          // "Source" badge is noise).
+                          const sourceLabel = sourceType
+                            ? SOURCE_TYPE_LABELS[sourceType]
+                            : undefined;
+                          const isTopPick = topPickIds?.has(f.dedupe_key) ?? false;
+                          return (
+                            <li
+                              key={f.id}
+                              className="rounded-xl border bg-card/40 p-4 space-y-2"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    {isTopPick && (
+                                      <Star
+                                        className="h-3.5 w-3.5 text-emerald-300 shrink-0"
+                                        aria-label="Top pick"
+                                      />
+                                    )}
+                                    {isSafeHttpUrl(f.source_url) ? (
+                                      <a
+                                        href={f.source_url!}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-1 font-medium hover:underline underline-offset-4"
+                                      >
+                                        {f.title}
+                                        <ExternalLink className="h-3 w-3 opacity-60" />
+                                      </a>
+                                    ) : (
+                                      <span className="font-medium">{f.title}</span>
+                                    )}
+                                    {/* Priority badge only when real-briefing labelled this item. */}
+                                    {priority && PRIORITY_LABELS[priority] && (
+                                      <span
+                                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${priorityBadgeClass(priority)}`}
+                                      >
+                                        {PRIORITY_LABELS[priority]}
+                                      </span>
+                                    )}
+                                    {/* Source badge only when meaningful (not 'other'/missing). */}
+                                    {sourceLabel && (
+                                      <span
+                                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${sourceBadgeClass(sourceType!)}`}
+                                      >
+                                        {sourceLabel}
+                                      </span>
+                                    )}
+                                    {f.urgency !== "normal" && (
+                                      <span
+                                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${urgencyBadgeClass(f.urgency)}`}
+                                      >
+                                        {f.urgency}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {f.summary && (
+                                    <p className="text-sm text-muted-foreground">
+                                      {f.summary}
+                                    </p>
                                   )}
-                                  <span
-                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${priorityBadgeClass(priority)}`}
-                                  >
-                                    {PRIORITY_LABELS[priority] ?? priority}
-                                  </span>
-                                  <span
-                                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${sourceBadgeClass(sourceType)}`}
-                                  >
-                                    {SOURCE_TYPE_LABELS[sourceType] ?? sourceType}
-                                  </span>
-                                  {f.urgency !== "normal" && (
-                                    <span
-                                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${urgencyBadgeClass(f.urgency)}`}
-                                    >
-                                      {f.urgency}
-                                    </span>
+                                  {label?.reason && (
+                                    <p className="text-xs text-muted-foreground/80 italic">
+                                      {label.reason}
+                                    </p>
                                   )}
                                 </div>
-                                {f.summary && (
-                                  <p className="text-sm text-muted-foreground">
-                                    {f.summary}
-                                  </p>
-                                )}
-                                {label?.reason && (
-                                  <p className="text-xs text-muted-foreground/80 italic">
-                                    {label.reason}
-                                  </p>
-                                )}
                               </div>
-                            </div>
-                            <p className="text-xs text-muted-foreground/70 flex items-center gap-3">
-                              <span>{formatTs(f.created_at)}</span>
-                              <span
-                                title="Relevance score (0–1) — internal, ranked by agent"
-                                className="font-mono"
-                              >
-                                score {f.score.toFixed(2)}
-                              </span>
-                            </p>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))}
+                              {/* Footer: just the timestamp. The numeric
+                                  relevance score (0–1) is internal
+                                  ranking data — not user-facing. */}
+                              <p className="text-xs text-muted-foreground/70">
+                                {formatTs(f.created_at)}
+                              </p>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  );
+                })}
               </section>
             );
           })}
