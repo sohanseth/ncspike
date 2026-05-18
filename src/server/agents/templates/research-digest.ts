@@ -460,16 +460,19 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
 
   async score(
     item: ResearchItem,
-    { config, broker }: TemplateCallContext<ResearchDigestConfig>,
+    { config, broker, run }: TemplateCallContext<ResearchDigestConfig>,
   ): Promise<number> {
-    const result = await generate({
-      messages: [
-        { role: "system", content: broker.fragment },
-        { role: "user", content: scorePrompt(item, config.topics) },
-      ],
-      maxTokens: 8,
-      temperature: 0,
-    });
+    const result = await generate(
+      {
+        messages: [
+          { role: "system", content: broker.fragment },
+          { role: "user", content: scorePrompt(item, config.topics) },
+        ],
+        maxTokens: 8,
+        temperature: 0,
+      },
+      { badge: run.badge },
+    );
     return parseScoreReply(result.text);
   },
 
@@ -478,14 +481,17 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
     { config, broker, run }: TemplateCallContext<ResearchDigestConfig>,
   ): Promise<FindingDraft> {
     const startedAt = Date.now();
-    const result = await generate({
-      messages: [
-        { role: "system", content: broker.fragment },
-        { role: "user", content: summarisePrompt(item, config.topics) },
-      ],
-      maxTokens: 120,
-      temperature: 0.4,
-    });
+    const result = await generate(
+      {
+        messages: [
+          { role: "system", content: broker.fragment },
+          { role: "user", content: summarisePrompt(item, config.topics) },
+        ],
+        maxTokens: 120,
+        temperature: 0.4,
+      },
+      { badge: run.badge },
+    );
     const latencyMs = Date.now() - startedAt;
 
     const microCost = Number(
@@ -567,15 +573,18 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
     let modelUsed: string | null = null;
 
     try {
-      const result = await generate({
-        messages: [
-          { role: "user", content: briefingPrompt(keptItems, config.topics) },
-        ],
-        // Briefing JSON is small. 800 tokens is enough headroom for
-        // headline + synthesis + 3 topPicks + ~10 findingLabels.
-        maxTokens: 800,
-        temperature: 0.4,
-      });
+      const result = await generate(
+        {
+          messages: [
+            { role: "user", content: briefingPrompt(keptItems, config.topics) },
+          ],
+          // Briefing JSON is small. 800 tokens is enough headroom for
+          // headline + synthesis + 3 topPicks + ~10 findingLabels.
+          maxTokens: 800,
+          temperature: 0.4,
+        },
+        { badge: run.badge },
+      );
       providerForCost = result.provider;
       inputTokens = result.inputTokens;
       outputTokens = result.outputTokens;
