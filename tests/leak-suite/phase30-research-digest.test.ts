@@ -1234,4 +1234,119 @@ describe("PR briefing: ResearchDigest.briefing layer", () => {
     expect(agentRunsRows[0].briefing).toBeNull();
     briefingSpy.mockRestore();
   });
+
+  // Epistemic-discipline guard (Sneha review feedback, PR #22):
+  // the briefing prompt must instruct the LLM to (a) scope absence
+  // claims to "this batch" not "the world", and (b) avoid absolute
+  // superiority claims ("definitive best"). Without these rules the
+  // LLM cheerfully outputs "There were no urgent developments" or
+  // "This is the definitive best source", which is exactly the
+  // anti-pattern the PR is supposed to fix. A prompt-substring check
+  // is intentionally crude — it just ensures the guidance survives
+  // any future prompt refactor. (Behavioural verification of LLM
+  // output style is out of scope for unit tests; that's eval territory.)
+  it("briefing prompt includes epistemic-hedge guidance (no broad absence / no definitive claims)", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    let briefingPromptSeen: string | null = null;
+    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+      // Briefing hop = maxTokens >= 400 (summarise is 256, score is 16).
+      if (req.maxTokens && req.maxTokens >= 400) {
+        // Capture the user-role prompt for assertion. Template uses a
+        // single user message — grab whatever's there.
+        const userMsg = (req.messages ?? []).find(
+          (m: { role: string; content: string }) => m.role === "user",
+        );
+        briefingPromptSeen = userMsg?.content ?? "";
+        // Return well-formed JSON so the run completes 'ok' and we
+        // don't accidentally trigger the fallback path (which doesn't
+        // exercise the prompt at all).
+        return {
+          text: JSON.stringify({
+            version: 1,
+            headline: "Test briefing.",
+            synthesis: "From this batch I kept four items.",
+            topPicks: [],
+            findingLabels: {
+              "https://example.test/AI%20safety/1": { priority: "useful", sourceType: "other" },
+              "https://example.test/AI%20safety/2": { priority: "useful", sourceType: "other" },
+              "https://example.test/RLHF/1": { priority: "useful", sourceType: "other" },
+              "https://example.test/RLHF/2": { priority: "useful", sourceType: "other" },
+            },
+          }),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 200,
+        };
+      }
+      if (req.maxTokens && req.maxTokens <= 16) {
+        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+        return {
+          text: String(nextScore),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 80,
+          outputTokens: 4,
+        };
+      }
+      return {
+        text: nextSummariseText,
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 90,
+        outputTokens: 60,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+    expect(run.status).toBe("ok");
+
+    // The briefing prompt was actually built and sent.
+    expect(briefingPromptSeen).not.toBeNull();
+    const prompt = briefingPromptSeen as unknown as string;
+
+    // (a) Batch-bounded absence framing — anti-"There is no X".
+    expect(prompt).toMatch(/from this batch, i did not find/i);
+    // Allow any punctuation inside the quoted exemplar ("There is no X." vs "There is no X").
+    expect(prompt).toMatch(/never\s+"there is no x[.!]?"/i);
+
+    // (b) No broad absence claims about the world.
+    expect(prompt).toMatch(/never make broad absence claims about the world/i);
+
+    // (c) No absolute superiority claims — anti-"definitive best".
+    expect(prompt).toMatch(/never claim a finding is the definitive/i);
+
+    // (d) Both BAD/GOOD exemplars present, so the LLM has a concrete
+    // pattern to anchor against (not just an abstract rule).
+    expect(prompt.toLowerCase()).toContain("bad:");
+    expect(prompt.toLowerCase()).toContain("good:");
+  });
+
+  // Deterministic-fallback hedging: the fallback synthesis is what
+  // ships to the inbox when the LLM is unavailable. It MUST be
+  // batch-scoped and MUST disclose itself as a fallback. (The shape
+  // is already locked by Zod; this guards the *wording*.)
+  it("deterministic fallback synthesis is batch-scoped and discloses fallback status", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+    // generate() default returns plain text → extractFirstJson fails →
+    // fallback runs. (Same trigger as "malformed JSON" test.)
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+    expect(run.status).toBe("ok");
+
+    const b = agentRunsRows[0].briefing as Record<string, unknown>;
+    const synthesis = String(b.synthesis ?? "");
+    const qualityNote = String(b.qualityNote ?? "");
+
+    // Batch-scoped — never says "the world" / "there is no" / unconditional claims.
+    expect(synthesis.toLowerCase()).toContain("from this batch");
+    expect(synthesis.toLowerCase()).not.toMatch(/there (is|are|was|were) no\b/);
+    expect(synthesis.toLowerCase()).not.toMatch(/\bdefinitive\b/);
+
+    // Disclosure that this is the fallback path (no false confidence).
+    expect(qualityNote.toLowerCase()).toContain("fallback");
+  });
 });
