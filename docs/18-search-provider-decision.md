@@ -1,8 +1,9 @@
 # 18 — Search provider decision (ResearchDigest beta)
 
-**Status:** decision pending
+**Status:** DECIDED 2026-05-18 — primary: **Tavily**; dev fallback: SearXNG
 **Owner:** Sneha
 **Opened:** 2026-05-18
+**Decided:** 2026-05-18
 **Blocks:** live findings in `/workspace/inbox`; ResearchDigest output quality pass; further product surface beyond what's already shipped
 
 ---
@@ -90,23 +91,35 @@ Pricing as of 2026-05-18:
 | API simplicity | Single endpoint, JSON shape compatible with the existing `searxngSearch` return type (`{results, instance, lastError}`) means a smaller integration PR. |
 | Privacy / data retention | What does the provider do with our queries? Tavily and Brave have clear retention policies; Serper less so. |
 
-## 5. Recommendation placeholder
+## 5. Decision (2026-05-18)
 
-**To be filled in by Sneha.** Pre-decision leans (from chat 2026-05-18):
+**Primary provider: Tavily.**
+**Dev / fallback provider: SearXNG** via the existing `SEARXNG_INSTANCES` env path from PR #19.
 
-> "Probably start with **Tavily** if output quality matters more than raw cost, or **Serper** if you want the cheapest reliable beta path."
+Reasoning (Sneha):
 
-Both are reasonable. Brave is a fallback option but more expensive per 1k than Serper and less LLM-friendly than Tavily.
+- Built for AI / research workflows, not raw SERP scraping → likely better fit for ResearchDigest's summarise step
+- Simple API surface — minimal integration cost
+- Free tier (1k credits/mo) is comfortably above expected beta volume
+- Less need to build our own result-cleaning layer immediately
+- For ResearchDigest, **output quality matters more than shaving cents**
+
+Why not the others:
+
+- **Serper**: cheaper but Google-SERP-scraping model means more raw results, more cleanup, more long-term ToS risk
+- **Brave**: cleaner philosophically (own index) but ~17× the per-1k cost of Serper at this stage
+
+Caveat to verify before beta exposure: check Tavily's current terms + data retention, since queries include user topic strings. Confirmed safe enough for the spike; review before any non-spike production rollout.
 
 ## 6. Required env / API key
 
-Whichever provider is chosen, the integration will follow the established env pattern from PR #19's `SEARXNG_INSTANCES`:
+Integration follows the same env pattern from PR #19's `SEARXNG_INSTANCES`:
 
 ```bash
 # In .env.local + Lovable preview env + (eventually) Cloudflare Worker env
-SEARCH_PROVIDER=tavily|serper|brave|searxng   # default: tavily once chosen
-TAVILY_API_KEY=...                            # or SERPER_API_KEY=... or BRAVE_API_KEY=...
-SEARXNG_INSTANCES=https://...                 # kept as dev fallback per PR #19
+SEARCH_PROVIDER=tavily          # default: tavily (decided); omit/unset → searxng dev fallback
+TAVILY_API_KEY=tvly-...         # required when SEARCH_PROVIDER=tavily
+SEARXNG_INSTANCES=https://...   # kept as dev fallback per PR #19
 ```
 
 The API key MUST stay server-only (same posture as `SUPABASE_SERVICE_ROLE_KEY` — never expose via `VITE_*`).
