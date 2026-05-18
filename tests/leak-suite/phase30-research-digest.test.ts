@@ -18,7 +18,7 @@
  * Real-DB end-to-end coverage lives in
  * `phase30-pipeline-realdb.test.ts` (skip-on-no-DB).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -127,31 +127,37 @@ vi.mock("@/server/agents/budget", () => ({
   CPAUD_CEILING_USD: 1.5,
 }));
 
-// Mock SearXNG search — capture calls + return canned hits.
+// Mock SearXNG search — capture calls + return canned hits. Keep the
+// real `resolveSearxngInstances` available (the env-driven tests below
+// exercise it directly) via importOriginal.
 let searxngCalls: string[] = [];
-vi.mock("@/lib/search.functions", () => ({
-  searxngSearch: vi.fn(async (q: string) => {
-    searxngCalls.push(q);
-    return {
-      instance: "https://test.searxng.example",
-      lastError: null,
-      results: [
-        {
-          title: `${q} — article 1`,
-          url: `https://example.test/${encodeURIComponent(q)}/1`,
-          snippet: `Snippet about ${q}`,
-          engine: "duckduckgo",
-        },
-        {
-          title: `${q} — article 2`,
-          url: `https://example.test/${encodeURIComponent(q)}/2?utm_source=test&id=keep`,
-          snippet: `Another snippet about ${q}`,
-          engine: "google",
-        },
-      ],
-    };
-  }),
-}));
+vi.mock("@/lib/search.functions", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/search.functions")>();
+  return {
+    ...actual,
+    searxngSearch: vi.fn(async (q: string) => {
+      searxngCalls.push(q);
+      return {
+        instance: "https://test.searxng.example",
+        lastError: null,
+        results: [
+          {
+            title: `${q} — article 1`,
+            url: `https://example.test/${encodeURIComponent(q)}/1`,
+            snippet: `Snippet about ${q}`,
+            engine: "duckduckgo",
+          },
+          {
+            title: `${q} — article 2`,
+            url: `https://example.test/${encodeURIComponent(q)}/2?utm_source=test&id=keep`,
+            snippet: `Another snippet about ${q}`,
+            engine: "google",
+          },
+        ],
+      };
+    }),
+  };
+});
 
 // Mock the inference dispatcher — capture call args + return scripted text.
 let generateCalls: Array<{ messages: unknown; maxTokens?: number }> = [];
@@ -193,6 +199,7 @@ import { templates, resolveTemplate } from "@/server/agents/templates";
 import { execute, type RunnerDeps } from "@/server/agents/runner";
 import { checkBudget, recordCost } from "@/server/agents/budget";
 import type { AgentRow, BrokerContext } from "@/server/agents/types";
+import { searxngSearch } from "@/lib/search.functions";
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────
 
@@ -577,4 +584,167 @@ describe("Static invariant: no template-specific code in runtime files", () => {
       );
     });
   }
+});
+
+// ─── PR #19: search-provider failure diagnostics ──────────────────────────
+//
+// Pre-2026-05-18, a fully-dead SearXNG instance list looked identical
+// to a legitimate empty-result day: run finished status='ok' with
+// items_fetched=0 and no error trail. Verified during deploy
+// verification when all four hardcoded public instances were
+// returning 503/429/502/NXDOMAIN.
+//
+// The new contract on ResearchDigest.fetch:
+//   * If at least one topic was served (any result OR ok-empty), keep
+//     going and yield what we got. Per-topic provider errors are
+//     diagnostic-only here; partial-success runs still finish ok.
+//   * If EVERY topic failed at the provider layer AND nothing was
+//     yielded, throw. The runner's outer catch turns that into
+//     status='failed' with a scrubbed message, and the lifecycle
+//     counter trips at 5 consecutive failures → state='degraded'.
+
+describe("PR #19: ResearchDigest fetch surfaces SearXNG provider failures", () => {
+  it("throws when every topic's providers fail (run becomes status='failed')", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    vi.mocked(searxngSearch).mockResolvedValue({
+      results: [],
+      instance: null,
+      lastError: "HTTP 503",
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("failed");
+    expect(run.items_fetched).toBe(0);
+    expect(run.items_kept).toBe(0);
+    // The scrubbed message is recorded so future debugging has a trail.
+    expect(run.error).toMatch(/SearXNG providers failed for all/);
+    // Topic names should appear (they're config-supplied, not user
+    // content from an external source — same trust level as
+    // display_name and survive the scrubber).
+    expect(run.error).toMatch(/AI safety/);
+  });
+
+  it("does NOT throw when search returned ok-empty (no provider errors, no hits)", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    vi.mocked(searxngSearch).mockResolvedValue({
+      results: [],
+      instance: null,
+      lastError: null,
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    // Benign zero-yield day. status='ok' (no findings, no error).
+    expect(run.status).toBe("ok");
+    expect(run.items_fetched).toBe(0);
+    expect(run.items_kept).toBe(0);
+    expect(run.error).toBeNull();
+  });
+
+  it("yields partial results when some topics succeed and others fail (no throw)", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9]; // both kept
+
+    // First topic ("AI safety") fails at the provider layer.
+    // Second topic ("RLHF") succeeds with two hits.
+    vi.mocked(searxngSearch)
+      .mockResolvedValueOnce({
+        results: [],
+        instance: null,
+        lastError: "HTTP 503",
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            title: "RLHF article 1",
+            url: "https://example.test/rlhf/1",
+            snippet: "About RLHF",
+            engine: "duckduckgo",
+          },
+          {
+            title: "RLHF article 2",
+            url: "https://example.test/rlhf/2",
+            snippet: "More about RLHF",
+            engine: "google",
+          },
+        ],
+        instance: "https://test.searxng.example",
+        lastError: null,
+      });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    // Partial success: we yielded items from the second topic; the
+    // first topic's error is swallowed silently (no throw).
+    expect(run.status).toBe("ok");
+    expect(run.items_fetched).toBeGreaterThan(0);
+    expect(run.items_kept).toBeGreaterThan(0);
+    expect(run.error).toBeNull();
+  });
+});
+
+// ─── PR #19: env-driven SearXNG instance list ──────────────────────────────
+//
+// Public SearXNG instances are unreliable. Production deploys should
+// set `SEARXNG_INSTANCES` env to a self-hosted or known-good list.
+// Defaults remain as a best-effort fallback.
+
+describe("PR #19: resolveSearxngInstances honors SEARXNG_INSTANCES env", () => {
+  const ORIGINAL_ENV = process.env.SEARXNG_INSTANCES;
+
+  beforeEach(() => {
+    delete process.env.SEARXNG_INSTANCES;
+  });
+
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) {
+      delete process.env.SEARXNG_INSTANCES;
+    } else {
+      process.env.SEARXNG_INSTANCES = ORIGINAL_ENV;
+    }
+  });
+
+  it("uses default instance list when env is unset", async () => {
+    // Re-import after env reset — modules cache the env at first read,
+    // but resolveSearxngInstances reads at call-time so this just works.
+    const { resolveSearxngInstances } = await import("@/lib/search.functions");
+    const instances = resolveSearxngInstances();
+    expect(Array.isArray(instances)).toBe(true);
+    expect(instances.length).toBeGreaterThan(0);
+    // Every default is an https URL — sanity check we didn't ship junk.
+    for (const url of instances) {
+      expect(url).toMatch(/^https:\/\//);
+    }
+  });
+
+  it("uses default list when env is empty string", async () => {
+    process.env.SEARXNG_INSTANCES = "";
+    const { resolveSearxngInstances } = await import("@/lib/search.functions");
+    expect(resolveSearxngInstances().length).toBeGreaterThan(0);
+  });
+
+  it("uses default list when env is only whitespace", async () => {
+    process.env.SEARXNG_INSTANCES = "   ";
+    const { resolveSearxngInstances } = await import("@/lib/search.functions");
+    expect(resolveSearxngInstances().length).toBeGreaterThan(0);
+  });
+
+  it("overrides defaults with env-supplied comma-separated list", async () => {
+    process.env.SEARXNG_INSTANCES = "https://one.example,https://two.example";
+    const { resolveSearxngInstances } = await import("@/lib/search.functions");
+    expect(resolveSearxngInstances()).toEqual([
+      "https://one.example",
+      "https://two.example",
+    ]);
+  });
+
+  it("trims whitespace and drops empty entries from the env list", async () => {
+    process.env.SEARXNG_INSTANCES = "  https://one.example  ,, https://two.example  ,";
+    const { resolveSearxngInstances } = await import("@/lib/search.functions");
+    expect(resolveSearxngInstances()).toEqual([
+      "https://one.example",
+      "https://two.example",
+    ]);
+  });
 });

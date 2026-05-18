@@ -177,8 +177,36 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
   brokerCategories: ["interests", "preferences"],
 
   async *fetch({ config }: TemplateCallContext<ResearchDigestConfig>) {
+    // Track provider outcomes per topic so we can distinguish
+    // "search worked, no relevant results" from "every search instance
+    // failed". The first is a benign zero-yield day; the second is an
+    // operational outage that must surface as a failed run — the
+    // runner's outer catch records status='failed' with a scrubbed
+    // message, and the lifecycle counter trips at 5 consecutive
+    // failures → state='degraded'.
+    //
+    // 2026-05-18 deploy-verification finding: before this guard, a
+    // fully-dead SearXNG instance list looked identical to a legit
+    // empty-result day. Run finished status='ok' with items_fetched=0
+    // and no error trail.
+    const providerErrors: Array<{ topic: string; error: string }> = [];
+    let anyTopicReturned = false;
+
     for (const topic of config.topics) {
-      const { results, instance } = await searxngSearch(topic);
+      const { results, instance, lastError } = await searxngSearch(topic);
+
+      if (results.length === 0 && lastError !== null) {
+        // Every instance threw for this topic. Record + continue — a
+        // later topic might still succeed and we'll yield those items.
+        providerErrors.push({ topic, error: lastError });
+        continue;
+      }
+
+      // Either we got results (success) OR every instance returned an
+      // empty array without throwing (search ok, no hits). Both are
+      // "topic served" — count it as such.
+      anyTopicReturned = true;
+
       for (const hit of results) {
         yield {
           url: hit.url,
@@ -189,6 +217,21 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
           matchedTopic: topic,
         };
       }
+    }
+
+    // If EVERY topic failed at the provider layer AND we yielded
+    // nothing, throw so the runner records status='failed' with a
+    // scrubbed error. Partial-success days (some topics yielded,
+    // others errored) finish cleanly — keep what we got. The
+    // per-topic errors there are diagnostic-only for now; the future
+    // run-history UI can surface them in a per-run detail panel.
+    if (!anyTopicReturned && providerErrors.length > 0) {
+      const summary = providerErrors
+        .map((e) => `${e.topic}: ${e.error}`)
+        .join("; ");
+      throw new Error(
+        `SearXNG providers failed for all ${providerErrors.length} topic(s): ${summary}`,
+      );
     }
   },
 
