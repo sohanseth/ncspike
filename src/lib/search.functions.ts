@@ -12,14 +12,45 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
  * down doesn't break search for the user. See mem://preferences/oss-first.
  */
 
-// Public instances ordered by recent reliability. JSON format must be
-// enabled on the instance — most major ones have it on.
-const SEARXNG_INSTANCES = [
+/**
+ * Default SearXNG instances. Best-effort fallback only — public
+ * instances are unreliable (bot challenges, rate limits, occasional
+ * outages). Production deployments should set `SEARXNG_INSTANCES` env
+ * to a self-hosted or known-good list.
+ *
+ * 2026-05-18 audit (during deploy verification):
+ *   - searx.be          → HTTP 503
+ *   - search.inetol.net → HTTP 429 (rate-limited)
+ *   - priv.au           → HTTP 502
+ *   - search.brave4u.com → DNS NXDOMAIN (REMOVED — domain gone)
+ * Keeping the three transient-error ones in case they recover; removed
+ * the permanently-dead one. The env override is the right answer.
+ */
+const DEFAULT_SEARXNG_INSTANCES = [
   "https://searx.be",
   "https://search.inetol.net",
   "https://priv.au",
-  "https://search.brave4u.com",
 ];
+
+/**
+ * Resolve the SearXNG instance list. Reads `process.env.SEARXNG_INSTANCES`
+ * (comma-separated URLs) and falls back to `DEFAULT_SEARXNG_INSTANCES`
+ * when the env is unset, empty, or contains only whitespace.
+ *
+ * Exported so tests can exercise both branches without monkey-patching.
+ */
+export function resolveSearxngInstances(): string[] {
+  const raw =
+    typeof process !== "undefined" ? process.env.SEARXNG_INSTANCES : undefined;
+  if (raw && raw.trim().length > 0) {
+    const parsed = raw
+      .split(",")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (parsed.length > 0) return parsed;
+  }
+  return DEFAULT_SEARXNG_INSTANCES;
+}
 
 const InputSchema = z.object({
   query: z.string().min(1).max(500),
@@ -76,7 +107,7 @@ export async function searxngSearch(
   let usedInstance: string | null = null;
   let lastError: string | null = null;
 
-  for (const instance of SEARXNG_INSTANCES) {
+  for (const instance of resolveSearxngInstances()) {
     const ctrl = new AbortController();
     const t = setTimeout(() => ctrl.abort(), 6000);
     try {
