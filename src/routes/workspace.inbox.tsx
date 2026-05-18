@@ -238,18 +238,43 @@ function InboxPage() {
     setError(null);
     setRefreshing(true);
     try {
-      // Parallel — briefings live in agent_runs, findings in agent_findings;
-      // independent queries against the same logical snapshot.
-      const [findingsRows, briefingsRows] = await Promise.all([
+      // Parallel + INDEPENDENT — briefings is an enhancement layer over
+      // findings, not a prerequisite. If briefings fails (e.g. migration
+      // not yet applied in a staged env, transient SQL hiccup, schema
+      // skew) findings MUST still render. The earlier Promise.all
+      // fail-fast hid the entire findings view behind a briefings
+      // failure — surfaced during the 2026-05-18 deploy verification of
+      // PR #22 against a pre-migration DB. allSettled lets each query
+      // degrade independently.
+      const [findingsResult, briefingsResult] = await Promise.allSettled([
         listFindings({ data: {} }),
         listBriefings(),
       ]);
-      setFindings(findingsRows);
-      setBriefings(briefingsRows);
-    } catch (err) {
-      setError((err as Error).message ?? "Failed to load inbox");
-      setFindings([]);
-      setBriefings([]);
+
+      if (findingsResult.status === "fulfilled") {
+        setFindings(findingsResult.value);
+      } else {
+        // Findings is primary content — its failure IS the inbox error.
+        setError(
+          (findingsResult.reason as Error)?.message ?? "Failed to load inbox",
+        );
+        setFindings([]);
+      }
+
+      if (briefingsResult.status === "fulfilled") {
+        setBriefings(briefingsResult.value);
+      } else {
+        // Briefings is best-effort enhancement. Log to console for the
+        // operator; do NOT surface as a banner that hides findings, do
+        // NOT clear findings. The agent sections just render without
+        // their briefing blocks — same back-compat path as agents that
+        // ran before the briefing layer existed.
+        console.warn(
+          "[inbox] listBriefings failed — rendering findings without briefing blocks:",
+          briefingsResult.reason,
+        );
+        setBriefings([]);
+      }
     } finally {
       setRefreshing(false);
     }
