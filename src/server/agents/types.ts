@@ -196,6 +196,10 @@ export type TemplateCallContext<TConfig> = {
     userId: string;
     /** agents.badge — required field on `inference_usage.badge`. */
     badge: Badge;
+    /** agents.id — required by docs/20 §5 (cross-run continuity: the v2
+     *  briefing fetches the prior briefing for this agent). Added 2026-05-18
+     *  alongside the briefing-first architecture (docs/19+20). */
+    agentId: string;
   };
 };
 
@@ -214,7 +218,13 @@ export type TemplateCallContext<TConfig> = {
  */
 export type FindingDraft = {
   title: string;
-  summary: string;
+  /** Per-source summary text persisted to agent_findings.summary.
+   *  Nullable as of docs/19+20 (briefing-first architecture, 2026-05-18):
+   *  v2 templates emit `null` because the briefing carries all synthesis
+   *  and per-source paragraphs are forbidden by the load-bearing principle.
+   *  Pre-v2 templates still emit a string. The DB column was already
+   *  nullable (`text`, no NOT NULL); this widens the TS type to match. */
+  summary: string | null;
   payload: Record<string, unknown>;
   urgency: AgentFindingUrgency;
   /** Number of LLM round-trips this summarise() call performed. */

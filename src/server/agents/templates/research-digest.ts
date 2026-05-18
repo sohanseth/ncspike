@@ -22,6 +22,7 @@ import { z } from "zod";
 import { runSearch } from "@/lib/search.functions";
 import { generate } from "@/server/inference";
 import { costMicroUsd as pricingCostMicroUsd } from "@/server/inference/pricing";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type { ProviderId } from "@/lib/provider-tiers";
 import { recordCost } from "../budget";
 import { scrubErrorMessage } from "../error-scrub";
@@ -127,16 +128,6 @@ function scorePrompt(item: ResearchItem, topics: string[]): string {
   ].join("\n");
 }
 
-function summarisePrompt(item: ResearchItem, topics: string[]): string {
-  return [
-    `Summarise this article in exactly two sentences for someone interested in: ${topics.join(", ")}.`,
-    `Don't mention that you're summarising. Just write the summary.`,
-    ``,
-    `Title: ${item.title}`,
-    `Snippet: ${item.snippet}`,
-  ].join("\n");
-}
-
 // ─── Score parsing ────────────────────────────────────────────────────────
 
 /**
@@ -161,184 +152,138 @@ export function parseScoreReply(reply: string): number {
 
 // ─── The template ─────────────────────────────────────────────────────────
 
-// ─── Briefing layer (added 2026-05-18 per docs/18 follow-up) ──────────────
+// ─── Briefing v2 layer (added 2026-05-18 per docs/19 + docs/20) ───────────
 //
-// The runner calls `template.briefing()` after the summarise loop. We
-// synthesize a small JSON object the inbox renders ABOVE the finding
-// cards so the experience stops looking like a search-results page and
-// starts feeling agentic.
+// v2 inverts the page: the briefing IS the product, findings are evidence,
+// sources collapse to a <details> list below. Per-source LLM summaries are
+// removed entirely. The briefing's prompt uses the Tavily snippet from
+// agent_findings.payload as its scratch material — one LLM call replaces
+// the v1 per-item summarise loop (~16x cost reduction for a 15-item run).
 //
-// LLM-primary with deterministic fallback. The LLM gets only the bounded
-// per-item summary the template already produced; no raw provider output
-// is in the prompt. If the LLM call fails OR the response fails Zod
-// validation, fall through to a minimal deterministic briefing (top-3-
-// by-score + URL-heuristic source-type labels) so the inbox always has
-// SOMETHING to show.
+// Cross-run continuity: each run fetches the most recent prior v2 briefing
+// for the same agent and includes it in the prompt as "what you said last
+// time." The LLM frames this run's briefing as a delta against the prior,
+// with per-item provenance tags (new / continuing / recurring) so the inbox
+// can surface "NEW" badges.
 //
-// Per Sneha's product rule: phrase observations about what's MISSING
-// from this batch as "From this batch, I did not find X" — never
-// "There is no X" (the agent only sees this batch).
+// Failure handling per docs/19 §3 + docs/20 §6: human-voice failure
+// briefings (no HTTP codes in the user surface), classified by
+// InferenceError.errorClass into 4 copy variants. Failures are visible —
+// the deterministic v1 fallback was wrong because users couldn't
+// distinguish real synthesis from scaffolding.
+//
+// Load-bearing principle (docs/19): "The agent's job is to reduce
+// repeated cognition across time, not to summarise every source in the
+// current batch." Any change to this file that re-introduces per-source
+// paragraphs in the user surface violates the principle.
 
-const BRIEFING_PRIORITIES = [
-  "read_first",
-  "useful",
-  "background",
-  "low_priority",
-] as const;
-const BRIEFING_SOURCE_TYPES = [
-  "expert",
-  "company",
-  "directory",
-  "opinion",
-  "encyclopedia",
-  "other",
+const BRIEFING_PROVENANCE = ["new", "continuing", "recurring"] as const;
+type BriefingProvenance = (typeof BRIEFING_PROVENANCE)[number];
+
+const BRIEFING_FAILURE_CLASSES = [
+  "rate_limited",
+  "chain_exhausted",
+  "malformed",
+  "generic",
 ] as const;
 
-export const ResearchDigestBriefingSchema = z.object({
-  /** Shape version. Bump when the schema changes; older runs stay readable. */
-  version: z.literal(1),
-  /** One-line opinionated framing. ≤ 140 chars. */
+/** Source-input cap per docs/19 §10.2 / docs/20 §11.2 — score-desc top 20. */
+const BRIEFING_INPUT_CAP = 20;
+
+/** Failure classification → user-facing copy. Docs/20 §6. No HTTP codes
+ *  in user surface; diagnostics go to agent_runs.error only.
+ *
+ *  ALSO persisted on the briefing payload (as `failureClass`) so the
+ *  next run's prior-briefing fetch can skip failure briefings — they
+ *  shouldn't pollute the LLM's prior-context memory with "I couldn't
+ *  complete this check..." text (Sneha review feedback, 2026-05-18). */
+type FailureClass = (typeof BRIEFING_FAILURE_CLASSES)[number];
+type FailureCopy = { headline: string; synthesis: string };
+const FAILURE_COPY: Record<FailureClass, FailureCopy> = {
+  rate_limited: {
+    headline: "I couldn't complete this check — the search provider was rate-limited.",
+    synthesis: "I'll try again on the next run. Raw sources are below if you want to scan them yourself.",
+  },
+  chain_exhausted: {
+    headline: "I couldn't complete this check — none of my LLM providers were available.",
+    synthesis: "This usually clears within an hour. Raw sources are below.",
+  },
+  malformed: {
+    headline: "I couldn't complete this check — my synthesis step produced unusable output.",
+    synthesis: "Raw sources are below if you want to scan them yourself.",
+  },
+  generic: {
+    headline: "I couldn't complete this check for this run.",
+    synthesis: "I'll try again on the next run. Raw sources are below.",
+  },
+};
+
+/** Cross-run delta block per docs/19 §1. Optional on first run. */
+const BriefingDeltaSchema = z.object({
+  whatsNew: z.string().min(1).max(600),
+  whatsContinuing: z.string().max(400).optional(),
+  whatsChanged: z.string().max(400).optional(),
+});
+
+export const ResearchDigestBriefingV2Schema = z.object({
+  // ─── Shell (architecture, docs/19 §1) ────────────────────────────────
+  version: z.literal(2),
+  kind: z.literal("research"),
   headline: z.string().min(1).max(280),
-  /** One paragraph synthesizing the batch. ≤ ~600 chars. */
-  synthesis: z.string().min(1).max(1200),
-  /** Top 2–3 picks the user should read first, with a reason each. */
-  topPicks: z
+  synthesis: z.string().min(1).max(600),
+  delta: BriefingDeltaSchema.optional(),
+  qualityNote: z.string().min(1).max(400).optional(),
+  /** Present ONLY on failure briefings — marks the briefing as the
+   *  output of the failure-handling path rather than real LLM synthesis.
+   *  The next run's prior-briefing fetch filters these out so failure
+   *  language doesn't pollute the LLM's "what you said last time"
+   *  context. Empty-batch briefings (legitimate "nothing matched")
+   *  do NOT set this field; they're real synthesis of zero results. */
+  failureClass: z.enum(BRIEFING_FAILURE_CLASSES).optional(),
+
+  // ─── Research-specific (docs/20 §2) ──────────────────────────────────
+  memorableTakeaways: z
     .array(
       z.object({
-        findingId: z.string().min(1),
-        title: z.string().min(1).max(400),
+        text: z.string().min(1).max(280),
+        supportSourceKeys: z.array(z.string()).min(0),
+        provenance: z.enum(BRIEFING_PROVENANCE),
+      }),
+    )
+    .min(0)
+    .max(8),
+  readFirst: z
+    .array(
+      z.object({
+        sourceKey: z.string().min(1),
         reason: z.string().min(1).max(400),
+        provenance: z.enum(BRIEFING_PROVENANCE),
       }),
     )
     .min(0)
     .max(5),
-  /** Per-finding labels keyed by the same id used in `topPicks`. */
-  findingLabels: z.record(
-    z.string(),
-    z.object({
-      priority: z.enum(BRIEFING_PRIORITIES),
-      sourceType: z.enum(BRIEFING_SOURCE_TYPES),
-      reason: z.string().min(1).max(400).optional(),
-    }),
-  ),
-  /** Optional caveat — "this batch is broad/introductory" etc. */
-  qualityNote: z.string().min(1).max(600).optional(),
+  skipOrCollapse: z
+    .array(
+      z.object({
+        reason: z.string().min(1).max(400),
+        sourceKeys: z.array(z.string()).min(0),
+      }),
+    )
+    .min(0),
+  distinctIdeas: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(120),
+        summary: z.string().min(1).max(400),
+        sourceKeys: z.array(z.string()).min(0),
+      }),
+    )
+    .min(0)
+    .max(8),
+  nextSearchSuggestions: z.array(z.string().min(1).max(160)).min(0).max(5),
 });
 
-export type ResearchDigestBriefing = z.infer<typeof ResearchDigestBriefingSchema>;
-
-/**
- * URL-heuristic source type. Cheap, deterministic, fallback-only.
- * The LLM is expected to do better; this is what we ship when the LLM
- * is unavailable or returns garbage.
- */
-function classifySourceTypeFromUrl(
-  url: string | null,
-): (typeof BRIEFING_SOURCE_TYPES)[number] {
-  if (!url) return "other";
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    if (host.endsWith("wikipedia.org")) return "encyclopedia";
-    if (host.endsWith(".gov") || host.endsWith(".edu")) return "expert";
-    if (host === "reddit.com" || host.endsWith(".reddit.com")) return "opinion";
-    if (host.endsWith("medium.com") || host.endsWith("substack.com")) return "opinion";
-    // Naive directory detection — search-y aggregator hosts.
-    if (host.includes("awesome-") || host.includes("/list/")) return "directory";
-    // Anything else with a clear corporate TLD-ish footprint. We
-    // intentionally err on "other" rather than mis-tagging things as
-    // "company"; the LLM will do better when it's available.
-    return "other";
-  } catch {
-    return "other";
-  }
-}
-
-function deterministicBriefing(
-  keptItems: BriefingKeptItem[],
-  topics: string[],
-): ResearchDigestBriefing {
-  const sorted = [...keptItems].sort((a, b) => b.score - a.score);
-  const top = sorted.slice(0, Math.min(3, sorted.length));
-  const findingLabels: ResearchDigestBriefing["findingLabels"] = {};
-  for (const it of keptItems) {
-    findingLabels[it.dedupeKey] = {
-      priority: top.includes(it) ? "read_first" : "useful",
-      sourceType: classifySourceTypeFromUrl(it.url),
-    };
-  }
-  const topicsLabel = topics.length === 1 ? topics[0] : `${topics.length} topic(s)`;
-  return {
-    version: 1,
-    headline: `${keptItems.length} item(s) found for ${topicsLabel}.`,
-    synthesis:
-      keptItems.length > 0
-        ? `From this batch I kept ${keptItems.length} item(s) after scoring. ` +
-          `Top picks are ranked by relevance score; this is the deterministic ` +
-          `fallback summary (full briefing was unavailable).`
-        : `From this batch I did not find any items above the relevance threshold.`,
-    topPicks: top.map((t) => ({
-      findingId: t.dedupeKey,
-      title: t.title,
-      reason: `Highest relevance score in this batch (${t.score.toFixed(2)}).`,
-    })),
-    findingLabels,
-    qualityNote:
-      "This is a fallback briefing (LLM synthesis was unavailable). Priorities are derived from score only.",
-  };
-}
-
-function briefingPrompt(
-  keptItems: BriefingKeptItem[],
-  topics: string[],
-): string {
-  // Bounded input: only the kept items' title/url/summary/score. No raw
-  // provider output, no broker fragments. Topic names are config-trust
-  // (same level as display_name).
-  const itemBlock = keptItems
-    .map((it, i) =>
-      [
-        `[${i + 1}] id=${it.dedupeKey}`,
-        `    title: ${it.title}`,
-        `    url: ${it.url ?? "(no url)"}`,
-        `    score: ${it.score.toFixed(2)}`,
-        `    summary: ${it.summary ?? "(no summary)"}`,
-      ].join("\n"),
-    )
-    .join("\n\n");
-
-  return [
-    `You are summarising a daily research digest for a user.`,
-    `Topics: ${topics.join(", ")}.`,
-    `You have ${keptItems.length} kept items below.`,
-    ``,
-    `Output a JSON object EXACTLY matching this schema (no markdown, no prose):`,
-    `{`,
-    `  "version": 1,`,
-    `  "headline": "one-line opinionated framing, <= 140 chars",`,
-    `  "synthesis": "one paragraph, <= 600 chars, opinionated",`,
-    `  "topPicks": [ { "findingId": "<id from below>", "title": "...", "reason": "why read this" } ],`,
-    `  "findingLabels": { "<id>": { "priority": "read_first" | "useful" | "background" | "low_priority", "sourceType": "expert" | "company" | "directory" | "opinion" | "encyclopedia" | "other", "reason": "(optional)" } },`,
-    `  "qualityNote": "(optional caveat about this batch)"`,
-    `}`,
-    ``,
-    `Rules:`,
-    `- topPicks should include 2-3 items max (the most useful ones), in priority order.`,
-    `- Cover EVERY id below in findingLabels.`,
-    ``,
-    `Epistemic discipline (IMPORTANT — you only see this batch, not the wider world):`,
-    `- Phrase observations about what's missing as "From this batch, I did not find X." NEVER "There is no X."`,
-    `- NEVER make broad absence claims about the world. BAD: "There were no urgent developments." GOOD: "This batch mostly contains introductory or institutional material." or "From this batch, nothing read as breaking news."`,
-    `- NEVER claim a finding is THE definitive / THE best / authoritative. BAD: "This is the definitive best source." GOOD: "From this batch, the strongest source appears to be [X]." or "Of what arrived, [X] looks like the most substantive."`,
-    `- Be opinionated about WHAT IS HERE — rank, prioritise, recommend. Don't hedge about the items in front of you. Hedge only about (a) the world beyond this batch and (b) absolute claims of superiority.`,
-    `- Mark company-owned PR pages as sourceType="company".`,
-    `- Mark Wikipedia as "encyclopedia". Reddit/Medium/Substack as "opinion".`,
-    ``,
-    `Items:`,
-    itemBlock,
-    ``,
-    `Return ONLY the JSON object. No prose before or after.`,
-  ].join("\n");
-}
+export type ResearchDigestBriefingV2 = z.infer<typeof ResearchDigestBriefingV2Schema>;
 
 /**
  * Extract the first balanced JSON object from a free-form string.
@@ -367,6 +312,266 @@ function extractFirstJson(text: string): string | null {
     }
   }
   return null;
+}
+
+/**
+ * Classify a caught error into one of the 4 failure-copy buckets.
+ * Inspects InferenceError.errorClass when available; falls back to
+ * 'generic' for anything else.
+ */
+function classifyFailure(e: unknown): FailureClass {
+  const errorClass =
+    e && typeof e === "object" && "errorClass" in e
+      ? (e as { errorClass?: string }).errorClass
+      : undefined;
+  if (errorClass === "provider_429") return "rate_limited";
+  if (errorClass === "chain_exhausted") return "chain_exhausted";
+  if (e instanceof z.ZodError) return "malformed";
+  if (e instanceof SyntaxError) return "malformed";
+  // Heuristic: a thrown string about JSON parsing is malformed too.
+  if (e instanceof Error && /json|parse|sourceKey/i.test(e.message)) return "malformed";
+  return "generic";
+}
+
+/** Build a docs/20 §6 failure briefing. Used when the LLM call (and its
+ *  retry) ultimately fails, or when the parsed output validates to
+ *  nothing usable. Sources `<details>` should default to OPEN in the
+ *  inbox for failure briefings — the failure caller emits the briefing
+ *  with `kind:'research'`; the inbox checks the headline to detect
+ *  failure state and decides open/closed. */
+function failureBriefing(
+  cause: unknown,
+  prior: ResearchDigestBriefingV2 | null,
+): ResearchDigestBriefingV2 {
+  const failureClass = classifyFailure(cause);
+  const copy = FAILURE_COPY[failureClass];
+  const out: ResearchDigestBriefingV2 = {
+    version: 2,
+    kind: "research",
+    headline: copy.headline,
+    synthesis: copy.synthesis,
+    memorableTakeaways: [],
+    readFirst: [],
+    skipOrCollapse: [],
+    distinctIdeas: [],
+    nextSearchSuggestions: [],
+    failureClass, // marks this as a failure for fetchPriorBriefingV2 to skip
+  };
+  // Failure briefings still carry a delta envelope if we have a prior — the
+  // inbox can render "I couldn't update; last time you saw…" if desired.
+  if (prior) {
+    out.delta = {
+      whatsNew: "Briefing did not complete for this run; the most recent successful synthesis is unchanged.",
+    };
+  }
+  return out;
+}
+
+/** Build the empty-batch briefing (items_kept === 0, search succeeded).
+ *  Docs/20 §6 locked copy. */
+function emptyBatchBriefing(
+  prior: ResearchDigestBriefingV2 | null,
+): ResearchDigestBriefingV2 {
+  const out: ResearchDigestBriefingV2 = {
+    version: 2,
+    kind: "research",
+    headline: "Nothing worth keeping in today's check.",
+    synthesis:
+      "I checked this topic, but this run did not find anything worth keeping. Try narrowing the topic or changing the search angle.",
+    memorableTakeaways: [],
+    readFirst: [],
+    skipOrCollapse: [],
+    distinctIdeas: [],
+    nextSearchSuggestions: [],
+  };
+  if (prior) {
+    out.delta = { whatsNew: "Nothing relevant this run." };
+  }
+  return out;
+}
+
+/** Strip any sourceKey reference in `b` that isn't in `validKeys`.
+ *  If a takeaway loses ALL its support, drop the takeaway. If a readFirst
+ *  pick references an invalid key, drop the pick. Same for skipOrCollapse
+ *  and distinctIdeas. Returns the cleaned briefing; never mutates the
+ *  input. */
+function stripInvalidSourceKeys(
+  b: ResearchDigestBriefingV2,
+  validKeys: ReadonlySet<string>,
+): ResearchDigestBriefingV2 {
+  const filterKeys = (keys: string[]) => keys.filter((k) => validKeys.has(k));
+  return {
+    ...b,
+    memorableTakeaways: b.memorableTakeaways
+      .map((t) => ({ ...t, supportSourceKeys: filterKeys(t.supportSourceKeys) }))
+      .filter((t) => t.supportSourceKeys.length > 0),
+    readFirst: b.readFirst.filter((p) => validKeys.has(p.sourceKey)),
+    skipOrCollapse: b.skipOrCollapse
+      .map((g) => ({ ...g, sourceKeys: filterKeys(g.sourceKeys) }))
+      .filter((g) => g.sourceKeys.length > 0),
+    distinctIdeas: b.distinctIdeas
+      .map((i) => ({ ...i, sourceKeys: filterKeys(i.sourceKeys) }))
+      .filter((i) => i.sourceKeys.length > 0),
+  };
+}
+
+/** Compact a prior v2 briefing into the minimal form the new prompt
+ *  needs as cross-run context. ≤ ~1000 tokens budget. */
+function compactPriorForPrompt(b: ResearchDigestBriefingV2): string {
+  const takeawayLines = b.memorableTakeaways
+    .map((t) => `  - [${t.provenance}] ${t.text}`)
+    .join("\n");
+  const readFirstLines = b.readFirst
+    .map((p) => `  - [${p.provenance}] ${p.sourceKey} — ${p.reason}`)
+    .join("\n");
+  return [
+    `Last run's briefing:`,
+    `  headline: ${b.headline}`,
+    `  synthesis: ${b.synthesis}`,
+    takeawayLines ? `  memorableTakeaways:\n${takeawayLines}` : "",
+    readFirstLines ? `  readFirst:\n${readFirstLines}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+/** Build the v2 briefing prompt — five-question framing per docs/20 §4. */
+function briefingPromptV2(
+  cappedItems: BriefingKeptItem[],
+  totalKept: number,
+  topics: string[],
+  prior: ResearchDigestBriefingV2 | null,
+): string {
+  // Each item: title + url + score + snippet. The snippet IS the
+  // briefing's scratch material — Tavily already gave us one when the
+  // search ran, persisted in agent_findings.payload.snippet. No
+  // additional LLM call needed (the summarise pass v1 used is gone).
+  const itemBlock = cappedItems
+    .map((it, i) =>
+      [
+        `[${i + 1}] id=${it.dedupeKey}`,
+        `    title: ${it.title}`,
+        `    url: ${it.url ?? "(no url)"}`,
+        `    score: ${it.score.toFixed(2)}`,
+        `    snippet: ${it.summary ?? "(no snippet)"}`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+
+  const capNote =
+    cappedItems.length < totalKept
+      ? `\n[Note: capped at ${BRIEFING_INPUT_CAP} of ${totalKept} sources by relevance score.]`
+      : "";
+
+  const priorBlock = prior
+    ? `\n\n${compactPriorForPrompt(prior)}\n\nFrame this run as a delta against the prior briefing. Provenance tags are scoped to THIS agent's watched context — they do NOT claim "new to the world":\n  - 'new'        = NOT present in the prior briefing context above (new to this agent's record, not necessarily to the world).\n  - 'continuing' = present in the prior briefing context above AND still appears in this batch.\n  - 'recurring'  = previously seen theme that's resurfacing after being absent in the immediately prior run.`
+    : `\n\nThis is the FIRST briefing for this agent — there is no prior briefing context. All items are provenance='new' (meaning new to this agent's record; we make no claim about novelty to the world). Omit the 'delta' field.`;
+
+  return [
+    `You are producing a memory-oriented briefing for a user who watches these topics recurrently. Your job is to reduce repeated cognition across runs, NOT to summarise every source.`,
+    ``,
+    `Topics: ${topics.join(", ")}.`,
+    `Kept sources this run: ${cappedItems.length}.${capNote}`,
+    priorBlock,
+    ``,
+    `Answer these five questions in the JSON output:`,
+    `  1. What 1-5 things should the user REMEMBER from this batch?`,
+    `  2. Which sources are REDUNDANT — say the same thing as which others?`,
+    `  3. Which 0-3 sources are WORTH OPENING (readFirst)?`,
+    `  4. What can be SKIPPED or collapsed?`,
+    `  5. What QUESTION should the next run investigate?`,
+    ``,
+    `Output a JSON object EXACTLY matching this schema (no markdown, no prose):`,
+    `{`,
+    `  "version": 2,`,
+    `  "kind": "research",`,
+    `  "headline": "one-line opinionated framing of THIS run, <= 140 chars",`,
+    `  "synthesis": "1-2 sentences, <= 300 chars — what to remember in a week",`,
+    `  "delta": { "whatsNew": "<paragraph>", "whatsContinuing": "(optional)", "whatsChanged": "(optional)" },`,
+    `  "qualityNote": "(optional batch caveat — NOT for surfacing system failures)",`,
+    `  "memorableTakeaways": [ { "text": "...", "supportSourceKeys": ["<id>"], "provenance": "new" | "continuing" | "recurring" } ],`,
+    `  "readFirst": [ { "sourceKey": "<id>", "reason": "...", "provenance": "new" | "continuing" | "recurring" } ],`,
+    `  "skipOrCollapse": [ { "reason": "...", "sourceKeys": ["<id>", ...] } ],`,
+    `  "distinctIdeas": [ { "label": "...", "summary": "...", "sourceKeys": ["<id>", ...] } ],`,
+    `  "nextSearchSuggestions": ["..."]`,
+    `}`,
+    ``,
+    `Rules:`,
+    `- All sourceKey references MUST be ids from the items below. Don't invent ids.`,
+    `- Prefer "skip the rest" over "they're all useful." Honest redundancy framing is the point.`,
+    `- readFirst is 0-3 items. Empty is valid — if nothing is worth opening, say so honestly by leaving it empty.`,
+    `- memorableTakeaways is the user-memory contract. ≤5 items, each ≤140 chars, each grounded by at least one supportSourceKey.`,
+    `- distinctIdeas is the lower-confidence taxonomic fallback. Use when memorableTakeaways is empty/sparse.`,
+    `- nextSearchSuggestions is optional but high-leverage. Suggest 0-3 follow-ups the agent could investigate next run.`,
+    ``,
+    `Epistemic discipline (you only see this batch, not the wider world):`,
+    `- Phrase observations about what's missing as "From this batch, I did not find X." NEVER "There is no X."`,
+    `- NEVER make broad absence claims about the world. BAD: "There were no urgent developments." GOOD: "This batch was mostly explainer content; nothing read as breaking research."`,
+    `- NEVER claim a finding is THE definitive / THE best / authoritative. BAD: "This is the definitive best source." GOOD: "From this batch, the strongest source appears to be [X]."`,
+    `- Be opinionated about WHAT IS HERE — rank, recommend. Hedge only about the world beyond this batch.`,
+    ``,
+    `Items:`,
+    itemBlock,
+    ``,
+    `Return ONLY the JSON object. No prose before or after.`,
+  ].join("\n");
+}
+
+/**
+ * Fetch the most recent prior v2 briefing for this agent. Used by the
+ * briefing() function for cross-run continuity per docs/20 §5.
+ *
+ * Owner scope is load-bearing — the admin client bypasses RLS, so the
+ * `user_id` filter is the security boundary. Excludes the current run
+ * (started_at < now() AND id != currentRunId) so the briefing we just
+ * inserted in STEP 6 doesn't show up as "prior."
+ *
+ * Fail-open: on any DB error, returns null and the caller treats it as
+ * first-run. The briefing prompt then omits the delta block. The user
+ * sees a first-run-shaped briefing instead of an error. Cross-run
+ * continuity is a nice-to-have, not a correctness invariant.
+ */
+async function fetchPriorBriefingV2(
+  agentId: string,
+  userId: string,
+  currentRunId: string,
+): Promise<ResearchDigestBriefingV2 | null> {
+  try {
+    const { data, error } = await (supabaseAdmin as any)
+      .from("agent_runs")
+      .select("briefing")
+      .eq("agent_id", agentId)
+      .eq("user_id", userId)
+      .neq("id", currentRunId)
+      .not("briefing", "is", null)
+      .order("started_at", { ascending: false })
+      .limit(10);
+    if (error || !data) return null;
+    // Iterate newest-first; return the first row whose briefing parses
+    // as v2 AND is NOT a failure briefing. v1 rows are silently skipped
+    // (they don't satisfy the version literal). Failure briefings carry
+    // the `failureClass` field and are explicitly excluded — feeding
+    // "I couldn't complete this check..." into the next run's prompt
+    // as "prior context" would corrupt the LLM's understanding of what
+    // it actually knew last time (Sneha review feedback, 2026-05-18).
+    //
+    // Empty-batch briefings ("Nothing worth keeping...") are NOT skipped
+    // — they're real synthesis of zero results, and "still nothing" is
+    // useful prior context for the next run to acknowledge.
+    for (const row of data as Array<{ briefing: unknown }>) {
+      const parsed = ResearchDigestBriefingV2Schema.safeParse(row.briefing);
+      if (!parsed.success) continue;
+      if (parsed.data.failureClass !== undefined) continue;
+      return parsed.data;
+    }
+    return null;
+  } catch (e) {
+    console.error(
+      `[research-digest] fetchPriorBriefingV2 threw for agent ${agentId}:`,
+      scrubErrorMessage(e),
+    );
+    return null;
+  }
 }
 
 export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> = {
@@ -476,141 +681,171 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
     return parseScoreReply(result.text);
   },
 
+  /**
+   * v2 no-op pass-through (was: per-item LLM summarise call).
+   *
+   * The v2 briefing-first architecture (docs/19+20) forbids user-visible
+   * per-source LLM paragraphs. Per-source summarise calls are gone — the
+   * briefing carries all synthesis, using the Tavily snippet as scratch
+   * material. summarise() stays in the template contract so the runner
+   * doesn't need to change.
+   *
+   * `summary` holds the Tavily snippet (the search provider's raw
+   * extract). This is NOT an LLM-generated paragraph — it's just what
+   * the search API returned. The v2 inbox render hides summary entirely,
+   * so the user never sees this text directly. We persist it because:
+   *   (a) the briefing prompt needs it as scratch material (the runner
+   *       maps draft.summary → BriefingKeptItem.summary at STEP 7);
+   *   (b) it's useful for future features (search-within-findings, etc.);
+   *   (c) if a v2 run crashes before briefing, the legacy render path
+   *       at least shows the snippet as "summary" rather than empty.
+   *
+   * Deviation from docs/20 §3 (which said `summary: NULL`): the spec
+   * said NULL based on the principle of "no per-source paragraphs."
+   * Storing the search provider's raw snippet preserves that principle
+   * (snippet ≠ LLM paragraph) while keeping the briefing pipeline
+   * pure-functional from BriefingKeptItem — no extra DB query at
+   * briefing time. Spec amended inline.
+   *
+   * `_llmHops: 0`, `_costMicroUsd: 0` — no LLM is called.
+   */
   async summarise(
     item: ResearchItem,
-    { config, broker, run }: TemplateCallContext<ResearchDigestConfig>,
+    _ctx: TemplateCallContext<ResearchDigestConfig>,
   ): Promise<FindingDraft> {
-    const startedAt = Date.now();
-    const result = await generate(
-      {
-        messages: [
-          { role: "system", content: broker.fragment },
-          { role: "user", content: summarisePrompt(item, config.topics) },
-        ],
-        maxTokens: 120,
-        temperature: 0.4,
-      },
-      { badge: run.badge },
-    );
-    const latencyMs = Date.now() - startedAt;
-
-    const microCost = Number(
-      pricingCostMicroUsd(
-        result.provider as ProviderId,
-        result.inputTokens,
-        result.outputTokens,
-      ),
-    );
-
-    // Per-hop cost ledger entry (PR3b.1). Tagged via metadata.agent_run_id
-    // so CPAUD breakdowns can attribute spend to specific agent runs.
-    //
-    // **Fail-open** (Sneha: "recordCost() failure should be logged/scrubbed
-    // and not break the digest generation"). recordCost itself doesn't
-    // throw on insert failure (cap fail-open inherited from chat's
-    // writeUsage), but if anything else goes wrong — a network blip
-    // before the insert even starts, a synchronous throw in the supabase
-    // chain construction — we catch + scrub + continue. The cost would
-    // be lost from the ledger (acceptable under-counting per the existing
-    // CAP-CRITICAL convention) but the finding still lands.
-    try {
-      await recordCost({
-        userId: run.userId,
-        agentRunId: run.id,
-        badge: run.badge,
-        providerChain: [result.provider],
-        providerUsed: result.provider,
-        modelUsed: result.model,
-        fallbackDepth: 0,
-        inputTokens: result.inputTokens ?? null,
-        outputTokens: result.outputTokens ?? null,
-        costMicroUsd: microCost,
-        latencyMs,
-        status: "ok",
-      });
-    } catch (e) {
-      console.error(
-        `[research-digest] recordCost threw for run ${run.id}:`,
-        scrubErrorMessage(e),
-      );
-    }
-
     return {
       title: item.title,
-      summary: result.text,
+      summary: item.snippet,
       payload: {
         url: item.url,
         engine: item.engine ?? null,
         instance: item.instance ?? null,
         matched_topic: item.matchedTopic,
-        provider: result.provider,
-        model: result.model,
+        snippet: item.snippet,
         fetched_at: new Date().toISOString(),
       },
       urgency: "normal",
-      _llmHops: 1,
-      _costMicroUsd: microCost,
+      _llmHops: 0,
+      _costMicroUsd: 0,
     };
   },
 
+  /**
+   * v2 briefing function per docs/19 + docs/20.
+   *
+   * Flow:
+   *   1. Fetch the most recent prior v2 briefing for this agent (best-
+   *      effort; null on miss or DB error).
+   *   2. If items_kept === 0: emit empty-batch briefing, no LLM call.
+   *   3. Cap kept items at BRIEFING_INPUT_CAP (20) by score desc.
+   *   4. Build the prompt (5-question framing) including prior context.
+   *   5. Call generate() with one retry on failure.
+   *   6. extractFirstJson → JSON.parse → Zod validate → strip invalid
+   *      sourceKeys.
+   *   7. Record LLM cost (fail-open).
+   *   8. On any failure path: emit a failure briefing with human copy.
+   *      The failure is VISIBLE, not silently masked with scaffolding.
+   *
+   * Failure semantics: this function NEVER throws. The runner persists
+   * whatever we return as agent_runs.briefing; the run completes
+   * status='ok' even when briefing generation fails (the failure
+   * briefing IS the agent's report of what happened).
+   */
   async briefing(
     keptItems: BriefingKeptItem[],
     { config, run }: TemplateCallContext<ResearchDigestConfig>,
   ): Promise<BriefingResult | null> {
-    // LLM-primary. On any failure mode (request error, malformed JSON,
-    // Zod validation failure), fall through to the deterministic
-    // briefing. The fallback is BETTER than nothing and ships enough
-    // shape that the inbox UI never has to special-case absent fields.
     const startedAt = Date.now();
 
-    let parsed: ResearchDigestBriefing | null = null;
-    // Match summarise's typing: provider stays a plain string; cast to
-    // ProviderId only at the pricingCostMicroUsd call which is the one
-    // place it's strongly typed.
+    // (1) Prior-briefing fetch. Best-effort, null on miss.
+    const prior = await fetchPriorBriefingV2(
+      run.agentId,
+      run.userId,
+      run.id,
+    );
+
+    // (2) Empty-batch short-circuit. NO LLM call.
+    if (keptItems.length === 0) {
+      return {
+        briefing: emptyBatchBriefing(prior) as unknown as Record<string, unknown>,
+        _llmHops: 0,
+        _costMicroUsd: 0,
+      };
+    }
+
+    // (3) Cap by score desc per docs/19 §10.2.
+    const cappedItems = [...keptItems]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, BRIEFING_INPUT_CAP);
+
+    // (4) Build prompt.
+    const prompt = briefingPromptV2(
+      cappedItems,
+      keptItems.length,
+      config.topics,
+      prior,
+    );
+
+    // (5) Call LLM with one retry. Track cost across both attempts;
+    // only the successful attempt's tokens count toward the recorded
+    // cost (the failed attempt's tokens are lost, mirroring how the
+    // inference chain itself handles fall-through cost telemetry).
+    let parsed: ResearchDigestBriefingV2 | null = null;
     let providerForCost: string | null = null;
     let inputTokens: number | undefined;
     let outputTokens: number | undefined;
     let modelUsed: string | null = null;
+    let lastError: unknown = null;
 
-    try {
-      const result = await generate(
-        {
-          messages: [
-            { role: "user", content: briefingPrompt(keptItems, config.topics) },
-          ],
-          // Briefing JSON is small. 800 tokens is enough headroom for
-          // headline + synthesis + 3 topPicks + ~10 findingLabels.
-          maxTokens: 800,
-          temperature: 0.4,
-        },
-        { badge: run.badge },
-      );
-      providerForCost = result.provider;
-      inputTokens = result.inputTokens;
-      outputTokens = result.outputTokens;
-      modelUsed = result.model;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = await generate(
+          {
+            messages: [{ role: "user", content: prompt }],
+            maxTokens: 1200,
+            temperature: 0.4,
+          },
+          { badge: run.badge },
+        );
+        providerForCost = result.provider;
+        inputTokens = result.inputTokens;
+        outputTokens = result.outputTokens;
+        modelUsed = result.model;
 
-      const jsonStr = extractFirstJson(result.text);
-      if (jsonStr) {
+        const jsonStr = extractFirstJson(result.text);
+        if (!jsonStr) throw new Error("No JSON object in LLM response");
         const raw = JSON.parse(jsonStr) as unknown;
-        // Zod validation — bounded, predictable. Any deviation falls
-        // through to the deterministic briefing below.
-        parsed = ResearchDigestBriefingSchema.parse(raw);
+        const validated = ResearchDigestBriefingV2Schema.parse(raw);
+
+        // (6) Strip invalid sourceKeys. If everything strips, treat as
+        // malformed — fall to failure briefing.
+        const validKeys = new Set(cappedItems.map((i) => i.dedupeKey));
+        const stripped = stripInvalidSourceKeys(validated, validKeys);
+        if (
+          stripped.memorableTakeaways.length === 0 &&
+          stripped.readFirst.length === 0 &&
+          stripped.distinctIdeas.length === 0
+        ) {
+          throw new Error("No valid sourceKeys after stripping");
+        }
+        parsed = stripped;
+        break;
+      } catch (e) {
+        lastError = e;
+        console.error(
+          `[research-digest] briefing attempt ${attempt + 1} failed:`,
+          scrubErrorMessage(e),
+        );
+        // Loop continues for the second attempt; the second iteration
+        // overwrites providerForCost/inputTokens/outputTokens/modelUsed
+        // if it gets a response. If both attempts fail, those vars hold
+        // the second attempt's response (or undefined if neither
+        // attempt produced a response).
       }
-    } catch (e) {
-      // Three failure classes lump together here: provider error,
-      // malformed JSON, Zod validation failure. All resolve to the
-      // deterministic fallback. The recordCost call below still
-      // attempts to log the LLM hop if the provider actually responded.
-      console.error(
-        `[research-digest] briefing generation failed; falling back to deterministic:`,
-        scrubErrorMessage(e),
-      );
     }
 
-    // Record the cost of the LLM hop if we actually made one. The
-    // recordCost call mirrors summarise's shape — same fail-open
-    // wrap; ledger outage never crashes briefing generation.
+    // (7) Record cost if we got a provider response (success OR last
+    // failed attempt). Fail-open per summarise's pattern in v1.
     let microCost = 0;
     let llmHops = 0;
     if (providerForCost) {
@@ -635,7 +870,7 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
           outputTokens: outputTokens ?? null,
           costMicroUsd: microCost,
           latencyMs: Date.now() - startedAt,
-          status: "ok",
+          status: parsed ? "ok" : "error",
         });
       } catch (e) {
         console.error(
@@ -645,7 +880,8 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
       }
     }
 
-    const briefing = parsed ?? deterministicBriefing(keptItems, config.topics);
+    // (8) Either we have a parsed v2 briefing or we go to failure.
+    const briefing = parsed ?? failureBriefing(lastError, prior);
     return {
       briefing: briefing as unknown as Record<string, unknown>,
       _llmHops: llmHops,
