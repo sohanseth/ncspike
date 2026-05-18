@@ -35,6 +35,9 @@ type FindingRow = {
   urgency: string;
   state: string;
   created_at: string;
+  /** Template-defined stable key. Added 2026-05-18 to support inbox
+   *  briefing-label lookups (labels are keyed by dedupe_key). */
+  dedupe_key: string;
 };
 
 type AgentRow = { id: string; display_name: string; state?: string };
@@ -194,6 +197,7 @@ function seedRows() {
       urgency: "normal",
       state: "new",
       created_at: "2026-05-18T10:00:00Z",
+      dedupe_key: "example.com/llama4",
     },
     // USER_A · AGENT_2 · middle
     {
@@ -207,6 +211,7 @@ function seedRows() {
       urgency: "urgent",
       state: "new",
       created_at: "2026-05-17T08:00:00Z",
+      dedupe_key: "heatwave-key",
     },
     // USER_A · AGENT_1 · older
     {
@@ -220,6 +225,7 @@ function seedRows() {
       urgency: "normal",
       state: "new",
       created_at: "2026-05-17T07:00:00Z",
+      dedupe_key: "example.com/yest",
     },
     // USER_A · archived (should be filtered out)
     {
@@ -233,6 +239,7 @@ function seedRows() {
       urgency: "normal",
       state: "archived",
       created_at: "2026-04-01T00:00:00Z",
+      dedupe_key: "old-key",
     },
     // USER_B · finding (should NOT appear for USER_A)
     {
@@ -246,6 +253,7 @@ function seedRows() {
       urgency: "normal",
       state: "new",
       created_at: "2026-05-18T11:00:00Z",
+      dedupe_key: "not-yours-key",
     },
   );
 }
@@ -389,10 +397,12 @@ describe("listFindingsFor — maps DB fields to FindingItem shape", () => {
       urgency: "normal",
       state: "new",
       created_at: "2026-05-18T10:00:00Z",
+      // dedupe_key surfaced 2026-05-18 — inbox briefing-label lookups
+      // use it as the join key (briefing.findingLabels[dedupe_key]).
+      dedupe_key: "example.com/llama4",
     });
-    // Internal fields not surfaced:
+    // Internal fields still NOT surfaced:
     expect(f1).not.toHaveProperty("run_id");
-    expect(f1).not.toHaveProperty("dedupe_key");
     expect(f1).not.toHaveProperty("payload");
     expect(f1).not.toHaveProperty("user_id");
   });
@@ -477,6 +487,137 @@ describe("listFindingsFor — scrubs supabase error envelopes", () => {
       // Scrubber strips quoted spans + emails.
       expect(msg).not.toMatch(/secret-table-user@example\.com/);
       expect(msg).not.toMatch(/'select \* from/);
+    }
+  });
+});
+
+// ─── listBriefingsFor (added 2026-05-18) ─────────────────────────────────
+//
+// The supabase mock in this file doesn't know about agent_runs; rather
+// than wire a parallel fake for the briefing query, the tests below
+// re-mock supabaseAdmin.from at the call boundary for just the
+// agent_runs path. listBriefings is a thin select+dedupe; smoke tests
+// here pin the dedupe semantics (newest-per-agent) + owner scoping.
+
+import { listBriefingsFor } from "@/lib/findings.functions.server";
+
+describe("listBriefingsFor — newest-per-agent dedupe + owner scope", () => {
+  // The shared supabaseAdmin mock at the top of this file returns the
+  // agent_findings builder; for the agent_runs queries we monkey-patch
+  // .from() per-test so we don't pollute the broader mock.
+
+  beforeEach(() => {
+    nextError = null;
+  });
+
+  function mockAgentRuns(rows: Array<Record<string, unknown>>) {
+    const filters: Array<{ kind: string; col?: string; val?: unknown }> = [];
+    const builder = {
+      select() {
+        return builder;
+      },
+      eq(col: string, val: unknown) {
+        filters.push({ kind: "eq", col, val });
+        return builder;
+      },
+      neq(col: string, val: unknown) {
+        filters.push({ kind: "neq", col, val });
+        return builder;
+      },
+      not(col: string, op: string, val: unknown) {
+        filters.push({ kind: "not", col, val: { op, val } });
+        return builder;
+      },
+      order(col: string, opts?: { ascending?: boolean }) {
+        const asc = opts?.ascending !== false;
+        // Sort rows by col, asc/desc.
+        rows.sort((a, b) => {
+          const av = (a as Record<string, unknown>)[col];
+          const bv = (b as Record<string, unknown>)[col];
+          if (av === bv) return 0;
+          return ((av as string) < (bv as string) ? -1 : 1) * (asc ? 1 : -1);
+        });
+        return builder;
+      },
+      limit(_n: number) {
+        return Promise.resolve({ data: rows, error: nextError });
+      },
+    };
+    return builder;
+  }
+
+  it("returns the newest briefing per agent (dedupe by agent_id)", async () => {
+    const mockBriefing = (id: string, age: string) => ({
+      version: 1,
+      headline: `Briefing ${id} from ${age}`,
+    });
+    const supabaseAdmin = (await import("@/integrations/supabase/client.server")).supabaseAdmin as any;
+    const origFrom = supabaseAdmin.from;
+    supabaseAdmin.from = (table: string) => {
+      if (table === "agent_runs") {
+        return mockAgentRuns([
+          {
+            agent_id: AGENT_1,
+            id: "run-2",
+            briefing: mockBriefing("AGENT_1", "newest"),
+            started_at: "2026-05-18T12:00:00Z",
+            finished_at: "2026-05-18T12:01:00Z",
+          },
+          {
+            agent_id: AGENT_1,
+            id: "run-1",
+            briefing: mockBriefing("AGENT_1", "older"),
+            started_at: "2026-05-17T12:00:00Z",
+            finished_at: "2026-05-17T12:01:00Z",
+          },
+          {
+            agent_id: AGENT_2,
+            id: "run-3",
+            briefing: mockBriefing("AGENT_2", "only"),
+            started_at: "2026-05-18T10:00:00Z",
+            finished_at: "2026-05-18T10:01:00Z",
+          },
+        ]);
+      }
+      return origFrom(table);
+    };
+
+    try {
+      const out = await listBriefingsFor(USER_A);
+      expect(out).toHaveLength(2);
+      const a1 = out.find((b) => b.agent_id === AGENT_1)!;
+      expect(a1.run_id).toBe("run-2"); // newest, not run-1
+      expect((a1.briefing as { headline: string }).headline).toMatch(/newest/);
+      const a2 = out.find((b) => b.agent_id === AGENT_2)!;
+      expect(a2.run_id).toBe("run-3");
+    } finally {
+      supabaseAdmin.from = origFrom;
+    }
+  });
+
+  it("skips rows with null briefing (defensive)", async () => {
+    const supabaseAdmin = (await import("@/integrations/supabase/client.server")).supabaseAdmin as any;
+    const origFrom = supabaseAdmin.from;
+    supabaseAdmin.from = (table: string) => {
+      if (table === "agent_runs") {
+        return mockAgentRuns([
+          {
+            agent_id: AGENT_1,
+            id: "run-1",
+            briefing: null,
+            started_at: "2026-05-18T12:00:00Z",
+            finished_at: null,
+          },
+        ]);
+      }
+      return origFrom(table);
+    };
+
+    try {
+      const out = await listBriefingsFor(USER_A);
+      expect(out).toEqual([]);
+    } finally {
+      supabaseAdmin.from = origFrom;
     }
   });
 });

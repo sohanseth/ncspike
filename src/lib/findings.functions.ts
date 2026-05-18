@@ -11,7 +11,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 
-/** Strips internal fields (run_id, dedupe_key, payload) we don't render. */
+/** Strips internal fields (run_id, payload) we don't render. `dedupe_key`
+ *  is surfaced so the inbox can look up per-finding briefing labels
+ *  (briefings key labels by dedupeKey, not by the DB-generated `id`). */
 export type FindingItem = {
   id: string;
   agent_id: string;
@@ -23,6 +25,33 @@ export type FindingItem = {
   urgency: string;
   state: string;
   created_at: string;
+  /** Template-defined stable key (canonicalized URL for ResearchDigest).
+   *  Used as the join key into `AgentBriefing.findingLabels`. */
+  dedupe_key: string;
+};
+
+/** Recursive JSON value type — what TanStack Start's wire-serializer
+ *  accepts. Used for the briefing JSONB blob which has a free-form
+ *  template-defined shape. */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [k: string]: JsonValue };
+
+/** Most recent briefing per agent. Inbox shows it ABOVE that agent's
+ *  findings. `briefing` is the JSONB blob from `agent_runs.briefing` —
+ *  shape is template-defined (see ResearchDigestBriefingSchema in
+ *  src/server/agents/templates/research-digest.ts). The inbox UI runs
+ *  its own defensive narrowing via `safeBriefing(raw)`. */
+export type AgentBriefing = {
+  agent_id: string;
+  run_id: string;
+  briefing: JsonValue;
+  run_started_at: string;
+  run_finished_at: string | null;
 };
 
 /** Default page size; comfortably above one day's high-cadence output
@@ -48,4 +77,23 @@ export const listFindings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<FindingItem[]> => {
     const mod = await import("./findings.functions.server");
     return mod.listFindingsFor(context.userId, data);
+  });
+
+/**
+ * Fetch the most recent briefing for each of the user's non-archived
+ * agents (one per agent). Used by the inbox to render the briefing
+ * block above the per-agent finding cards.
+ *
+ * Returns only briefings that successfully landed in agent_runs —
+ * runs that fell back to deterministic OR threw at briefing-generation
+ * time produced either a deterministic briefing OR no row update, so
+ * an agent without any successful briefing simply doesn't appear here.
+ * The inbox UI treats that as "no briefing yet" and renders findings
+ * without the briefing block (back-compat with pre-2026-05-18 runs).
+ */
+export const listBriefings = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }): Promise<AgentBriefing[]> => {
+    const mod = await import("./findings.functions.server");
+    return mod.listBriefingsFor(context.userId);
   });

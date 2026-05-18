@@ -49,6 +49,7 @@ import type {
   AgentRunRow,
   AgentRunStatus,
   AgentTemplate,
+  BriefingKeptItem,
   BrokerContext,
   FindingDraft,
 } from "./types";
@@ -144,6 +145,14 @@ export async function execute(
   let llmHops = 0;
   let costMicroUsd = 0;
   let error: string | null = null;
+  // Briefing layer (added 2026-05-18): the runner accumulates a
+  // minimal projection of each kept item, then — after the
+  // fetch/score/summarise loop completes — calls `template.briefing`
+  // (if defined) and persists its return value to agent_runs.briefing.
+  // The runner stays generic: a template that doesn't define
+  // `briefing` gets the pre-briefing behaviour (column NULL).
+  const keptItems: BriefingKeptItem[] = [];
+  let briefing: Record<string, unknown> | null = null;
 
   // STEP 1 — Insert the run row as 'running'. This makes the run visible
   // to the inbox UI immediately and lets the stuck-run sweep finalize
@@ -329,6 +338,17 @@ export async function execute(
 
       itemsKept++;
       newKeysToRemember.push(dedupeKey);
+      // Track the kept item for the post-loop briefing step.
+      keptItems.push({
+        dedupeKey,
+        title: draft.title,
+        url:
+          typeof (draft.payload as { url?: unknown }).url === "string"
+            ? ((draft.payload as { url: string }).url)
+            : null,
+        summary: draft.summary,
+        score,
+      });
     }
 
     // STEP 8a — Update agent_state with the newly-seen keys. Best-effort;
@@ -336,6 +356,37 @@ export async function execute(
     // unique constraint on agent_findings is the durable dedupe guard.
     if (newKeysToRemember.length > 0) {
       await saveSeenKeys(agent.id, agent.user_id, seen, newKeysToRemember);
+    }
+
+    // STEP 8b — Briefing (optional hook, added 2026-05-18). Templates
+    // that implement `briefing` get a synthesis pass over the kept
+    // items. The runner stays generic: shape is template-defined,
+    // persistence is a straight JSONB write, cost accumulates into
+    // agent_runs.cost_usd + llm_hops via the BriefingResult fields
+    // (mirrors FindingDraft), failures never fail the run (logged +
+    // scrubbed, column stays NULL).
+    if (typeof template.briefing === "function" && keptItems.length > 0) {
+      try {
+        const result = await template.briefing(keptItems, ctx);
+        if (
+          result &&
+          typeof result === "object" &&
+          result.briefing &&
+          typeof result.briefing === "object"
+        ) {
+          briefing = result.briefing as Record<string, unknown>;
+          llmHops += result._llmHops;
+          costMicroUsd += result._costMicroUsd;
+        }
+      } catch (e) {
+        // Briefing failure must NOT take the run down. The kept items
+        // are already persisted; the user sees them without the
+        // briefing block instead of seeing nothing.
+        console.error(
+          `[runner] template.briefing failed for agent ${agent.id} run ${runId}:`,
+          scrubErrorMessage(e),
+        );
+      }
     }
 
     // If we got here without changing `status`, the run completed
@@ -368,6 +419,13 @@ export async function execute(
         llm_hops: llmHops,
         cost_usd: costUsd,
         error,
+        // briefing is `null` when:
+        //   - the template didn't define `briefing()`
+        //   - briefing() threw (we log + continue, run still finishes ok)
+        //   - briefing() returned null/non-object
+        // In all three cases the inbox UI renders the agent's findings
+        // without a briefing block — pre-briefing behaviour, preserved.
+        briefing,
       })
       .eq("id", runId);
     if (updateErr) {

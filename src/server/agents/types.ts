@@ -241,6 +241,13 @@ export type FindingDraft = {
  *               `config.minScore` are dropped before summarise.
  *  - `summarise` — produce the finding draft. Cost + hop counts surface to
  *                  the runner via `_costMicroUsd` / `_llmHops`.
+ *  - `briefing` (optional) — after the kept-items loop, synthesize a
+ *                  run-level briefing (added 2026-05-18 per docs/18
+ *                  follow-up). Templates that don't implement it get the
+ *                  pre-briefing behaviour. The runner persists the
+ *                  returned object to `agent_runs.briefing` as-is; a
+ *                  thrown error or null return leaves the column NULL
+ *                  and never fails the run.
  */
 export type AgentTemplate<TConfig, TItem> = {
   /** Stable id matching `agents.template_id`. */
@@ -260,6 +267,57 @@ export type AgentTemplate<TConfig, TItem> = {
   dedupeKey(item: TItem): string;
   score(item: TItem, ctx: TemplateCallContext<TConfig>): Promise<number>;
   summarise(item: TItem, ctx: TemplateCallContext<TConfig>): Promise<FindingDraft>;
+
+  /**
+   * OPTIONAL hook. Called by the runner once per run, after the
+   * fetch/score/summarise loop, with the items that produced a kept
+   * finding (post-summarise). Returns the briefing JSON the runner
+   * persists to `agent_runs.briefing` as-is, PLUS cost telemetry
+   * (mirrors `FindingDraft._llmHops` / `_costMicroUsd`) so the
+   * briefing hop counts toward `agent_runs.cost_usd` and `llm_hops`.
+   *
+   * Briefing JSON shape is template-defined (versioned via a `version`
+   * field inside the JSON). Runner does no validation; templates own
+   * the shape contract with their inbox renderer.
+   *
+   * **Failure semantics**: a thrown error or rejected promise from
+   * `briefing()` does NOT fail the run. The runner logs (scrubbed) and
+   * leaves the column NULL. A `null` return is also fine (e.g. zero
+   * kept items, or template decides briefing isn't useful for this run).
+   */
+  briefing?(
+    keptItems: Array<BriefingKeptItem>,
+    ctx: TemplateCallContext<TConfig>,
+  ): Promise<BriefingResult | null>;
+};
+
+/**
+ * Minimal projection of a kept item passed to `template.briefing`.
+ * The runner builds this from the dedupe-key + the FindingDraft
+ * returned by `summarise` + the per-item score, so the briefing call
+ * is bounded by what the template already produced for that item.
+ */
+export type BriefingKeptItem = {
+  dedupeKey: string;
+  title: string;
+  url: string | null;
+  summary: string | null;
+  score: number;
+};
+
+/**
+ * Return type of `template.briefing()`. The runner persists `briefing`
+ * to `agent_runs.briefing`, accumulates `_llmHops` into
+ * `agent_runs.llm_hops`, and adds `_costMicroUsd` (micro-USD) to the
+ * run's cost accumulator (matches `FindingDraft`'s convention).
+ *
+ * Templates that fall back to a deterministic briefing should return
+ * `_llmHops: 0` and `_costMicroUsd: 0` for the no-LLM branch.
+ */
+export type BriefingResult = {
+  briefing: Record<string, unknown>;
+  _llmHops: number;
+  _costMicroUsd: number;
 };
 
 // ─── Budget check result — used by `checkBudget` ──────────────────────────
