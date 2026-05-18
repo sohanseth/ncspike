@@ -222,7 +222,7 @@ export async function execute(
     const ctx = {
       config: agent.config,
       broker,
-      run: { id: runId, userId: agent.user_id, badge: agent.badge },
+      run: { id: runId, userId: agent.user_id, badge: agent.badge, agentId: agent.id },
     };
     const items: unknown[] = [];
     const cap = Math.max(0, agent.budget.maxItemsConsideredPerRun);
@@ -379,7 +379,15 @@ export async function execute(
     // agent_runs.cost_usd + llm_hops via the BriefingResult fields
     // (mirrors FindingDraft), failures never fail the run (logged +
     // scrubbed, column stays NULL).
-    if (typeof template.briefing === "function" && keptItems.length > 0) {
+    //
+    // No longer gated on items_kept > 0 (docs/19 §10.1 three-state
+    // behaviour, 2026-05-18): templates must distinguish empty-batch
+    // (search succeeded, zero kept) from no-run (briefing never called)
+    // at the briefing layer. The template's briefing() is now responsible
+    // for short-circuiting on keptItems.length === 0 if it doesn't want
+    // to emit anything; ResearchDigest v2 emits an honest empty-batch
+    // briefing per docs/20 §6.
+    if (typeof template.briefing === "function") {
       try {
         const result = await template.briefing(keptItems, ctx);
         if (

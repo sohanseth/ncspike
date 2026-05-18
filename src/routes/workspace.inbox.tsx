@@ -105,11 +105,190 @@ function urgencyBadgeClass(urgency: string): string {
     : "border-muted/40 bg-muted/10 text-muted-foreground";
 }
 
-// ─── Briefing shape (mirrors ResearchDigestBriefingSchema, client-side) ──
+// ─── v2 briefing shape + narrowing (mirrors ResearchDigestBriefingV2Schema) ─
 //
-// We trust the server's Zod validation but still defensively narrow
-// before rendering — a briefing missing a field should degrade
-// gracefully (no rendered field) rather than throwing.
+// Docs/19+20 (2026-05-18). Client-side defensive narrowing — if the
+// JSONB doesn't conform (e.g. a future-version row arrives mid-deploy),
+// we render gracefully rather than throwing.
+
+type BriefingProvenanceV2 = "new" | "continuing" | "recurring";
+type BriefingTakeawayV2 = {
+  text: string;
+  supportSourceKeys: string[];
+  provenance: BriefingProvenanceV2;
+};
+type BriefingReadFirstV2 = {
+  sourceKey: string;
+  reason: string;
+  provenance: BriefingProvenanceV2;
+};
+type BriefingSkipGroupV2 = { reason: string; sourceKeys: string[] };
+type BriefingIdeaV2 = { label: string; summary: string; sourceKeys: string[] };
+type BriefingDeltaV2 = {
+  whatsNew: string;
+  whatsContinuing: string | null;
+  whatsChanged: string | null;
+};
+
+type SafeBriefingV2 = {
+  kind: "research";
+  headline: string;
+  synthesis: string;
+  delta: BriefingDeltaV2 | null;
+  qualityNote: string | null;
+  memorableTakeaways: BriefingTakeawayV2[];
+  readFirst: BriefingReadFirstV2[];
+  skipOrCollapse: BriefingSkipGroupV2[];
+  distinctIdeas: BriefingIdeaV2[];
+  nextSearchSuggestions: string[];
+};
+
+function isV2Briefing(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const r = raw as Record<string, unknown>;
+  return r.version === 2 && r.kind === "research";
+}
+
+function asString(v: unknown, max = 1000): string | null {
+  return typeof v === "string" && v.length > 0 && v.length <= max ? v : null;
+}
+
+function asProvenance(v: unknown): BriefingProvenanceV2 {
+  return v === "continuing" || v === "recurring" ? v : "new";
+}
+
+function safeBriefingV2(raw: unknown): SafeBriefingV2 | null {
+  if (!isV2Briefing(raw)) return null;
+  const r = raw as Record<string, unknown>;
+  const headline = asString(r.headline, 400);
+  const synthesis = asString(r.synthesis, 800);
+  if (!headline || !synthesis) return null;
+
+  const memorableTakeaways: BriefingTakeawayV2[] = Array.isArray(r.memorableTakeaways)
+    ? (r.memorableTakeaways as unknown[])
+        .map((t) => {
+          if (!t || typeof t !== "object") return null;
+          const obj = t as Record<string, unknown>;
+          const text = asString(obj.text, 400);
+          if (!text) return null;
+          const supportSourceKeys = Array.isArray(obj.supportSourceKeys)
+            ? (obj.supportSourceKeys as unknown[]).filter(
+                (k): k is string => typeof k === "string",
+              )
+            : [];
+          return {
+            text,
+            supportSourceKeys,
+            provenance: asProvenance(obj.provenance),
+          };
+        })
+        .filter((t): t is BriefingTakeawayV2 => t !== null)
+        .slice(0, 8)
+    : [];
+
+  const readFirst: BriefingReadFirstV2[] = Array.isArray(r.readFirst)
+    ? (r.readFirst as unknown[])
+        .map((p) => {
+          if (!p || typeof p !== "object") return null;
+          const obj = p as Record<string, unknown>;
+          const sourceKey = asString(obj.sourceKey, 1000);
+          const reason = asString(obj.reason, 600);
+          if (!sourceKey || !reason) return null;
+          return {
+            sourceKey,
+            reason,
+            provenance: asProvenance(obj.provenance),
+          };
+        })
+        .filter((p): p is BriefingReadFirstV2 => p !== null)
+        .slice(0, 5)
+    : [];
+
+  const skipOrCollapse: BriefingSkipGroupV2[] = Array.isArray(r.skipOrCollapse)
+    ? (r.skipOrCollapse as unknown[])
+        .map((g) => {
+          if (!g || typeof g !== "object") return null;
+          const obj = g as Record<string, unknown>;
+          const reason = asString(obj.reason, 600);
+          if (!reason) return null;
+          const sourceKeys = Array.isArray(obj.sourceKeys)
+            ? (obj.sourceKeys as unknown[]).filter(
+                (k): k is string => typeof k === "string",
+              )
+            : [];
+          return { reason, sourceKeys };
+        })
+        .filter((g): g is BriefingSkipGroupV2 => g !== null)
+    : [];
+
+  const distinctIdeas: BriefingIdeaV2[] = Array.isArray(r.distinctIdeas)
+    ? (r.distinctIdeas as unknown[])
+        .map((i) => {
+          if (!i || typeof i !== "object") return null;
+          const obj = i as Record<string, unknown>;
+          const label = asString(obj.label, 200);
+          const summary = asString(obj.summary, 600);
+          if (!label || !summary) return null;
+          const sourceKeys = Array.isArray(obj.sourceKeys)
+            ? (obj.sourceKeys as unknown[]).filter(
+                (k): k is string => typeof k === "string",
+              )
+            : [];
+          return { label, summary, sourceKeys };
+        })
+        .filter((i): i is BriefingIdeaV2 => i !== null)
+        .slice(0, 8)
+    : [];
+
+  const nextSearchSuggestions: string[] = Array.isArray(r.nextSearchSuggestions)
+    ? (r.nextSearchSuggestions as unknown[])
+        .filter((s): s is string => typeof s === "string" && s.length > 0 && s.length <= 240)
+        .slice(0, 5)
+    : [];
+
+  let delta: BriefingDeltaV2 | null = null;
+  if (r.delta && typeof r.delta === "object") {
+    const d = r.delta as Record<string, unknown>;
+    const whatsNew = asString(d.whatsNew, 800);
+    if (whatsNew) {
+      delta = {
+        whatsNew,
+        whatsContinuing: asString(d.whatsContinuing, 600),
+        whatsChanged: asString(d.whatsChanged, 600),
+      };
+    }
+  }
+
+  return {
+    kind: "research",
+    headline,
+    synthesis,
+    delta,
+    qualityNote: asString(r.qualityNote, 600),
+    memorableTakeaways,
+    readFirst,
+    skipOrCollapse,
+    distinctIdeas,
+    nextSearchSuggestions,
+  };
+}
+
+/** Heuristic: detect a failure briefing (docs/20 §6 copy). v2 failure
+ *  briefings have empty content arrays AND a headline matching the
+ *  "I couldn't complete" prefix. The inbox renders these with the
+ *  sources `<details>` open by default. */
+function isFailureBriefingV2(b: SafeBriefingV2): boolean {
+  const noContent =
+    b.memorableTakeaways.length === 0 &&
+    b.readFirst.length === 0 &&
+    b.distinctIdeas.length === 0;
+  return noContent && /couldn'?t complete this check/i.test(b.headline);
+}
+
+// ─── v1 briefing shape + narrowing (legacy, kept for back-compat) ─────────
+//
+// PR #22-era briefings. v2 dispatch happens first in the render loop;
+// this path only fires when version !== 2 (incl. null).
 
 type BriefingTopPick = { findingId: string; title: string; reason: string };
 type BriefingLabel = {
@@ -392,21 +571,36 @@ function InboxPage() {
       ) : (
         <div className="space-y-10">
           {groups.map((g) => {
-            // Three render states (Sneha UX review, 2026-05-18):
-            //   1. realBriefing  — LLM-synthesized briefing JSON. Render
-            //                      the briefing block + grouped findings
-            //                      with priority/source badges + star
-            //                      on items the LLM marked as top picks.
-            //   2. fallback      — deterministic fallback briefing (LLM
-            //                      failed). Treated identically to (3):
-            //                      no briefing block, flat findings, no
-            //                      fabricated labels. The fallback's
-            //                      score-derived priorities are NOT
-            //                      opinion data — surfacing them as
-            //                      labels would be dishonest.
-            //   3. no-briefing   — column IS NULL (pre-PR-22 runs OR
-            //                      briefing skipped because items_kept=0).
-            //                      Same flat render.
+            // v2 dispatch (docs/19+20, 2026-05-18). When briefing payload
+            // is `version: 2`, render the briefing-first layout — the
+            // briefing IS the page; findings collapse to a <details> at
+            // the bottom. For v1 / NULL briefings, fall through to the
+            // PR #24 flat-findings legacy path below.
+            const b2 = g.briefing ? safeBriefingV2(g.briefing.briefing) : null;
+            if (b2) {
+              return (
+                <BriefingV2Section
+                  key={g.agentId}
+                  agentName={g.agentName}
+                  briefing={b2}
+                  items={g.items}
+                />
+              );
+            }
+
+            // ─── Legacy (v1 / NULL) render path ─────────────────────
+            // Three render states (PR #24, Sneha UX review 2026-05-18):
+            //   1. realBriefing  — v1 LLM-synthesized briefing JSON.
+            //                      Renders briefing block + grouped findings
+            //                      with priority/source badges + star on
+            //                      items the LLM marked as top picks.
+            //   2. fallback      — v1 deterministic fallback briefing.
+            //                      Treated identically to (3): no
+            //                      briefing block, flat findings, no
+            //                      fabricated labels.
+            //   3. no-briefing   — column IS NULL. Flat findings render.
+            // This path stays indefinitely per docs/19 §6 (sunset
+            // condition: 2 consecutive weeks with no v1 briefings).
             const rawB = g.briefing ? safeBriefing(g.briefing.briefing) : null;
             const realBriefing = rawB && !isFallbackBriefing(rawB) ? rawB : null;
             const topPickIds = realBriefing
@@ -565,5 +759,276 @@ function InboxPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ─── v2 briefing-first render component ─────────────────────────────────
+//
+// Docs/19+20 (2026-05-18). The briefing IS the page. Findings are
+// evidence, collapsed to a <details> block at the bottom. No per-source
+// cards. No fake badges. Load-bearing principle: reduce repeated
+// cognition across runs, don't summarise every source.
+
+const PROVENANCE_BADGE: Record<BriefingProvenanceV2, { label: string; cls: string }> = {
+  new: {
+    label: "NEW",
+    cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+  },
+  continuing: {
+    label: "",
+    cls: "",
+  },
+  recurring: {
+    label: "RESURFACED",
+    cls: "border-amber-500/40 bg-amber-500/10 text-amber-200",
+  },
+};
+
+function ProvenanceBadge({ p }: { p: BriefingProvenanceV2 }) {
+  const cfg = PROVENANCE_BADGE[p];
+  if (!cfg.label) return null;
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-semibold tracking-wider ${cfg.cls}`}
+    >
+      {cfg.label}
+    </span>
+  );
+}
+
+function BriefingV2Section({
+  agentName,
+  briefing,
+  items,
+}: {
+  agentName: string;
+  briefing: SafeBriefingV2;
+  items: FindingItem[];
+}) {
+  const isFailure = isFailureBriefingV2(briefing);
+  // dedupe_key → FindingItem map for resolving sourceKeys → titles + links.
+  const itemByKey = new Map<string, FindingItem>();
+  for (const f of items) itemByKey.set(f.dedupe_key, f);
+  const titleForKey = (k: string): string =>
+    itemByKey.get(k)?.title ?? k.slice(0, 80);
+  const urlForKey = (k: string): string | null =>
+    itemByKey.get(k)?.source_url ?? null;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-sm font-medium text-muted-foreground">
+        {agentName}{" "}
+        <span className="text-xs">
+          · {items.length} {items.length === 1 ? "finding" : "findings"}
+        </span>
+      </h2>
+
+      <div
+        className={`rounded-xl border p-5 space-y-4 ${
+          isFailure ? "border-muted/30 bg-card/30" : "bg-card/60"
+        }`}
+      >
+        {/* Headline + synthesis */}
+        <div className="space-y-2">
+          <p className="text-base font-medium leading-snug">
+            {briefing.headline}
+          </p>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {briefing.synthesis}
+          </p>
+        </div>
+
+        {/* Delta block (cross-run continuity) */}
+        {briefing.delta && (
+          <div className="border-l-2 border-emerald-500/40 pl-3 space-y-1.5">
+            <p className="text-xs font-medium uppercase tracking-wider text-emerald-300/80">
+              What's new this run
+            </p>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {briefing.delta.whatsNew}
+            </p>
+            {briefing.delta.whatsContinuing && (
+              <p className="text-xs text-muted-foreground/80">
+                <span className="font-medium">Still true: </span>
+                {briefing.delta.whatsContinuing}
+              </p>
+            )}
+            {briefing.delta.whatsChanged && (
+              <p className="text-xs text-muted-foreground/80">
+                <span className="font-medium">Changed: </span>
+                {briefing.delta.whatsChanged}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Memorable takeaways */}
+        {briefing.memorableTakeaways.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              What to remember
+            </p>
+            <ul className="space-y-2">
+              {briefing.memorableTakeaways.map((t, i) => (
+                <li
+                  key={i}
+                  className="flex items-start gap-2 text-sm leading-relaxed"
+                >
+                  <span className="text-muted-foreground/60 shrink-0">•</span>
+                  <div className="space-y-0.5 min-w-0">
+                    <div className="flex flex-wrap items-baseline gap-2">
+                      <span>{t.text}</span>
+                      <ProvenanceBadge p={t.provenance} />
+                      {t.supportSourceKeys.length > 0 && (
+                        <span className="text-xs text-muted-foreground/60 shrink-0">
+                          ({t.supportSourceKeys.length}{" "}
+                          {t.supportSourceKeys.length === 1 ? "source" : "sources"})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Read first */}
+        {briefing.readFirst.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Read first
+            </p>
+            <ul className="space-y-2">
+              {briefing.readFirst.map((p) => {
+                const title = titleForKey(p.sourceKey);
+                const url = urlForKey(p.sourceKey);
+                return (
+                  <li key={p.sourceKey} className="flex items-start gap-2 text-sm">
+                    <Star className="h-3.5 w-3.5 mt-1 text-emerald-300 shrink-0" />
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex flex-wrap items-baseline gap-2">
+                        {isSafeHttpUrl(url) ? (
+                          <a
+                            href={url!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 font-medium hover:underline underline-offset-4"
+                          >
+                            {title}
+                            <ExternalLink className="h-3 w-3 opacity-60" />
+                          </a>
+                        ) : (
+                          <span className="font-medium">{title}</span>
+                        )}
+                        <ProvenanceBadge p={p.provenance} />
+                      </div>
+                      <p className="text-xs text-muted-foreground/80">{p.reason}</p>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {/* Distinct ideas — only when no memorableTakeaways (taxonomic fallback) */}
+        {briefing.memorableTakeaways.length === 0 &&
+          briefing.distinctIdeas.length > 0 && (
+            <div className="space-y-2">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Themes in this batch
+              </p>
+              <ul className="space-y-2">
+                {briefing.distinctIdeas.map((idea, i) => (
+                  <li key={i} className="text-sm space-y-0.5">
+                    <p className="font-medium">{idea.label}</p>
+                    <p className="text-xs text-muted-foreground">{idea.summary}</p>
+                    {idea.sourceKeys.length > 0 && (
+                      <p className="text-xs text-muted-foreground/60">
+                        ({idea.sourceKeys.length}{" "}
+                        {idea.sourceKeys.length === 1 ? "source" : "sources"})
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+        {/* Skip / collapse */}
+        {briefing.skipOrCollapse.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              Skip
+            </p>
+            <ul className="space-y-1">
+              {briefing.skipOrCollapse.map((g, i) => (
+                <li key={i} className="text-xs text-muted-foreground/80">
+                  • {g.reason}{" "}
+                  {g.sourceKeys.length > 0 && (
+                    <span className="text-muted-foreground/60">
+                      ({g.sourceKeys.length}{" "}
+                      {g.sourceKeys.length === 1 ? "source" : "sources"})
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Next-run suggestions */}
+        {briefing.nextSearchSuggestions.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+              Next run could check
+            </p>
+            <ul className="space-y-1">
+              {briefing.nextSearchSuggestions.map((s, i) => (
+                <li key={i} className="text-xs text-muted-foreground/80">
+                  • {s}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* qualityNote */}
+        {briefing.qualityNote && (
+          <p className="text-xs text-muted-foreground italic">
+            {briefing.qualityNote}
+          </p>
+        )}
+      </div>
+
+      {/* Sources <details> — closed by default on success, open on failure
+          so the user can still scan titles when synthesis didn't complete. */}
+      <details open={isFailure} className="group">
+        <summary className="cursor-pointer text-xs font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground/80 list-none flex items-center gap-1.5">
+          <span className="transition-transform group-open:rotate-90">▸</span>
+          Sources checked: {items.length}
+        </summary>
+        <ul className="mt-3 space-y-1.5 pl-4">
+          {items.map((f) => (
+            <li key={f.id} className="text-sm text-muted-foreground">
+              {isSafeHttpUrl(f.source_url) ? (
+                <a
+                  href={f.source_url!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 hover:underline underline-offset-4 hover:text-foreground/80"
+                >
+                  {f.title}
+                  <ExternalLink className="h-3 w-3 opacity-60" />
+                </a>
+              ) : (
+                <span>{f.title}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
   );
 }

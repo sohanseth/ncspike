@@ -68,6 +68,48 @@ vi.mock("@/integrations/supabase/client.server", () => ({
             };
             return chain;
           },
+          // SELECT chain — added for v2 briefing's prior-briefing fetch
+          // (docs/20 §5, 2026-05-18). Supports: select().eq().neq().not(col, "is", null).order().limit() then await.
+          select(_cols: string) {
+            const eqs: Array<{ col: string; val: unknown }> = [];
+            const neqs: Array<{ col: string; val: unknown }> = [];
+            const notNulls: string[] = [];
+            let orderBy: { col: string; asc: boolean } | null = null;
+            let limitN: number | null = null;
+            const chain = {
+              eq(col: string, val: unknown) { eqs.push({ col, val }); return chain; },
+              neq(col: string, val: unknown) { neqs.push({ col, val }); return chain; },
+              not(col: string, op: string, val: unknown) {
+                if (op === "is" && val === null) notNulls.push(col);
+                return chain;
+              },
+              order(col: string, opts?: { ascending?: boolean }) {
+                orderBy = { col, asc: opts?.ascending ?? true };
+                return chain;
+              },
+              limit(n: number) { limitN = n; return chain; },
+              then(resolve: (v: { data: Row[]; error: null }) => void) {
+                let result = agentRunsRows.filter(
+                  (r) =>
+                    eqs.every((f) => r[f.col] === f.val) &&
+                    neqs.every((f) => r[f.col] !== f.val) &&
+                    notNulls.every((c) => r[c] !== null && r[c] !== undefined),
+                );
+                if (orderBy) {
+                  const o = orderBy as { col: string; asc: boolean };
+                  result = [...result].sort((a, b) => {
+                    const av = a[o.col] as string | number;
+                    const bv = b[o.col] as string | number;
+                    if (av === bv) return 0;
+                    return (av < bv ? -1 : 1) * (o.asc ? 1 : -1);
+                  });
+                }
+                if (limitN !== null) result = result.slice(0, limitN);
+                resolve({ data: result, error: null });
+              },
+            };
+            return chain;
+          },
         };
       }
       if (table === "agent_findings") {
@@ -198,13 +240,48 @@ function tavilyHits(q: string) {
 }
 
 // Mock the inference dispatcher — capture call args + return scripted text.
+// Three call types: score (maxTokens<=16), briefing (maxTokens>=400),
+// summarise (legacy, maxTokens~120 — dormant in v2). Default mock returns
+// valid v2 JSON for briefing so happy-path tests don't have to override
+// the mock just to satisfy briefing schema validation.
 let generateCalls: Array<{ messages: unknown; maxTokens?: number }> = [];
 let scriptedScores: number[] = [];
 let nextSummariseText = "Two-sentence summary about the topic. It mentions things.";
+
+function buildDefaultBriefingJsonV2(promptText: string): string {
+  // Extract dedupeKeys from the prompt's `id=...` lines so support keys
+  // actually reference items the briefing function will accept.
+  const keys = Array.from(promptText.matchAll(/id=(\S+)/g)).map((m) => m[1]);
+  const supportKeys = keys.slice(0, Math.min(3, keys.length));
+  return JSON.stringify({
+    version: 2,
+    kind: "research",
+    headline: "Test briefing (default mock).",
+    synthesis: "From this batch I kept some items; this is the default-mock briefing.",
+    memorableTakeaways:
+      supportKeys.length > 0
+        ? [
+            {
+              text: "Default-mock takeaway.",
+              supportSourceKeys: supportKeys,
+              provenance: "new",
+            },
+          ]
+        : [],
+    readFirst:
+      supportKeys.length > 0
+        ? [{ sourceKey: supportKeys[0], reason: "default mock pick", provenance: "new" }]
+        : [],
+    skipOrCollapse: [],
+    distinctIdeas: [],
+    nextSearchSuggestions: [],
+  });
+}
+
 vi.mock("@/server/inference", () => ({
   generate: vi.fn(async (req: any) => {
     generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
-    // Distinguish score (maxTokens=8) from summarise (maxTokens=120) calls.
+    // Score: maxTokens<=16.
     if (req.maxTokens && req.maxTokens <= 16) {
       const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
       return {
@@ -215,6 +292,22 @@ vi.mock("@/server/inference", () => ({
         outputTokens: 4,
       };
     }
+    // Briefing: maxTokens>=400. Return valid v2 JSON so most tests
+    // don't have to override the mock just to satisfy briefing validation.
+    if (req.maxTokens && req.maxTokens >= 400) {
+      const userMsg = (req.messages ?? []).find(
+        (m: { role: string; content: string }) => m.role === "user",
+      );
+      const promptText = (userMsg?.content as string) ?? "";
+      return {
+        text: buildDefaultBriefingJsonV2(promptText),
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 600,
+        outputTokens: 200,
+      };
+    }
+    // Summarise (legacy, dormant in v2 — kept for safety).
     return {
       text: nextSummariseText,
       provider: "groq",
@@ -422,27 +515,32 @@ describe("PR3b invariant: ResearchDigest runs through the generic runner unchang
     // 2 topics × 2 results each = 4 items considered, all kept.
     expect(run.items_fetched).toBe(4);
     expect(run.items_kept).toBe(4);
-    // 4 summarise hops + 1 briefing hop (post-2026-05-18 briefing layer).
-    expect(run.llm_hops).toBe(5);
-    // Cost: 4 summarise calls; each per pricing.ts at ~groq rates.
-    // Just verify it's positive and reasonable (< $0.01 for 4 small calls).
+    // v2 (docs/19+20, 2026-05-18): summarise() is now a no-op
+    // pass-through (no LLM call). The only LLM hop in the post-fetch
+    // pipeline is the single briefing call. ~16× cost reduction vs v1.
+    expect(run.llm_hops).toBe(1);
     expect(run.cost_usd).toBeGreaterThan(0);
     expect(run.cost_usd).toBeLessThan(0.01);
 
     // SearXNG was called once per topic.
     expect(searxngCalls).toEqual(["AI safety", "RLHF"]);
-    // generate() was called: 4× score + 4× summarise + 1× briefing
-    // (added 2026-05-18 per docs/18 follow-up) = 9 times total.
-    expect(generateCalls).toHaveLength(9);
+    // generate() was called: 4× score + 0× summarise (v2 no-op) + 1× briefing
+    // = 5 times total.
+    expect(generateCalls).toHaveLength(5);
 
-    // Findings persisted with the right shape.
+    // Findings persisted with the right shape. v2: summary is the Tavily
+    // snippet (not an LLM-generated paragraph). Per docs/20 §3 amendment:
+    // the snippet is the search provider's raw extract, preserves the
+    // "no per-source LLM paragraphs" principle; v2 inbox hides summary
+    // entirely so the user never sees it.
     expect(agentFindingsInserts).toHaveLength(4);
     const f = agentFindingsInserts[0];
     expect(f.title).toMatch(/article 1/);
-    expect(f.summary).toBe(nextSummariseText);
+    expect(f.summary).toMatch(/AI safety/); // the mock searxng snippet
     expect((f.payload as { url: string }).url).toMatch(/example\.test/);
     expect((f.payload as { matched_topic: string }).matched_topic).toBe("AI safety");
-    expect((f.payload as { provider: string }).provider).toBe("groq");
+    // v2: no provider/model in payload (no LLM call in summarise).
+    expect((f.payload as { snippet: string }).snippet).toMatch(/AI safety/);
     expect(f.score).toBe(0.9);
     expect(f.state).toBe("new");
   });
@@ -484,18 +582,17 @@ describe("PR3b invariant: ResearchDigest runs through the generic runner unchang
 // ─── PR3b.1: per-hop recordCost attribution ───────────────────────────────
 
 describe("PR3b.1: per-hop cost attribution via recordCost", () => {
-  it("ResearchDigest.summarise records one inference_usage row per item, tagged with the current run id", async () => {
+  it("ResearchDigest records one briefing inference_usage row, tagged with the current run id", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     vi.mocked(recordCost).mockResolvedValue(undefined);
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
-    // 4 items kept → 4 summarise recordCost calls + 1 briefing recordCost
-    // call (post-2026-05-18 briefing layer) = 5 total. Score-only LLM
-    // calls don't record cost yet; per-hop attribution is summarise +
-    // briefing surface only until other templates explicitly opt in.
-    expect(vi.mocked(recordCost)).toHaveBeenCalledTimes(5);
+    // v2 (docs/19+20, 2026-05-18): summarise() is a no-op, so only the
+    // briefing call records cost. Score-only LLM calls still don't
+    // record cost. Net: 1 recordCost call per non-empty run.
+    expect(vi.mocked(recordCost)).toHaveBeenCalledTimes(1);
 
     for (const call of vi.mocked(recordCost).mock.calls) {
       const args = call[0];
@@ -928,36 +1025,27 @@ describe("PR Tavily: ResearchDigest end-to-end via runSearch (provider-agnostic 
   });
 });
 
-// ─── PR after #21: ResearchDigest briefing layer ─────────────────────────
+// ─── ResearchDigest v2 (docs/19+20) ──────────────────────────────────────
 //
-// The runner calls template.briefing(keptItems, ctx) after the
-// summarise loop and persists the return value to agent_runs.briefing
-// (PR adds the column as nullable JSONB). ResearchDigest.briefing is
-// LLM-primary with a deterministic fallback — both shapes match the
-// Zod schema, so the inbox UI never sees garbage.
+// The v2 briefing-first architecture. Briefing becomes the product;
+// per-source summarise is removed; cross-run continuity via prior-briefing
+// fetch; visible failure briefings instead of silent fallback.
 //
-// The shared mock for @/server/inference's `generate` returns either a
-// score (numeric) when maxTokens <= 16 OR a summary string otherwise.
-// briefing() calls generate() with maxTokens=800, which falls through
-// to the summary-text mock and returns "Two-sentence summary..." — not
-// valid JSON. That covers the malformed-JSON-fallback test for free;
-// the happy-path test overrides the mock to return briefing JSON.
+// These tests cover Examples A / B / D / E from docs/20 §8 (Example C
+// is operational-verification only). The file-top vi.clearAllMocks()
+// clears calls but not impls — beforeEach in this block resets generate
+// and runSearch to file defaults so earlier overrides don't leak.
 
-import { researchDigest as researchDigestImport } from "@/server/agents/templates/research-digest";
-import { generate as generateImport } from "@/server/inference";
+import { researchDigest as researchDigestV2Import } from "@/server/agents/templates/research-digest";
+import { generate as generateImportV2 } from "@/server/inference";
+import { runSearch as runSearchImportV2 } from "@/lib/search.functions";
 
-describe("PR briefing: ResearchDigest.briefing layer", () => {
-  // The file-top `vi.clearAllMocks()` clears CALLS but not mock
-  // IMPLEMENTATIONS. Earlier tests in this file override the impls
-  // of generate / runSearch / recordCost in ways that would otherwise
-  // leak in here and break this block — runSearch ending in "all
-  // providers failed" makes fetch throw, runner catches as
-  // status='failed', and every test below sees 'failed' instead of
-  // its expected outcome. Reset all three to clean defaults.
+describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
+  // Reset generate / runSearch impls to file defaults before each test —
+  // PR3b / PR3b.1 / earlier blocks override these and the calls-only
+  // clear in beforeEach at file top doesn't reach impls.
   beforeEach(() => {
-    // generate: per-item score / summary canned response. Matches the
-    // file-top factory in vi.mock("@/server/inference", ...).
-    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
       generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
       if (req.maxTokens && req.maxTokens <= 16) {
         const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
@@ -977,9 +1065,7 @@ describe("PR briefing: ResearchDigest.briefing layer", () => {
         outputTokens: 60,
       };
     });
-    // runSearch: SearXNG-shaped canned hits (matches the file-top
-    // factory).
-    vi.mocked(runSearch).mockImplementation(async (q: string) => {
+    vi.mocked(runSearchImportV2).mockImplementation(async (q: string) => {
       searxngCalls.push(q);
       return {
         provider: "searxng" as const,
@@ -1001,47 +1087,63 @@ describe("PR briefing: ResearchDigest.briefing layer", () => {
         ],
       };
     });
-    // recordCost: resolved undefined (the default behavior expected by
-    // most tests — fail-open ledger writes).
     vi.mocked(recordCost).mockResolvedValue(undefined);
   });
 
-  it("happy path: LLM returns valid briefing JSON → persisted to agent_runs.briefing", async () => {
+  /**
+   * Example A — first-run happy path.
+   * Four sources, no prior briefing in DB. LLM returns valid v2 JSON.
+   * Expected: briefing persisted with version=2, kind=research, no delta
+   * (first run), all items provenance='new'.
+   */
+  it("Example A: first-run, valid LLM output → v2 briefing persisted with delta omitted", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.95, 0.85, 0.75, 0.6];
 
-    // Override generate: return briefing JSON for the post-summarise
-    // briefing call (maxTokens=800), keep the existing scored/summary
-    // behaviour for the per-item loop.
-    vi.mocked(generateImport).mockImplementation(async (req: any) => {
-      const isBriefing = req.maxTokens && req.maxTokens >= 400;
-      if (isBriefing) {
-        // The mock searxng helper yields 2 hits per topic × 2 topics = 4
-        // kept items. dedupeKey is the canonicalized URL — use the same
-        // URLs the mock returns so the LLM-output ids match.
-        const ids = [
-          "https://example.test/AI%20safety/1",
-          "https://example.test/AI%20safety/2",
-          "https://example.test/RLHF/1",
-          "https://example.test/RLHF/2",
-        ];
+    const sourceKeys = [
+      "https://example.test/AI%20safety/1",
+      "https://example.test/AI%20safety/2?id=keep",
+      "https://example.test/RLHF/1",
+      "https://example.test/RLHF/2?id=keep",
+    ];
+
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens >= 400) {
         return {
           text: JSON.stringify({
-            version: 1,
-            headline: "Four AI-safety items, two worth your time.",
+            version: 2,
+            kind: "research",
+            headline: "Today's batch covered four AI-safety pieces; two are worth your time.",
             synthesis:
-              "From this batch I kept four items. Two are expert background; two are introductory.",
-            topPicks: [
-              { findingId: ids[0], title: "AI safety — article 1", reason: "Most relevant" },
-              { findingId: ids[2], title: "RLHF — article 1", reason: "Direct on topic" },
+              "From this batch, two sources stood out on safety methodology. The other two repeat introductory material.",
+            memorableTakeaways: [
+              {
+                text: "Methodology specifics are emerging from two of these sources.",
+                supportSourceKeys: [sourceKeys[0], sourceKeys[2]],
+                provenance: "new",
+              },
+              {
+                text: "Two of the four pieces are introductory restatements.",
+                supportSourceKeys: [sourceKeys[1], sourceKeys[3]],
+                provenance: "new",
+              },
             ],
-            findingLabels: {
-              [ids[0]]: { priority: "read_first", sourceType: "expert" },
-              [ids[1]]: { priority: "background", sourceType: "encyclopedia" },
-              [ids[2]]: { priority: "read_first", sourceType: "expert" },
-              [ids[3]]: { priority: "useful", sourceType: "company" },
-            },
-            qualityNote: "From this batch I did not find any urgent new development.",
+            readFirst: [
+              {
+                sourceKey: sourceKeys[0],
+                reason: "Strongest methodology in the batch.",
+                provenance: "new",
+              },
+            ],
+            skipOrCollapse: [
+              {
+                reason: "Restates the basic definition.",
+                sourceKeys: [sourceKeys[1], sourceKeys[3]],
+              },
+            ],
+            distinctIdeas: [],
+            nextSearchSuggestions: ["Recent red-team results on frontier models"],
           }),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
@@ -1049,231 +1151,297 @@ describe("PR briefing: ResearchDigest.briefing layer", () => {
           outputTokens: 300,
         };
       }
-      // Default: per-item score or summary (lifted from the file's
-      // top-level generate mock).
-      if (req.maxTokens && req.maxTokens <= 16) {
-        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
-        return {
-          text: String(nextScore),
-          provider: "groq",
-          model: "llama-3.3-70b-versatile",
-          inputTokens: 80,
-          outputTokens: 4,
-        };
-      }
+      // Score branch.
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
       return {
-        text: nextSummariseText,
+        text: String(nextScore),
         provider: "groq",
         model: "llama-3.3-70b-versatile",
-        inputTokens: 90,
-        outputTokens: 60,
+        inputTokens: 80,
+        outputTokens: 4,
       };
     });
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
     expect(run.status).toBe("ok");
-    expect(run.items_kept).toBeGreaterThan(0);
+    expect(run.items_kept).toBe(4);
 
     const runRow = agentRunsRows[0];
     expect(runRow.briefing).toBeDefined();
     expect(runRow.briefing).not.toBeNull();
     const b = runRow.briefing as Record<string, unknown>;
-    expect(b.version).toBe(1);
-    expect(b.headline).toMatch(/AI-safety/);
-    expect(Array.isArray(b.topPicks)).toBe(true);
-    expect((b.topPicks as unknown[]).length).toBeGreaterThan(0);
-    expect(typeof b.findingLabels).toBe("object");
+    expect(b.version).toBe(2);
+    expect(b.kind).toBe("research");
+    expect(b.headline).toMatch(/AI-safety/i);
+    expect(typeof b.synthesis).toBe("string");
+    // First-run: delta omitted (no prior briefing existed).
+    expect(b.delta).toBeUndefined();
+    // All takeaways tagged 'new' on first run.
+    const takeaways = b.memorableTakeaways as Array<{ provenance: string }>;
+    expect(takeaways.length).toBeGreaterThan(0);
+    for (const t of takeaways) expect(t.provenance).toBe("new");
+    // readFirst populated.
+    const readFirst = b.readFirst as Array<{ sourceKey: string; provenance: string }>;
+    expect(readFirst.length).toBeGreaterThan(0);
+    expect(readFirst[0].provenance).toBe("new");
   });
 
-  it("malformed JSON → deterministic fallback persists, run still 'ok'", async () => {
-    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    scriptedScores = [0.9, 0.9, 0.9, 0.9];
-    // Default generate mock returns "Two-sentence summary..." for the
-    // briefing call too (maxTokens=800 doesn't match score branch but
-    // mock returns plain text, not JSON). extractFirstJson finds no
-    // valid JSON → ResearchDigest catches → fallback.
-
-    const run = await execute(makeResearchAgent(), pipelineDeps());
-
-    expect(run.status).toBe("ok");
-    const b = agentRunsRows[0].briefing as Record<string, unknown>;
-    expect(b).not.toBeNull();
-    expect(b.version).toBe(1);
-    // Deterministic headline format.
-    expect(b.headline).toMatch(/item\(s\) found/);
-    // qualityNote on deterministic explicitly flags the fallback.
-    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
-    expect(Array.isArray(b.topPicks)).toBe(true);
-  });
-
-  it("LLM throws → deterministic fallback persists, run still 'ok'", async () => {
+  /**
+   * Example B — cross-run continuity (briefing-as-delta).
+   * A prior v2 briefing exists for this agent in agent_runs. The current
+   * run's briefing should fetch it, include it in the prompt, and the
+   * LLM output includes a delta + at least one 'continuing' provenance.
+   */
+  it("Example B: cross-run continuity → fetches prior briefing, delta populated", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
-    let callCount = 0;
-    vi.mocked(generateImport).mockImplementation(async (req: any) => {
-      callCount++;
-      const isBriefing = req.maxTokens && req.maxTokens >= 400;
-      if (isBriefing) {
-        throw new Error("simulated LLM 503 'with quoted PII'");
-      }
-      if (req.maxTokens && req.maxTokens <= 16) {
-        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+    // Seed a prior v2 briefing row for this agent. Inserted directly into
+    // the mock's agentRunsRows so fetchPriorBriefingV2's select chain
+    // returns it.
+    agentRunsRows.push({
+      id: "prior-run-id",
+      agent_id: AGENT_ID,
+      user_id: USER,
+      started_at: new Date("2026-05-17T12:00:00Z").toISOString(),
+      briefing: {
+        version: 2,
+        kind: "research",
+        headline: "Last week was all explainer content.",
+        synthesis: "Sources defined red teaming; nothing new methodologically.",
+        memorableTakeaways: [
+          {
+            text: "Red teaming = simulated adversarial testing of LLMs.",
+            supportSourceKeys: ["prior-key-1"],
+            provenance: "new",
+          },
+        ],
+        readFirst: [],
+        skipOrCollapse: [],
+        distinctIdeas: [],
+        nextSearchSuggestions: [],
+      },
+    });
+
+    let priorIncludedInPrompt = false;
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens >= 400) {
+        // Verify the prior briefing was included in the prompt.
+        const userMsg = (req.messages ?? []).find(
+          (m: { role: string; content: string }) => m.role === "user",
+        );
+        if (userMsg && /Last week was all explainer content/.test(userMsg.content)) {
+          priorIncludedInPrompt = true;
+        }
+        const sourceKeys = [
+          "https://example.test/AI%20safety/1",
+          "https://example.test/AI%20safety/2?id=keep",
+          "https://example.test/RLHF/1",
+          "https://example.test/RLHF/2?id=keep",
+        ];
         return {
-          text: String(nextScore),
+          text: JSON.stringify({
+            version: 2,
+            kind: "research",
+            headline: "Two new methodology pieces appeared since last week.",
+            synthesis: "Continuing the explainer trend, but two new pieces add methodology specifics.",
+            delta: {
+              whatsNew: "Two new methodology pieces appeared this week.",
+              whatsContinuing: "Sources are still predominantly explainer-level.",
+            },
+            memorableTakeaways: [
+              {
+                text: "Red teaming = simulated adversarial testing.",
+                supportSourceKeys: [sourceKeys[0]],
+                provenance: "continuing",
+              },
+              {
+                text: "Two new methodology pieces detail attack vectors.",
+                supportSourceKeys: [sourceKeys[2], sourceKeys[3]],
+                provenance: "new",
+              },
+            ],
+            readFirst: [
+              {
+                sourceKey: sourceKeys[2],
+                reason: "Genuinely new methodology content.",
+                provenance: "new",
+              },
+            ],
+            skipOrCollapse: [],
+            distinctIdeas: [],
+            nextSearchSuggestions: [],
+          }),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
-          inputTokens: 80,
-          outputTokens: 4,
+          inputTokens: 800,
+          outputTokens: 350,
         };
       }
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
       return {
-        text: nextSummariseText,
+        text: String(nextScore),
         provider: "groq",
         model: "llama-3.3-70b-versatile",
-        inputTokens: 90,
-        outputTokens: 60,
+        inputTokens: 80,
+        outputTokens: 4,
       };
     });
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
     expect(run.status).toBe("ok");
-    // Briefing column is populated by the deterministic fallback even
-    // when the LLM threw — never null after a successful run with
-    // kept items.
-    const b = agentRunsRows[0].briefing as Record<string, unknown>;
-    expect(b).not.toBeNull();
-    expect(b.version).toBe(1);
-    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
-    // Briefing generate call happened (count includes per-item +
-    // briefing). callCount confirms the throwing call ran.
-    expect(callCount).toBeGreaterThan(0);
+
+    // Prior briefing made it into the prompt.
+    expect(priorIncludedInPrompt).toBe(true);
+
+    // New run's briefing has delta populated and mixed provenance.
+    const newRunRow = agentRunsRows.find((r) => r.id !== "prior-run-id");
+    expect(newRunRow).toBeDefined();
+    const b = newRunRow!.briefing as Record<string, unknown>;
+    expect(b.version).toBe(2);
+    expect(b.delta).toBeDefined();
+    expect((b.delta as { whatsNew?: string }).whatsNew).toMatch(/methodology/i);
+    const takeaways = b.memorableTakeaways as Array<{ provenance: string }>;
+    const provenances = new Set(takeaways.map((t) => t.provenance));
+    expect(provenances.has("continuing")).toBe(true);
+    expect(provenances.has("new")).toBe(true);
   });
 
-  it("Zod-invalid LLM output → deterministic fallback persists", async () => {
+  /**
+   * Example D — items_kept === 0 (empty-batch briefing).
+   * All sources scored below minScore. No LLM call for briefing; the
+   * template short-circuits and persists the locked empty-batch copy.
+   */
+  it("Example D: items_kept=0 → empty-batch briefing persisted, no briefing LLM call", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    scriptedScores = [0.9, 0.9, 0.9, 0.9];
-
-    vi.mocked(generateImport).mockImplementation(async (req: any) => {
-      const isBriefing = req.maxTokens && req.maxTokens >= 400;
-      if (isBriefing) {
-        // Valid JSON but missing required fields (no version, no headline).
-        return {
-          text: JSON.stringify({ random_field: "not a briefing" }),
-          provider: "groq",
-          model: "llama-3.3-70b-versatile",
-          inputTokens: 600,
-          outputTokens: 50,
-        };
-      }
-      if (req.maxTokens && req.maxTokens <= 16) {
-        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
-        return {
-          text: String(nextScore),
-          provider: "groq",
-          model: "llama-3.3-70b-versatile",
-          inputTokens: 80,
-          outputTokens: 4,
-        };
-      }
-      return {
-        text: nextSummariseText,
-        provider: "groq",
-        model: "llama-3.3-70b-versatile",
-        inputTokens: 90,
-        outputTokens: 60,
-      };
-    });
-
-    const run = await execute(makeResearchAgent(), pipelineDeps());
-
-    expect(run.status).toBe("ok");
-    const b = agentRunsRows[0].briefing as Record<string, unknown>;
-    expect(b).not.toBeNull();
-    expect(b.version).toBe(1);
-    // Deterministic fallback because Zod parse failed on the invalid shape.
-    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
-  });
-
-  it("runner: template.briefing throwing does NOT fail the run (column stays NULL)", async () => {
-    // Sneha's hard constraint: "Briefing failure should not fail the run."
-    // ResearchDigest's own briefing() always succeeds via the
-    // deterministic fallback — to exercise the runner's safety net, spy
-    // on the template and force it to throw.
-    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    scriptedScores = [0.9, 0.9, 0.9, 0.9];
-    const briefingSpy = vi
-      .spyOn(researchDigestImport, "briefing")
-      .mockRejectedValue(new Error("simulated 'quoted PII' briefing crash"));
-
-    const run = await execute(makeResearchAgent(), pipelineDeps());
-
-    expect(run.status).toBe("ok");
-    expect(run.items_kept).toBeGreaterThan(0);
-    // Column stays NULL when briefing throws — inbox UI degrades to
-    // pre-briefing display (just findings, no briefing block).
-    expect(agentRunsRows[0].briefing).toBeNull();
-    // The throw was attempted (spy was called).
-    expect(briefingSpy).toHaveBeenCalled();
-    briefingSpy.mockRestore();
-  });
-
-  it("runner: kept_items=0 → briefing never called, column stays NULL", async () => {
-    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    // All items score below minScore=0.5 → 0 kept.
-    scriptedScores = [0.1, 0.1, 0.1, 0.1];
-    const briefingSpy = vi.spyOn(researchDigestImport, "briefing");
+    scriptedScores = [0.1, 0.1, 0.1, 0.1]; // all below 0.5 floor
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
     expect(run.status).toBe("ok");
     expect(run.items_kept).toBe(0);
-    expect(briefingSpy).not.toHaveBeenCalled();
-    expect(agentRunsRows[0].briefing).toBeNull();
-    briefingSpy.mockRestore();
+
+    const runRow = agentRunsRows[0];
+    expect(runRow.briefing).toBeDefined();
+    expect(runRow.briefing).not.toBeNull();
+    const b = runRow.briefing as Record<string, unknown>;
+    expect(b.version).toBe(2);
+    expect(b.kind).toBe("research");
+    expect(b.headline).toMatch(/nothing worth keeping/i);
+    expect(b.synthesis).toMatch(/narrowing the topic|changing the search angle/i);
+    expect(b.memorableTakeaways).toEqual([]);
+    expect(b.readFirst).toEqual([]);
+
+    // No briefing LLM call — only score calls were made.
+    const briefingCallCount = generateCalls.filter(
+      (c) => (c.maxTokens ?? 0) >= 400,
+    ).length;
+    expect(briefingCallCount).toBe(0);
   });
 
-  // Epistemic-discipline guard (Sneha review feedback, PR #22):
-  // the briefing prompt must instruct the LLM to (a) scope absence
-  // claims to "this batch" not "the world", and (b) avoid absolute
-  // superiority claims ("definitive best"). Without these rules the
-  // LLM cheerfully outputs "There were no urgent developments" or
-  // "This is the definitive best source", which is exactly the
-  // anti-pattern the PR is supposed to fix. A prompt-substring check
-  // is intentionally crude — it just ensures the guidance survives
-  // any future prompt refactor. (Behavioural verification of LLM
-  // output style is out of scope for unit tests; that's eval territory.)
-  it("briefing prompt includes epistemic-hedge guidance (no broad absence / no definitive claims)", async () => {
+  /**
+   * Example E — visible failure briefing on chain-exhausted.
+   * Briefing LLM throws (with one retry). Failure briefing persisted with
+   * human-voice copy. Run still finishes status='ok' (briefing failure
+   * does NOT fail the run per docs/19 §3).
+   */
+  it("Example E: LLM chain exhausted → human-voice failure briefing persisted", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
-    let briefingPromptSeen: string | null = null;
-    vi.mocked(generateImport).mockImplementation(async (req: any) => {
-      // Briefing hop = maxTokens >= 400 (summarise is 256, score is 16).
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
       if (req.maxTokens && req.maxTokens >= 400) {
-        // Capture the user-role prompt for assertion. Template uses a
-        // single user message — grab whatever's there.
-        const userMsg = (req.messages ?? []).find(
-          (m: { role: string; content: string }) => m.role === "user",
-        );
-        briefingPromptSeen = userMsg?.content ?? "";
-        // Return well-formed JSON so the run completes 'ok' and we
-        // don't accidentally trigger the fallback path (which doesn't
-        // exercise the prompt at all).
+        // Briefing call throws every attempt — both the initial and
+        // the retry.
+        throw Object.assign(new Error("simulated chain exhausted"), {
+          errorClass: "chain_exhausted",
+        });
+      }
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+      return {
+        text: String(nextScore),
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 80,
+        outputTokens: 4,
+      };
+    });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    // Run still completes ok — briefing failure doesn't fail the run.
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBe(4);
+
+    const runRow = agentRunsRows[0];
+    expect(runRow.briefing).toBeDefined();
+    const b = runRow.briefing as Record<string, unknown>;
+    expect(b.version).toBe(2);
+    expect(b.kind).toBe("research");
+    // Human-voice copy from FAILURE_COPY.chain_exhausted. No HTTP codes,
+    // no "errorClass" leakage. Per docs/19 §10.4.
+    expect(b.headline).toMatch(/couldn'?t complete this check/i);
+    expect(b.headline).toMatch(/LLM providers were available/i);
+    expect(b.headline).not.toMatch(/\b429\b|HTTP|chain_exhausted/i);
+    expect(b.synthesis).not.toMatch(/\b429\b|HTTP|errorClass/i);
+    // Failure briefings have empty content arrays.
+    expect(b.memorableTakeaways).toEqual([]);
+    expect(b.readFirst).toEqual([]);
+    // No qualityNote on failure (per docs/20 §6).
+    expect(b.qualityNote).toBeUndefined();
+
+    consoleSpy.mockRestore();
+  });
+
+  /**
+   * Negative test: invalid sourceKey references are stripped, not fatal.
+   * LLM hallucinates a sourceKey that doesn't exist among the kept items.
+   * Briefing strips that reference but still persists the rest of the
+   * valid content (rather than treating as malformed).
+   */
+  it("invalid sourceKeys are stripped; surviving content persists", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    const validKey = "https://example.test/AI%20safety/1";
+
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens >= 400) {
         return {
           text: JSON.stringify({
-            version: 1,
-            headline: "Test briefing.",
+            version: 2,
+            kind: "research",
+            headline: "Test briefing with mixed valid/invalid keys.",
             synthesis: "From this batch I kept four items.",
-            topPicks: [],
-            findingLabels: {
-              "https://example.test/AI%20safety/1": { priority: "useful", sourceType: "other" },
-              "https://example.test/AI%20safety/2": { priority: "useful", sourceType: "other" },
-              "https://example.test/RLHF/1": { priority: "useful", sourceType: "other" },
-              "https://example.test/RLHF/2": { priority: "useful", sourceType: "other" },
-            },
+            memorableTakeaways: [
+              {
+                text: "Valid takeaway.",
+                supportSourceKeys: [validKey, "hallucinated-key-not-in-batch"],
+                provenance: "new",
+              },
+              {
+                text: "Takeaway with only hallucinated support.",
+                supportSourceKeys: ["another-hallucinated-key"],
+                provenance: "new",
+              },
+            ],
+            readFirst: [
+              { sourceKey: validKey, reason: "valid pick", provenance: "new" },
+              {
+                sourceKey: "totally-fake-key",
+                reason: "should be stripped",
+                provenance: "new",
+              },
+            ],
+            skipOrCollapse: [],
+            distinctIdeas: [],
+            nextSearchSuggestions: [],
           }),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
@@ -1281,72 +1449,31 @@ describe("PR briefing: ResearchDigest.briefing layer", () => {
           outputTokens: 200,
         };
       }
-      if (req.maxTokens && req.maxTokens <= 16) {
-        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
-        return {
-          text: String(nextScore),
-          provider: "groq",
-          model: "llama-3.3-70b-versatile",
-          inputTokens: 80,
-          outputTokens: 4,
-        };
-      }
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
       return {
-        text: nextSummariseText,
+        text: String(nextScore),
         provider: "groq",
         model: "llama-3.3-70b-versatile",
-        inputTokens: 90,
-        outputTokens: 60,
+        inputTokens: 80,
+        outputTokens: 4,
       };
     });
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
+
     expect(run.status).toBe("ok");
-
-    // The briefing prompt was actually built and sent.
-    expect(briefingPromptSeen).not.toBeNull();
-    const prompt = briefingPromptSeen as unknown as string;
-
-    // (a) Batch-bounded absence framing — anti-"There is no X".
-    expect(prompt).toMatch(/from this batch, i did not find/i);
-    // Allow any punctuation inside the quoted exemplar ("There is no X." vs "There is no X").
-    expect(prompt).toMatch(/never\s+"there is no x[.!]?"/i);
-
-    // (b) No broad absence claims about the world.
-    expect(prompt).toMatch(/never make broad absence claims about the world/i);
-
-    // (c) No absolute superiority claims — anti-"definitive best".
-    expect(prompt).toMatch(/never claim a finding is the definitive/i);
-
-    // (d) Both BAD/GOOD exemplars present, so the LLM has a concrete
-    // pattern to anchor against (not just an abstract rule).
-    expect(prompt.toLowerCase()).toContain("bad:");
-    expect(prompt.toLowerCase()).toContain("good:");
-  });
-
-  // Deterministic-fallback hedging: the fallback synthesis is what
-  // ships to the inbox when the LLM is unavailable. It MUST be
-  // batch-scoped and MUST disclose itself as a fallback. (The shape
-  // is already locked by Zod; this guards the *wording*.)
-  it("deterministic fallback synthesis is batch-scoped and discloses fallback status", async () => {
-    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    scriptedScores = [0.9, 0.9, 0.9, 0.9];
-    // generate() default returns plain text → extractFirstJson fails →
-    // fallback runs. (Same trigger as "malformed JSON" test.)
-
-    const run = await execute(makeResearchAgent(), pipelineDeps());
-    expect(run.status).toBe("ok");
-
     const b = agentRunsRows[0].briefing as Record<string, unknown>;
-    const synthesis = String(b.synthesis ?? "");
-    const qualityNote = String(b.qualityNote ?? "");
-
-    // Batch-scoped — never says "the world" / "there is no" / unconditional claims.
-    expect(synthesis.toLowerCase()).toContain("from this batch");
-    expect(synthesis.toLowerCase()).not.toMatch(/there (is|are|was|were) no\b/);
-    expect(synthesis.toLowerCase()).not.toMatch(/\bdefinitive\b/);
-
-    // Disclosure that this is the fallback path (no false confidence).
-    expect(qualityNote.toLowerCase()).toContain("fallback");
+    // First takeaway: keeps only the valid sourceKey.
+    const takeaways = b.memorableTakeaways as Array<{
+      text: string;
+      supportSourceKeys: string[];
+    }>;
+    expect(takeaways).toHaveLength(1);
+    expect(takeaways[0].text).toBe("Valid takeaway.");
+    expect(takeaways[0].supportSourceKeys).toEqual([validKey]);
+    // readFirst: only the valid pick survives.
+    const readFirst = b.readFirst as Array<{ sourceKey: string }>;
+    expect(readFirst).toHaveLength(1);
+    expect(readFirst[0].sourceKey).toBe(validKey);
   });
 });
