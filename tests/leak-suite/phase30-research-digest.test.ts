@@ -422,7 +422,8 @@ describe("PR3b invariant: ResearchDigest runs through the generic runner unchang
     // 2 topics × 2 results each = 4 items considered, all kept.
     expect(run.items_fetched).toBe(4);
     expect(run.items_kept).toBe(4);
-    expect(run.llm_hops).toBe(4); // 4 summarise calls
+    // 4 summarise hops + 1 briefing hop (post-2026-05-18 briefing layer).
+    expect(run.llm_hops).toBe(5);
     // Cost: 4 summarise calls; each per pricing.ts at ~groq rates.
     // Just verify it's positive and reasonable (< $0.01 for 4 small calls).
     expect(run.cost_usd).toBeGreaterThan(0);
@@ -430,8 +431,9 @@ describe("PR3b invariant: ResearchDigest runs through the generic runner unchang
 
     // SearXNG was called once per topic.
     expect(searxngCalls).toEqual(["AI safety", "RLHF"]);
-    // generate() was called: 4× score + 4× summarise = 8 times total.
-    expect(generateCalls).toHaveLength(8);
+    // generate() was called: 4× score + 4× summarise + 1× briefing
+    // (added 2026-05-18 per docs/18 follow-up) = 9 times total.
+    expect(generateCalls).toHaveLength(9);
 
     // Findings persisted with the right shape.
     expect(agentFindingsInserts).toHaveLength(4);
@@ -489,10 +491,11 @@ describe("PR3b.1: per-hop cost attribution via recordCost", () => {
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
-    // 4 items kept → 4 recordCost calls. (Score-only LLM calls don't
-    // record cost yet; only summarise does in 3.0. Per-hop attribution
-    // is summarise-only until templates explicitly opt in.)
-    expect(vi.mocked(recordCost)).toHaveBeenCalledTimes(4);
+    // 4 items kept → 4 summarise recordCost calls + 1 briefing recordCost
+    // call (post-2026-05-18 briefing layer) = 5 total. Score-only LLM
+    // calls don't record cost yet; per-hop attribution is summarise +
+    // briefing surface only until other templates explicitly opt in.
+    expect(vi.mocked(recordCost)).toHaveBeenCalledTimes(5);
 
     for (const call of vi.mocked(recordCost).mock.calls) {
       const args = call[0];
@@ -922,5 +925,313 @@ describe("PR Tavily: ResearchDigest end-to-end via runSearch (provider-agnostic 
     expect(run.items_fetched).toBeGreaterThan(0);
     expect(run.items_kept).toBeGreaterThan(0);
     expect(run.error).toBeNull();
+  });
+});
+
+// ─── PR after #21: ResearchDigest briefing layer ─────────────────────────
+//
+// The runner calls template.briefing(keptItems, ctx) after the
+// summarise loop and persists the return value to agent_runs.briefing
+// (PR adds the column as nullable JSONB). ResearchDigest.briefing is
+// LLM-primary with a deterministic fallback — both shapes match the
+// Zod schema, so the inbox UI never sees garbage.
+//
+// The shared mock for @/server/inference's `generate` returns either a
+// score (numeric) when maxTokens <= 16 OR a summary string otherwise.
+// briefing() calls generate() with maxTokens=800, which falls through
+// to the summary-text mock and returns "Two-sentence summary..." — not
+// valid JSON. That covers the malformed-JSON-fallback test for free;
+// the happy-path test overrides the mock to return briefing JSON.
+
+import { researchDigest as researchDigestImport } from "@/server/agents/templates/research-digest";
+import { generate as generateImport } from "@/server/inference";
+
+describe("PR briefing: ResearchDigest.briefing layer", () => {
+  // The file-top `vi.clearAllMocks()` clears CALLS but not mock
+  // IMPLEMENTATIONS. Earlier tests in this file override the impls
+  // of generate / runSearch / recordCost in ways that would otherwise
+  // leak in here and break this block — runSearch ending in "all
+  // providers failed" makes fetch throw, runner catches as
+  // status='failed', and every test below sees 'failed' instead of
+  // its expected outcome. Reset all three to clean defaults.
+  beforeEach(() => {
+    // generate: per-item score / summary canned response. Matches the
+    // file-top factory in vi.mock("@/server/inference", ...).
+    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens <= 16) {
+        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+        return {
+          text: String(nextScore),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 80,
+          outputTokens: 4,
+        };
+      }
+      return {
+        text: nextSummariseText,
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 90,
+        outputTokens: 60,
+      };
+    });
+    // runSearch: SearXNG-shaped canned hits (matches the file-top
+    // factory).
+    vi.mocked(runSearch).mockImplementation(async (q: string) => {
+      searxngCalls.push(q);
+      return {
+        provider: "searxng" as const,
+        instance: "https://test.searxng.example",
+        lastError: null,
+        results: [
+          {
+            title: `${q} — article 1`,
+            url: `https://example.test/${encodeURIComponent(q)}/1`,
+            snippet: `Snippet about ${q}`,
+            engine: "duckduckgo",
+          },
+          {
+            title: `${q} — article 2`,
+            url: `https://example.test/${encodeURIComponent(q)}/2?utm_source=test&id=keep`,
+            snippet: `Another snippet about ${q}`,
+            engine: "google",
+          },
+        ],
+      };
+    });
+    // recordCost: resolved undefined (the default behavior expected by
+    // most tests — fail-open ledger writes).
+    vi.mocked(recordCost).mockResolvedValue(undefined);
+  });
+
+  it("happy path: LLM returns valid briefing JSON → persisted to agent_runs.briefing", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.95, 0.85, 0.75, 0.6];
+
+    // Override generate: return briefing JSON for the post-summarise
+    // briefing call (maxTokens=800), keep the existing scored/summary
+    // behaviour for the per-item loop.
+    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+      const isBriefing = req.maxTokens && req.maxTokens >= 400;
+      if (isBriefing) {
+        // The mock searxng helper yields 2 hits per topic × 2 topics = 4
+        // kept items. dedupeKey is the canonicalized URL — use the same
+        // URLs the mock returns so the LLM-output ids match.
+        const ids = [
+          "https://example.test/AI%20safety/1",
+          "https://example.test/AI%20safety/2",
+          "https://example.test/RLHF/1",
+          "https://example.test/RLHF/2",
+        ];
+        return {
+          text: JSON.stringify({
+            version: 1,
+            headline: "Four AI-safety items, two worth your time.",
+            synthesis:
+              "From this batch I kept four items. Two are expert background; two are introductory.",
+            topPicks: [
+              { findingId: ids[0], title: "AI safety — article 1", reason: "Most relevant" },
+              { findingId: ids[2], title: "RLHF — article 1", reason: "Direct on topic" },
+            ],
+            findingLabels: {
+              [ids[0]]: { priority: "read_first", sourceType: "expert" },
+              [ids[1]]: { priority: "background", sourceType: "encyclopedia" },
+              [ids[2]]: { priority: "read_first", sourceType: "expert" },
+              [ids[3]]: { priority: "useful", sourceType: "company" },
+            },
+            qualityNote: "From this batch I did not find any urgent new development.",
+          }),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 300,
+        };
+      }
+      // Default: per-item score or summary (lifted from the file's
+      // top-level generate mock).
+      if (req.maxTokens && req.maxTokens <= 16) {
+        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+        return {
+          text: String(nextScore),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 80,
+          outputTokens: 4,
+        };
+      }
+      return {
+        text: nextSummariseText,
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 90,
+        outputTokens: 60,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBeGreaterThan(0);
+
+    const runRow = agentRunsRows[0];
+    expect(runRow.briefing).toBeDefined();
+    expect(runRow.briefing).not.toBeNull();
+    const b = runRow.briefing as Record<string, unknown>;
+    expect(b.version).toBe(1);
+    expect(b.headline).toMatch(/AI-safety/);
+    expect(Array.isArray(b.topPicks)).toBe(true);
+    expect((b.topPicks as unknown[]).length).toBeGreaterThan(0);
+    expect(typeof b.findingLabels).toBe("object");
+  });
+
+  it("malformed JSON → deterministic fallback persists, run still 'ok'", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+    // Default generate mock returns "Two-sentence summary..." for the
+    // briefing call too (maxTokens=800 doesn't match score branch but
+    // mock returns plain text, not JSON). extractFirstJson finds no
+    // valid JSON → ResearchDigest catches → fallback.
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    const b = agentRunsRows[0].briefing as Record<string, unknown>;
+    expect(b).not.toBeNull();
+    expect(b.version).toBe(1);
+    // Deterministic headline format.
+    expect(b.headline).toMatch(/item\(s\) found/);
+    // qualityNote on deterministic explicitly flags the fallback.
+    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
+    expect(Array.isArray(b.topPicks)).toBe(true);
+  });
+
+  it("LLM throws → deterministic fallback persists, run still 'ok'", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    let callCount = 0;
+    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+      callCount++;
+      const isBriefing = req.maxTokens && req.maxTokens >= 400;
+      if (isBriefing) {
+        throw new Error("simulated LLM 503 'with quoted PII'");
+      }
+      if (req.maxTokens && req.maxTokens <= 16) {
+        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+        return {
+          text: String(nextScore),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 80,
+          outputTokens: 4,
+        };
+      }
+      return {
+        text: nextSummariseText,
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 90,
+        outputTokens: 60,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    // Briefing column is populated by the deterministic fallback even
+    // when the LLM threw — never null after a successful run with
+    // kept items.
+    const b = agentRunsRows[0].briefing as Record<string, unknown>;
+    expect(b).not.toBeNull();
+    expect(b.version).toBe(1);
+    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
+    // Briefing generate call happened (count includes per-item +
+    // briefing). callCount confirms the throwing call ran.
+    expect(callCount).toBeGreaterThan(0);
+  });
+
+  it("Zod-invalid LLM output → deterministic fallback persists", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    vi.mocked(generateImport).mockImplementation(async (req: any) => {
+      const isBriefing = req.maxTokens && req.maxTokens >= 400;
+      if (isBriefing) {
+        // Valid JSON but missing required fields (no version, no headline).
+        return {
+          text: JSON.stringify({ random_field: "not a briefing" }),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 50,
+        };
+      }
+      if (req.maxTokens && req.maxTokens <= 16) {
+        const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+        return {
+          text: String(nextScore),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 80,
+          outputTokens: 4,
+        };
+      }
+      return {
+        text: nextSummariseText,
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 90,
+        outputTokens: 60,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    const b = agentRunsRows[0].briefing as Record<string, unknown>;
+    expect(b).not.toBeNull();
+    expect(b.version).toBe(1);
+    // Deterministic fallback because Zod parse failed on the invalid shape.
+    expect(String(b.qualityNote)).toMatch(/fallback briefing/i);
+  });
+
+  it("runner: template.briefing throwing does NOT fail the run (column stays NULL)", async () => {
+    // Sneha's hard constraint: "Briefing failure should not fail the run."
+    // ResearchDigest's own briefing() always succeeds via the
+    // deterministic fallback — to exercise the runner's safety net, spy
+    // on the template and force it to throw.
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+    const briefingSpy = vi
+      .spyOn(researchDigestImport, "briefing")
+      .mockRejectedValue(new Error("simulated 'quoted PII' briefing crash"));
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBeGreaterThan(0);
+    // Column stays NULL when briefing throws — inbox UI degrades to
+    // pre-briefing display (just findings, no briefing block).
+    expect(agentRunsRows[0].briefing).toBeNull();
+    // The throw was attempted (spy was called).
+    expect(briefingSpy).toHaveBeenCalled();
+    briefingSpy.mockRestore();
+  });
+
+  it("runner: kept_items=0 → briefing never called, column stays NULL", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    // All items score below minScore=0.5 → 0 kept.
+    scriptedScores = [0.1, 0.1, 0.1, 0.1];
+    const briefingSpy = vi.spyOn(researchDigestImport, "briefing");
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+
+    expect(run.status).toBe("ok");
+    expect(run.items_kept).toBe(0);
+    expect(briefingSpy).not.toHaveBeenCalled();
+    expect(agentRunsRows[0].briefing).toBeNull();
+    briefingSpy.mockRestore();
   });
 });

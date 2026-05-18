@@ -27,6 +27,8 @@ import { recordCost } from "../budget";
 import { scrubErrorMessage } from "../error-scrub";
 import type {
   AgentTemplate,
+  BriefingKeptItem,
+  BriefingResult,
   FindingDraft,
   TemplateCallContext,
 } from "../types";
@@ -158,6 +160,210 @@ export function parseScoreReply(reply: string): number {
 }
 
 // ─── The template ─────────────────────────────────────────────────────────
+
+// ─── Briefing layer (added 2026-05-18 per docs/18 follow-up) ──────────────
+//
+// The runner calls `template.briefing()` after the summarise loop. We
+// synthesize a small JSON object the inbox renders ABOVE the finding
+// cards so the experience stops looking like a search-results page and
+// starts feeling agentic.
+//
+// LLM-primary with deterministic fallback. The LLM gets only the bounded
+// per-item summary the template already produced; no raw provider output
+// is in the prompt. If the LLM call fails OR the response fails Zod
+// validation, fall through to a minimal deterministic briefing (top-3-
+// by-score + URL-heuristic source-type labels) so the inbox always has
+// SOMETHING to show.
+//
+// Per Sneha's product rule: phrase observations about what's MISSING
+// from this batch as "From this batch, I did not find X" — never
+// "There is no X" (the agent only sees this batch).
+
+const BRIEFING_PRIORITIES = [
+  "read_first",
+  "useful",
+  "background",
+  "low_priority",
+] as const;
+const BRIEFING_SOURCE_TYPES = [
+  "expert",
+  "company",
+  "directory",
+  "opinion",
+  "encyclopedia",
+  "other",
+] as const;
+
+export const ResearchDigestBriefingSchema = z.object({
+  /** Shape version. Bump when the schema changes; older runs stay readable. */
+  version: z.literal(1),
+  /** One-line opinionated framing. ≤ 140 chars. */
+  headline: z.string().min(1).max(280),
+  /** One paragraph synthesizing the batch. ≤ ~600 chars. */
+  synthesis: z.string().min(1).max(1200),
+  /** Top 2–3 picks the user should read first, with a reason each. */
+  topPicks: z
+    .array(
+      z.object({
+        findingId: z.string().min(1),
+        title: z.string().min(1).max(400),
+        reason: z.string().min(1).max(400),
+      }),
+    )
+    .min(0)
+    .max(5),
+  /** Per-finding labels keyed by the same id used in `topPicks`. */
+  findingLabels: z.record(
+    z.string(),
+    z.object({
+      priority: z.enum(BRIEFING_PRIORITIES),
+      sourceType: z.enum(BRIEFING_SOURCE_TYPES),
+      reason: z.string().min(1).max(400).optional(),
+    }),
+  ),
+  /** Optional caveat — "this batch is broad/introductory" etc. */
+  qualityNote: z.string().min(1).max(600).optional(),
+});
+
+export type ResearchDigestBriefing = z.infer<typeof ResearchDigestBriefingSchema>;
+
+/**
+ * URL-heuristic source type. Cheap, deterministic, fallback-only.
+ * The LLM is expected to do better; this is what we ship when the LLM
+ * is unavailable or returns garbage.
+ */
+function classifySourceTypeFromUrl(
+  url: string | null,
+): (typeof BRIEFING_SOURCE_TYPES)[number] {
+  if (!url) return "other";
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    if (host.endsWith("wikipedia.org")) return "encyclopedia";
+    if (host.endsWith(".gov") || host.endsWith(".edu")) return "expert";
+    if (host === "reddit.com" || host.endsWith(".reddit.com")) return "opinion";
+    if (host.endsWith("medium.com") || host.endsWith("substack.com")) return "opinion";
+    // Naive directory detection — search-y aggregator hosts.
+    if (host.includes("awesome-") || host.includes("/list/")) return "directory";
+    // Anything else with a clear corporate TLD-ish footprint. We
+    // intentionally err on "other" rather than mis-tagging things as
+    // "company"; the LLM will do better when it's available.
+    return "other";
+  } catch {
+    return "other";
+  }
+}
+
+function deterministicBriefing(
+  keptItems: BriefingKeptItem[],
+  topics: string[],
+): ResearchDigestBriefing {
+  const sorted = [...keptItems].sort((a, b) => b.score - a.score);
+  const top = sorted.slice(0, Math.min(3, sorted.length));
+  const findingLabels: ResearchDigestBriefing["findingLabels"] = {};
+  for (const it of keptItems) {
+    findingLabels[it.dedupeKey] = {
+      priority: top.includes(it) ? "read_first" : "useful",
+      sourceType: classifySourceTypeFromUrl(it.url),
+    };
+  }
+  const topicsLabel = topics.length === 1 ? topics[0] : `${topics.length} topic(s)`;
+  return {
+    version: 1,
+    headline: `${keptItems.length} item(s) found for ${topicsLabel}.`,
+    synthesis:
+      keptItems.length > 0
+        ? `From this batch I kept ${keptItems.length} item(s) after scoring. ` +
+          `Top picks are ranked by relevance score; this is the deterministic ` +
+          `fallback summary (full briefing was unavailable).`
+        : `From this batch I did not find any items above the relevance threshold.`,
+    topPicks: top.map((t) => ({
+      findingId: t.dedupeKey,
+      title: t.title,
+      reason: `Highest relevance score in this batch (${t.score.toFixed(2)}).`,
+    })),
+    findingLabels,
+    qualityNote:
+      "This is a fallback briefing (LLM synthesis was unavailable). Priorities are derived from score only.",
+  };
+}
+
+function briefingPrompt(
+  keptItems: BriefingKeptItem[],
+  topics: string[],
+): string {
+  // Bounded input: only the kept items' title/url/summary/score. No raw
+  // provider output, no broker fragments. Topic names are config-trust
+  // (same level as display_name).
+  const itemBlock = keptItems
+    .map((it, i) =>
+      [
+        `[${i + 1}] id=${it.dedupeKey}`,
+        `    title: ${it.title}`,
+        `    url: ${it.url ?? "(no url)"}`,
+        `    score: ${it.score.toFixed(2)}`,
+        `    summary: ${it.summary ?? "(no summary)"}`,
+      ].join("\n"),
+    )
+    .join("\n\n");
+
+  return [
+    `You are summarising a daily research digest for a user.`,
+    `Topics: ${topics.join(", ")}.`,
+    `You have ${keptItems.length} kept items below.`,
+    ``,
+    `Output a JSON object EXACTLY matching this schema (no markdown, no prose):`,
+    `{`,
+    `  "version": 1,`,
+    `  "headline": "one-line opinionated framing, <= 140 chars",`,
+    `  "synthesis": "one paragraph, <= 600 chars, opinionated",`,
+    `  "topPicks": [ { "findingId": "<id from below>", "title": "...", "reason": "why read this" } ],`,
+    `  "findingLabels": { "<id>": { "priority": "read_first" | "useful" | "background" | "low_priority", "sourceType": "expert" | "company" | "directory" | "opinion" | "encyclopedia" | "other", "reason": "(optional)" } },`,
+    `  "qualityNote": "(optional caveat about this batch)"`,
+    `}`,
+    ``,
+    `Rules:`,
+    `- topPicks should include 2-3 items max (the most useful ones), in priority order.`,
+    `- Cover EVERY id below in findingLabels.`,
+    `- Phrase observations about what's missing as "From this batch, I did not find X." NEVER "There is no X." You only see this batch.`,
+    `- Be opinionated. Don't just describe — say which items matter and why.`,
+    `- Mark company-owned PR pages as sourceType="company".`,
+    `- Mark Wikipedia as "encyclopedia". Reddit/Medium/Substack as "opinion".`,
+    ``,
+    `Items:`,
+    itemBlock,
+    ``,
+    `Return ONLY the JSON object. No prose before or after.`,
+  ].join("\n");
+}
+
+/**
+ * Extract the first balanced JSON object from a free-form string.
+ * LLMs sometimes wrap output in markdown fences or add a sentence; this
+ * pulls out the `{...}` body even if there's chatter around it.
+ */
+function extractFirstJson(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString: '"' | null = null;
+  let escape = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === inString) inString = null;
+    } else if (c === '"') {
+      inString = c;
+    } else if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
 
 export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> = {
   id: "research_digest",
@@ -333,6 +539,103 @@ export const researchDigest: AgentTemplate<ResearchDigestConfig, ResearchItem> =
       },
       urgency: "normal",
       _llmHops: 1,
+      _costMicroUsd: microCost,
+    };
+  },
+
+  async briefing(
+    keptItems: BriefingKeptItem[],
+    { config, run }: TemplateCallContext<ResearchDigestConfig>,
+  ): Promise<BriefingResult | null> {
+    // LLM-primary. On any failure mode (request error, malformed JSON,
+    // Zod validation failure), fall through to the deterministic
+    // briefing. The fallback is BETTER than nothing and ships enough
+    // shape that the inbox UI never has to special-case absent fields.
+    const startedAt = Date.now();
+
+    let parsed: ResearchDigestBriefing | null = null;
+    // Match summarise's typing: provider stays a plain string; cast to
+    // ProviderId only at the pricingCostMicroUsd call which is the one
+    // place it's strongly typed.
+    let providerForCost: string | null = null;
+    let inputTokens: number | undefined;
+    let outputTokens: number | undefined;
+    let modelUsed: string | null = null;
+
+    try {
+      const result = await generate({
+        messages: [
+          { role: "user", content: briefingPrompt(keptItems, config.topics) },
+        ],
+        // Briefing JSON is small. 800 tokens is enough headroom for
+        // headline + synthesis + 3 topPicks + ~10 findingLabels.
+        maxTokens: 800,
+        temperature: 0.4,
+      });
+      providerForCost = result.provider;
+      inputTokens = result.inputTokens;
+      outputTokens = result.outputTokens;
+      modelUsed = result.model;
+
+      const jsonStr = extractFirstJson(result.text);
+      if (jsonStr) {
+        const raw = JSON.parse(jsonStr) as unknown;
+        // Zod validation — bounded, predictable. Any deviation falls
+        // through to the deterministic briefing below.
+        parsed = ResearchDigestBriefingSchema.parse(raw);
+      }
+    } catch (e) {
+      // Three failure classes lump together here: provider error,
+      // malformed JSON, Zod validation failure. All resolve to the
+      // deterministic fallback. The recordCost call below still
+      // attempts to log the LLM hop if the provider actually responded.
+      console.error(
+        `[research-digest] briefing generation failed; falling back to deterministic:`,
+        scrubErrorMessage(e),
+      );
+    }
+
+    // Record the cost of the LLM hop if we actually made one. The
+    // recordCost call mirrors summarise's shape — same fail-open
+    // wrap; ledger outage never crashes briefing generation.
+    let microCost = 0;
+    let llmHops = 0;
+    if (providerForCost) {
+      microCost = Number(
+        pricingCostMicroUsd(
+          providerForCost as ProviderId,
+          inputTokens,
+          outputTokens,
+        ),
+      );
+      llmHops = 1;
+      try {
+        await recordCost({
+          userId: run.userId,
+          agentRunId: run.id,
+          badge: run.badge,
+          providerChain: [providerForCost],
+          providerUsed: providerForCost,
+          modelUsed,
+          fallbackDepth: 0,
+          inputTokens: inputTokens ?? null,
+          outputTokens: outputTokens ?? null,
+          costMicroUsd: microCost,
+          latencyMs: Date.now() - startedAt,
+          status: "ok",
+        });
+      } catch (e) {
+        console.error(
+          `[research-digest] briefing recordCost threw for run ${run.id}:`,
+          scrubErrorMessage(e),
+        );
+      }
+    }
+
+    const briefing = parsed ?? deterministicBriefing(keptItems, config.topics);
+    return {
+      briefing: briefing as unknown as Record<string, unknown>,
+      _llmHops: llmHops,
       _costMicroUsd: microCost,
     };
   },
