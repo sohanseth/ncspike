@@ -895,7 +895,7 @@ function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: (
   }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#1a1530] p-5 shadow-2xl">
+      <div className="w-full max-w-md rounded-2xl glass-elevated p-5">
         <div className="flex items-center gap-2 mb-3">
           <Sparkles size={14} className="text-primary"/>
           <h2 className="text-sm font-semibold tracking-tight font-display">Turn on Voice Drafts</h2>
