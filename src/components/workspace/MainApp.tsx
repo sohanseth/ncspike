@@ -4347,11 +4347,11 @@ export function MainApp() {
     // the page does — so sticky never engages). `clip` doesn't create a
     // scroll context, so sticky elements correctly resolve to the window.
     <div className="min-h-[100dvh] w-full overflow-x-clip text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
-      {/* Ambient */}
+      {/* Ambient — matches homepage violet/cyan/magenta radial glow */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute top-[-8%] left-[15%] w-[700px] h-[550px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(109,40,217,0.11) 0%,transparent 65%)"}}/>
-        <div className="absolute bottom-[-15%] right-[5%] w-[500px] h-[500px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(217,119,6,0.07) 0%,transparent 65%)"}}/>
-        <div className="absolute top-[40%] right-[30%] w-[300px] h-[300px] rounded-full" style={{background:"radial-gradient(ellipse,rgba(251,113,133,0.05) 0%,transparent 70%)"}}/>
+        <div className="absolute top-[-10%] left-[10%] w-[60rem] h-[40rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.55 0.22 290 / 0.18), transparent 60%)"}}/>
+        <div className="absolute top-[10%] right-[-10%] w-[50rem] h-[35rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.6 0.2 220 / 0.16), transparent 60%)"}}/>
+        <div className="absolute bottom-[-10%] left-[30%] w-[45rem] h-[30rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.6 0.18 320 / 0.12), transparent 60%)"}}/>
       </div>
 
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
