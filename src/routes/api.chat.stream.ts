@@ -487,9 +487,10 @@ export const Route = createFileRoute("/api/chat/stream")({
               send("init", { threadId, userMessageId: userRow.id });
               const t0 = Date.now();
               try {
-                const wantsImageEdit =
-                  effectiveBadge !== "private" &&
-                  detectImageIntent({ text: v.content, hasAttachments: true });
+                const wantsImageEdit = detectImageIntent({
+                  text: v.content,
+                  hasAttachments: true,
+                });
                 if (wantsImageEdit) {
                   const imgGenAtts: ImageGenAttachment[] = visionAttachments.map(
                     (a) => ({ bytes: a.bytes, mime: a.mime }),
