@@ -18,7 +18,7 @@ function WorkspaceLayout() {
 
   if (loading || !user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background text-muted-foreground text-sm">
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
         Loading…
       </div>
     );
