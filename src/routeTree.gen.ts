@@ -23,6 +23,7 @@ import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
 import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
+import { Route as WorkspaceAgentsAgentIdRouteImport } from './routes/workspace.agents.$agentId'
 import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
 import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
@@ -100,6 +101,11 @@ const WorkspaceInternalCpaudRoute = WorkspaceInternalCpaudRouteImport.update({
   path: '/workspace/internal/cpaud',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceAgentsAgentIdRoute = WorkspaceAgentsAgentIdRouteImport.update({
+  id: '/$agentId',
+  path: '/$agentId',
+  getParentRoute: () => WorkspaceAgentsRoute,
+} as any)
 const ApiTtsElevenlabsRoute = ApiTtsElevenlabsRouteImport.update({
   id: '/api/tts/elevenlabs',
   path: '/api/tts/elevenlabs',
@@ -131,7 +137,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace/agents': typeof WorkspaceAgentsRoute
+  '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -144,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -152,7 +159,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace/agents': typeof WorkspaceAgentsRoute
+  '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -174,7 +182,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/workspace/agents': typeof WorkspaceAgentsRoute
+  '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
+  '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
 }
@@ -210,6 +219,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   fileRoutesByTo: FileRoutesByTo
@@ -231,6 +241,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   id:
@@ -252,6 +263,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
+    | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
   fileRoutesById: FileRoutesById
@@ -261,7 +273,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
-  WorkspaceAgentsRoute: typeof WorkspaceAgentsRoute
+  WorkspaceAgentsRoute: typeof WorkspaceAgentsRouteWithChildren
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspaceInboxRoute: typeof WorkspaceInboxRoute
@@ -378,6 +390,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceInternalCpaudRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/workspace/agents/$agentId': {
+      id: '/workspace/agents/$agentId'
+      path: '/$agentId'
+      fullPath: '/workspace/agents/$agentId'
+      preLoaderRoute: typeof WorkspaceAgentsAgentIdRouteImport
+      parentRoute: typeof WorkspaceAgentsRoute
+    }
     '/api/tts/elevenlabs': {
       id: '/api/tts/elevenlabs'
       path: '/api/tts/elevenlabs'
@@ -416,12 +435,24 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface WorkspaceAgentsRouteChildren {
+  WorkspaceAgentsAgentIdRoute: typeof WorkspaceAgentsAgentIdRoute
+}
+
+const WorkspaceAgentsRouteChildren: WorkspaceAgentsRouteChildren = {
+  WorkspaceAgentsAgentIdRoute: WorkspaceAgentsAgentIdRoute,
+}
+
+const WorkspaceAgentsRouteWithChildren = WorkspaceAgentsRoute._addFileChildren(
+  WorkspaceAgentsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
-  WorkspaceAgentsRoute: WorkspaceAgentsRoute,
+  WorkspaceAgentsRoute: WorkspaceAgentsRouteWithChildren,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspaceInboxRoute: WorkspaceInboxRoute,

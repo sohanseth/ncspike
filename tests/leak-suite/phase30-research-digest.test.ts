@@ -248,33 +248,34 @@ let generateCalls: Array<{ messages: unknown; maxTokens?: number }> = [];
 let scriptedScores: number[] = [];
 let nextSummariseText = "Two-sentence summary about the topic. It mentions things.";
 
-function buildDefaultBriefingJsonV2(promptText: string): string {
-  // Extract dedupeKeys from the prompt's `id=...` lines so support keys
-  // actually reference items the briefing function will accept.
-  const keys = Array.from(promptText.matchAll(/id=(\S+)/g)).map((m) => m[1]);
-  const supportKeys = keys.slice(0, Math.min(3, keys.length));
+/** Default v3 briefing JSON for tests that just need a valid briefing
+ *  to flow through. Builds sources[] from the items in the prompt so
+ *  source-key validation passes. */
+function buildDefaultBriefingJsonV3(promptText: string): string {
+  // Extract dedupeKeys from the prompt's `[id=...]` markers so source
+  // references actually point at items the briefing function will accept.
+  const keys = Array.from(promptText.matchAll(/\[id=(\S+?)\]/g)).map((m) => m[1]);
+  const sources = keys.slice(0, Math.min(5, keys.length)).map((k, i) => ({
+    dedupeKey: k,
+    title: `Default-mock source ${i + 1}`,
+    url: `https://example.test/${i + 1}`,
+    domain: "example.test",
+  }));
   return JSON.stringify({
-    version: 2,
+    version: 3,
     kind: "research",
-    headline: "Test briefing (default mock).",
-    synthesis: "From this batch I kept some items; this is the default-mock briefing.",
-    memorableTakeaways:
-      supportKeys.length > 0
-        ? [
-            {
-              text: "Default-mock takeaway.",
-              supportSourceKeys: supportKeys,
-              provenance: "new",
-            },
-          ]
-        : [],
-    readFirst:
-      supportKeys.length > 0
-        ? [{ sourceKey: supportKeys[0], reason: "default mock pick", provenance: "new" }]
-        : [],
-    skipOrCollapse: [],
-    distinctIdeas: [],
-    nextSearchSuggestions: [],
+    keepInMind: [
+      { text: "Default-mock takeaway one.", provenance: "new" },
+      { text: "Default-mock takeaway two.", provenance: "new" },
+      { text: "Default-mock takeaway three.", provenance: "new" },
+    ],
+    proseBody:
+      "From this batch I kept some items; this is the default-mock briefing. " +
+      "Microsoft Foundry [1] and a few others appeared this run.",
+    personalRelevance: null,
+    whatsNew: null,
+    qualityNote: null,
+    sources,
   });
 }
 
@@ -300,7 +301,7 @@ vi.mock("@/server/inference", () => ({
       );
       const promptText = (userMsg?.content as string) ?? "";
       return {
-        text: buildDefaultBriefingJsonV2(promptText),
+        text: buildDefaultBriefingJsonV3(promptText),
         provider: "groq",
         model: "llama-3.3-70b-versatile",
         inputTokens: 600,
@@ -1040,10 +1041,11 @@ import { researchDigest as researchDigestV2Import } from "@/server/agents/templa
 import { generate as generateImportV2 } from "@/server/inference";
 import { runSearch as runSearchImportV2 } from "@/lib/search.functions";
 
-describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
+
+describe("ResearchDigest v3: prose briefing + voice + broker (docs/25)", () => {
   // Reset generate / runSearch impls to file defaults before each test —
-  // PR3b / PR3b.1 / earlier blocks override these and the calls-only
-  // clear in beforeEach at file top doesn't reach impls.
+  // earlier describe blocks override these and the calls-only clear in
+  // beforeEach at file top doesn't reach impls.
   beforeEach(() => {
     vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
       generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
@@ -1055,6 +1057,20 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
           model: "llama-3.3-70b-versatile",
           inputTokens: 80,
           outputTokens: 4,
+        };
+      }
+      // Briefing call (v3 uses maxTokens=1500). Default to a valid v3 JSON.
+      if (req.maxTokens && req.maxTokens >= 400) {
+        const userMsg = (req.messages ?? []).find(
+          (m: { role: string; content: string }) => m.role === "user",
+        );
+        const promptText = (userMsg?.content as string) ?? "";
+        return {
+          text: buildDefaultBriefingJsonV3(promptText),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 200,
         };
       }
       return {
@@ -1092,75 +1108,14 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
 
   /**
    * Example A — first-run happy path.
-   * Four sources, no prior briefing in DB. LLM returns valid v2 JSON.
-   * Expected: briefing persisted with version=2, kind=research, no delta
-   * (first run), all items provenance='new'.
+   * Four kept sources, no prior briefing in DB. LLM returns valid v3 JSON.
+   * Expected: briefing persisted with version=3, kind='research',
+   * keepInMind exactly 3 items all provenance='new', whatsNew=null
+   * (first run), sources[] populated.
    */
-  it("Example A: first-run, valid LLM output → v2 briefing persisted with delta omitted", async () => {
+  it("Example A: first-run, valid v3 LLM output → briefing persisted with whatsNew=null", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.95, 0.85, 0.75, 0.6];
-
-    const sourceKeys = [
-      "https://example.test/AI%20safety/1",
-      "https://example.test/AI%20safety/2?id=keep",
-      "https://example.test/RLHF/1",
-      "https://example.test/RLHF/2?id=keep",
-    ];
-
-    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
-      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
-      if (req.maxTokens && req.maxTokens >= 400) {
-        return {
-          text: JSON.stringify({
-            version: 2,
-            kind: "research",
-            headline: "Today's batch covered four AI-safety pieces; two are worth your time.",
-            synthesis:
-              "From this batch, two sources stood out on safety methodology. The other two repeat introductory material.",
-            memorableTakeaways: [
-              {
-                text: "Methodology specifics are emerging from two of these sources.",
-                supportSourceKeys: [sourceKeys[0], sourceKeys[2]],
-                provenance: "new",
-              },
-              {
-                text: "Two of the four pieces are introductory restatements.",
-                supportSourceKeys: [sourceKeys[1], sourceKeys[3]],
-                provenance: "new",
-              },
-            ],
-            readFirst: [
-              {
-                sourceKey: sourceKeys[0],
-                reason: "Strongest methodology in the batch.",
-                provenance: "new",
-              },
-            ],
-            skipOrCollapse: [
-              {
-                reason: "Restates the basic definition.",
-                sourceKeys: [sourceKeys[1], sourceKeys[3]],
-              },
-            ],
-            distinctIdeas: [],
-            nextSearchSuggestions: ["Recent red-team results on frontier models"],
-          }),
-          provider: "groq",
-          model: "llama-3.3-70b-versatile",
-          inputTokens: 600,
-          outputTokens: 300,
-        };
-      }
-      // Score branch.
-      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
-      return {
-        text: String(nextScore),
-        provider: "groq",
-        model: "llama-3.3-70b-versatile",
-        inputTokens: 80,
-        outputTokens: 4,
-      };
-    });
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
@@ -1171,56 +1126,50 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
     expect(runRow.briefing).toBeDefined();
     expect(runRow.briefing).not.toBeNull();
     const b = runRow.briefing as Record<string, unknown>;
-    expect(b.version).toBe(2);
+    expect(b.version).toBe(3);
     expect(b.kind).toBe("research");
-    expect(b.headline).toMatch(/AI-safety/i);
-    expect(typeof b.synthesis).toBe("string");
-    // First-run: delta omitted (no prior briefing existed).
-    expect(b.delta).toBeUndefined();
-    // All takeaways tagged 'new' on first run.
-    const takeaways = b.memorableTakeaways as Array<{ provenance: string }>;
-    expect(takeaways.length).toBeGreaterThan(0);
-    for (const t of takeaways) expect(t.provenance).toBe("new");
-    // readFirst populated.
-    const readFirst = b.readFirst as Array<{ sourceKey: string; provenance: string }>;
-    expect(readFirst.length).toBeGreaterThan(0);
-    expect(readFirst[0].provenance).toBe("new");
+    // First-run: whatsNew omitted.
+    expect(b.whatsNew).toBeNull();
+    // keepInMind: exactly 3 items, all 'new' on first run.
+    const keep = b.keepInMind as Array<{ text: string; provenance: string }>;
+    expect(keep).toHaveLength(3);
+    for (const k of keep) expect(k.provenance).toBe("new");
+    // proseBody is a non-empty string.
+    expect(typeof b.proseBody).toBe("string");
+    expect((b.proseBody as string).length).toBeGreaterThan(10);
+    // sources[] populated.
+    const sources = b.sources as Array<{ dedupeKey: string }>;
+    expect(sources.length).toBeGreaterThan(0);
   });
 
   /**
-   * Example B — cross-run continuity (briefing-as-delta).
-   * A prior v2 briefing exists for this agent in agent_runs. The current
-   * run's briefing should fetch it, include it in the prompt, and the
-   * LLM output includes a delta + at least one 'continuing' provenance.
+   * Example B — cross-run continuity.
+   * A prior v3 briefing exists. Current run's briefing should fetch it,
+   * include it in the prompt, and produce mixed-provenance keepInMind
+   * + populated whatsNew.
    */
-  it("Example B: cross-run continuity → fetches prior briefing, delta populated", async () => {
+  it("Example B: cross-run continuity → fetches prior v3, whatsNew populated, mixed provenance", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
-    // Seed a prior v2 briefing row for this agent. Inserted directly into
-    // the mock's agentRunsRows so fetchPriorBriefingV2's select chain
-    // returns it.
     agentRunsRows.push({
       id: "prior-run-id",
       agent_id: AGENT_ID,
       user_id: USER,
       started_at: new Date("2026-05-17T12:00:00Z").toISOString(),
       briefing: {
-        version: 2,
+        version: 3,
         kind: "research",
-        headline: "Last week was all explainer content.",
-        synthesis: "Sources defined red teaming; nothing new methodologically.",
-        memorableTakeaways: [
-          {
-            text: "Red teaming = simulated adversarial testing of LLMs.",
-            supportSourceKeys: ["prior-key-1"],
-            provenance: "new",
-          },
+        keepInMind: [
+          { text: "Last week's takeaway 1.", provenance: "new" },
+          { text: "Last week's takeaway 2.", provenance: "new" },
+          { text: "Last week's takeaway 3.", provenance: "new" },
         ],
-        readFirst: [],
-        skipOrCollapse: [],
-        distinctIdeas: [],
-        nextSearchSuggestions: [],
+        proseBody: "Last week was all explainer content. Sources defined the topic.",
+        personalRelevance: null,
+        whatsNew: null,
+        qualityNote: null,
+        sources: [],
       },
     });
 
@@ -1228,56 +1177,40 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
     vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
       generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
       if (req.maxTokens && req.maxTokens >= 400) {
-        // Verify the prior briefing was included in the prompt.
         const userMsg = (req.messages ?? []).find(
           (m: { role: string; content: string }) => m.role === "user",
         );
-        if (userMsg && /Last week was all explainer content/.test(userMsg.content)) {
+        const promptText = (userMsg?.content as string) ?? "";
+        if (/Last week was all explainer content/.test(promptText)) {
           priorIncludedInPrompt = true;
         }
-        const sourceKeys = [
-          "https://example.test/AI%20safety/1",
-          "https://example.test/AI%20safety/2?id=keep",
-          "https://example.test/RLHF/1",
-          "https://example.test/RLHF/2?id=keep",
-        ];
+        const keys = Array.from(promptText.matchAll(/\[id=(\S+?)\]/g)).map((m) => m[1]);
+        const sources = keys.slice(0, 3).map((k, i) => ({
+          dedupeKey: k,
+          title: `Source ${i + 1}`,
+          url: `https://example.test/x/${i + 1}`,
+          domain: "example.test",
+        }));
         return {
           text: JSON.stringify({
-            version: 2,
+            version: 3,
             kind: "research",
-            headline: "Two new methodology pieces appeared since last week.",
-            synthesis: "Continuing the explainer trend, but two new pieces add methodology specifics.",
-            delta: {
-              whatsNew: "Two new methodology pieces appeared this week.",
-              whatsContinuing: "Sources are still predominantly explainer-level.",
-            },
-            memorableTakeaways: [
-              {
-                text: "Red teaming = simulated adversarial testing.",
-                supportSourceKeys: [sourceKeys[0]],
-                provenance: "continuing",
-              },
-              {
-                text: "Two new methodology pieces detail attack vectors.",
-                supportSourceKeys: [sourceKeys[2], sourceKeys[3]],
-                provenance: "new",
-              },
+            keepInMind: [
+              { text: "Continuing point from last week.", provenance: "continuing" },
+              { text: "Genuinely new methodology.", provenance: "new" },
+              { text: "Watch for tooling next.", provenance: "new" },
             ],
-            readFirst: [
-              {
-                sourceKey: sourceKeys[2],
-                reason: "Genuinely new methodology content.",
-                provenance: "new",
-              },
-            ],
-            skipOrCollapse: [],
-            distinctIdeas: [],
-            nextSearchSuggestions: [],
+            proseBody:
+              "Two new methodology pieces this week [1]. Continuing the prior trend on definitional sources, but new on tooling.",
+            personalRelevance: null,
+            whatsNew: "Two new methodology pieces appeared this week.",
+            qualityNote: null,
+            sources,
           }),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
           inputTokens: 800,
-          outputTokens: 350,
+          outputTokens: 300,
         };
       }
       const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
@@ -1293,19 +1226,16 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
     expect(run.status).toBe("ok");
-
-    // Prior briefing made it into the prompt.
     expect(priorIncludedInPrompt).toBe(true);
 
-    // New run's briefing has delta populated and mixed provenance.
     const newRunRow = agentRunsRows.find((r) => r.id !== "prior-run-id");
     expect(newRunRow).toBeDefined();
     const b = newRunRow!.briefing as Record<string, unknown>;
-    expect(b.version).toBe(2);
-    expect(b.delta).toBeDefined();
-    expect((b.delta as { whatsNew?: string }).whatsNew).toMatch(/methodology/i);
-    const takeaways = b.memorableTakeaways as Array<{ provenance: string }>;
-    const provenances = new Set(takeaways.map((t) => t.provenance));
+    expect(b.version).toBe(3);
+    expect(b.whatsNew).toMatch(/methodology/i);
+    const keep = b.keepInMind as Array<{ provenance: string }>;
+    expect(keep).toHaveLength(3);
+    const provenances = new Set(keep.map((k) => k.provenance));
     expect(provenances.has("continuing")).toBe(true);
     expect(provenances.has("new")).toBe(true);
   });
@@ -1313,11 +1243,11 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
   /**
    * Example D — items_kept === 0 (empty-batch briefing).
    * All sources scored below minScore. No LLM call for briefing; the
-   * template short-circuits and persists the locked empty-batch copy.
+   * template short-circuits and persists the locked empty-batch v3 copy.
    */
-  it("Example D: items_kept=0 → empty-batch briefing persisted, no briefing LLM call", async () => {
+  it("Example D: items_kept=0 → empty-batch v3 briefing, no briefing LLM call", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
-    scriptedScores = [0.1, 0.1, 0.1, 0.1]; // all below 0.5 floor
+    scriptedScores = [0.1, 0.1, 0.1, 0.1];
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
@@ -1326,16 +1256,15 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
 
     const runRow = agentRunsRows[0];
     expect(runRow.briefing).toBeDefined();
-    expect(runRow.briefing).not.toBeNull();
     const b = runRow.briefing as Record<string, unknown>;
-    expect(b.version).toBe(2);
+    expect(b.version).toBe(3);
     expect(b.kind).toBe("research");
-    expect(b.headline).toMatch(/nothing worth keeping/i);
-    expect(b.synthesis).toMatch(/narrowing the topic|changing the search angle/i);
-    expect(b.memorableTakeaways).toEqual([]);
-    expect(b.readFirst).toEqual([]);
-
-    // No briefing LLM call — only score calls were made.
+    // Empty-batch keepInMind still has 3 items (schema enforces .length(3))
+    // — they convey the "nothing worth keeping" honest framing.
+    expect((b.keepInMind as unknown[]).length).toBe(3);
+    expect((b.proseBody as string).toLowerCase()).toMatch(/didn'?t find anything worth keeping|nothing/);
+    expect(b.sources).toEqual([]);
+    // No briefing LLM call — only score calls.
     const briefingCallCount = generateCalls.filter(
       (c) => (c.maxTokens ?? 0) >= 400,
     ).length;
@@ -1344,19 +1273,16 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
 
   /**
    * Example E — visible failure briefing on chain-exhausted.
-   * Briefing LLM throws (with one retry). Failure briefing persisted with
-   * human-voice copy. Run still finishes status='ok' (briefing failure
-   * does NOT fail the run per docs/19 §3).
+   * Briefing LLM throws (with one retry). v3 failure briefing persisted
+   * with failureClass='chain_exhausted'. Run still finishes status='ok'.
    */
-  it("Example E: LLM chain exhausted → human-voice failure briefing persisted", async () => {
+  it("Example E: LLM chain exhausted → v3 failure briefing persisted", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
     vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
       generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
       if (req.maxTokens && req.maxTokens >= 400) {
-        // Briefing call throws every attempt — both the initial and
-        // the retry.
         throw Object.assign(new Error("simulated chain exhausted"), {
           errorClass: "chain_exhausted",
         });
@@ -1374,87 +1300,73 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
 
-    // Run still completes ok — briefing failure doesn't fail the run.
+    // Run still ok — briefing failure doesn't fail the run.
     expect(run.status).toBe("ok");
     expect(run.items_kept).toBe(4);
 
     const runRow = agentRunsRows[0];
-    expect(runRow.briefing).toBeDefined();
     const b = runRow.briefing as Record<string, unknown>;
-    expect(b.version).toBe(2);
+    expect(b.version).toBe(3);
     expect(b.kind).toBe("research");
-    // Human-voice copy from FAILURE_COPY.chain_exhausted. No HTTP codes,
-    // no "errorClass" leakage. Per docs/19 §10.4.
-    expect(b.headline).toMatch(/couldn'?t complete this check/i);
-    expect(b.headline).toMatch(/LLM providers were available/i);
-    expect(b.headline).not.toMatch(/\b429\b|HTTP|chain_exhausted/i);
-    expect(b.synthesis).not.toMatch(/\b429\b|HTTP|errorClass/i);
-    // Failure briefings have empty content arrays.
-    expect(b.memorableTakeaways).toEqual([]);
-    expect(b.readFirst).toEqual([]);
-    // No qualityNote on failure (per docs/20 §6).
-    expect(b.qualityNote).toBeUndefined();
-    // failureClass marker is set — used by next run's fetchPriorBriefingV2
-    // to skip this briefing as prior context (Sneha review 2026-05-18).
     expect(b.failureClass).toBe("chain_exhausted");
+    // Human-voice copy in proseBody — no HTTP codes, no errorClass leak.
+    expect((b.proseBody as string).toLowerCase()).toMatch(/couldn'?t complete|llm providers were available/i);
+    expect(b.proseBody).not.toMatch(/\b429\b|HTTP|errorClass/i);
+    // Failure briefing's sources are empty (none synthesised).
+    expect(b.sources).toEqual([]);
+    // keepInMind still has exactly 3 items (schema-enforced).
+    expect((b.keepInMind as unknown[]).length).toBe(3);
 
     consoleSpy.mockRestore();
   });
 
   /**
    * Failure-isolation: a prior failure briefing must NOT be fetched as
-   * prior context for the next run. Otherwise the LLM gets fed "I
-   * couldn't complete this check..." as "what you said last time" and
-   * the next briefing inherits failure language as legitimate memory.
-   * (Sneha review feedback, 2026-05-18.)
+   * prior context for the next run.
    */
-  it("failure briefings are NOT included in the next run's prior-context fetch", async () => {
+  it("failure briefings are NOT included in the next run's prior-context fetch (v3)", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
 
-    // Seed a PRIOR failure briefing for this agent — older timestamp so
-    // ordering matters, and a successful one even further back. The
-    // fetch should walk past the failure and return the older success.
+    // Older successful v3 + more recent failure v3 (with failureClass).
     agentRunsRows.push({
       id: "old-success-run-id",
       agent_id: AGENT_ID,
       user_id: USER,
       started_at: new Date("2026-05-15T12:00:00Z").toISOString(),
       briefing: {
-        version: 2,
+        version: 3,
         kind: "research",
-        headline: "Older successful briefing.",
-        synthesis: "Sources discussed methodology.",
-        memorableTakeaways: [
-          {
-            text: "Older real takeaway.",
-            supportSourceKeys: ["old-key-1"],
-            provenance: "new",
-          },
+        keepInMind: [
+          { text: "Older real takeaway 1.", provenance: "new" },
+          { text: "Older real takeaway 2.", provenance: "new" },
+          { text: "Older real takeaway 3.", provenance: "new" },
         ],
-        readFirst: [],
-        skipOrCollapse: [],
-        distinctIdeas: [],
-        nextSearchSuggestions: [],
-        // failureClass intentionally absent — this is a real success.
+        proseBody: "Older successful briefing prose. Sources discussed methodology.",
+        personalRelevance: null,
+        whatsNew: null,
+        qualityNote: null,
+        sources: [],
       },
     });
     agentRunsRows.push({
       id: "recent-failure-run-id",
       agent_id: AGENT_ID,
       user_id: USER,
-      // More recent than the success above.
       started_at: new Date("2026-05-17T12:00:00Z").toISOString(),
       briefing: {
-        version: 2,
+        version: 3,
         kind: "research",
-        headline: "I couldn't complete this check — the search provider was rate-limited.",
-        synthesis: "I'll try again on the next run.",
-        memorableTakeaways: [],
-        readFirst: [],
-        skipOrCollapse: [],
-        distinctIdeas: [],
-        nextSearchSuggestions: [],
+        keepInMind: [
+          { text: "Failure copy 1.", provenance: "new" },
+          { text: "Failure copy 2.", provenance: "new" },
+          { text: "Failure copy 3.", provenance: "new" },
+        ],
+        proseBody: "I couldn't complete this check.",
+        personalRelevance: null,
+        whatsNew: null,
+        qualityNote: null,
+        sources: [],
         failureClass: "rate_limited",
       },
     });
@@ -1471,12 +1383,11 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
         if (/couldn'?t complete this check/i.test(promptText)) {
           promptIncludedFailureLanguage = true;
         }
-        if (/Older successful briefing/.test(promptText)) {
+        if (/Older successful briefing prose/.test(promptText)) {
           promptIncludedOlderSuccess = true;
         }
-        // Return valid v2 JSON so the run completes ok.
         return {
-          text: buildDefaultBriefingJsonV2(promptText),
+          text: buildDefaultBriefingJsonV3(promptText),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
           inputTokens: 600,
@@ -1496,56 +1407,35 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
     const run = await execute(makeResearchAgent(), pipelineDeps());
     expect(run.status).toBe("ok");
 
-    // Failure briefing was NOT fed in as prior context.
     expect(promptIncludedFailureLanguage).toBe(false);
-    // Older successful briefing WAS fed in (the fetch walked past the failure).
     expect(promptIncludedOlderSuccess).toBe(true);
   });
 
   /**
-   * Negative test: invalid sourceKey references are stripped, not fatal.
-   * LLM hallucinates a sourceKey that doesn't exist among the kept items.
-   * Briefing strips that reference but still persists the rest of the
-   * valid content (rather than treating as malformed).
+   * Exactly-3 enforcement: LLM returning 2 or 4 keepInMind items fails
+   * Zod validation (.length(3)) → falls to failure briefing path.
    */
-  it("invalid sourceKeys are stripped; surviving content persists", async () => {
+  it("LLM returning wrong keepInMind count → falls to failure briefing", async () => {
     vi.mocked(checkBudget).mockResolvedValue({ ok: true });
     scriptedScores = [0.9, 0.9, 0.9, 0.9];
-
-    const validKey = "https://example.test/AI%20safety/1";
 
     vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
       generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
       if (req.maxTokens && req.maxTokens >= 400) {
+        // Only 2 keepInMind items — should fail Zod.
         return {
           text: JSON.stringify({
-            version: 2,
+            version: 3,
             kind: "research",
-            headline: "Test briefing with mixed valid/invalid keys.",
-            synthesis: "From this batch I kept four items.",
-            memorableTakeaways: [
-              {
-                text: "Valid takeaway.",
-                supportSourceKeys: [validKey, "hallucinated-key-not-in-batch"],
-                provenance: "new",
-              },
-              {
-                text: "Takeaway with only hallucinated support.",
-                supportSourceKeys: ["another-hallucinated-key"],
-                provenance: "new",
-              },
+            keepInMind: [
+              { text: "Item 1", provenance: "new" },
+              { text: "Item 2", provenance: "new" },
             ],
-            readFirst: [
-              { sourceKey: validKey, reason: "valid pick", provenance: "new" },
-              {
-                sourceKey: "totally-fake-key",
-                reason: "should be stripped",
-                provenance: "new",
-              },
-            ],
-            skipOrCollapse: [],
-            distinctIdeas: [],
-            nextSearchSuggestions: [],
+            proseBody: "Two items only, should fail validation.",
+            personalRelevance: null,
+            whatsNew: null,
+            qualityNote: null,
+            sources: [],
           }),
           provider: "groq",
           model: "llama-3.3-70b-versatile",
@@ -1562,22 +1452,58 @@ describe("ResearchDigest v2: briefing-first output (docs/19+20)", () => {
         outputTokens: 4,
       };
     });
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const run = await execute(makeResearchAgent(), pipelineDeps());
-
-    expect(run.status).toBe("ok");
+    expect(run.status).toBe("ok"); // failure briefing doesn't fail run
     const b = agentRunsRows[0].briefing as Record<string, unknown>;
-    // First takeaway: keeps only the valid sourceKey.
-    const takeaways = b.memorableTakeaways as Array<{
-      text: string;
-      supportSourceKeys: string[];
-    }>;
-    expect(takeaways).toHaveLength(1);
-    expect(takeaways[0].text).toBe("Valid takeaway.");
-    expect(takeaways[0].supportSourceKeys).toEqual([validKey]);
-    // readFirst: only the valid pick survives.
-    const readFirst = b.readFirst as Array<{ sourceKey: string }>;
-    expect(readFirst).toHaveLength(1);
-    expect(readFirst[0].sourceKey).toBe(validKey);
+    expect(b.version).toBe(3);
+    expect(b.failureClass).toBe("malformed");
+
+    consoleSpy.mockRestore();
+  });
+
+  /**
+   * Broker integration: the briefing prompt receives broker.fragment
+   * for personalRelevance generation. The pipelineDeps' broker has a
+   * fragment we can grep for.
+   */
+  it("broker fragment is threaded into the briefing prompt", async () => {
+    vi.mocked(checkBudget).mockResolvedValue({ ok: true });
+    scriptedScores = [0.9, 0.9, 0.9, 0.9];
+
+    let brokerFragmentSeenInPrompt = false;
+    vi.mocked(generateImportV2).mockImplementation(async (req: any) => {
+      generateCalls.push({ messages: req.messages, maxTokens: req.maxTokens });
+      if (req.maxTokens && req.maxTokens >= 400) {
+        const userMsg = (req.messages ?? []).find(
+          (m: { role: string; content: string }) => m.role === "user",
+        );
+        const promptText = (userMsg?.content as string) ?? "";
+        // pipelineDeps' BROKER has fragment "(opaque broker fragment)"
+        if (/opaque broker fragment/.test(promptText)) {
+          brokerFragmentSeenInPrompt = true;
+        }
+        return {
+          text: buildDefaultBriefingJsonV3(promptText),
+          provider: "groq",
+          model: "llama-3.3-70b-versatile",
+          inputTokens: 600,
+          outputTokens: 200,
+        };
+      }
+      const nextScore = scriptedScores.length > 0 ? scriptedScores.shift()! : 0.9;
+      return {
+        text: String(nextScore),
+        provider: "groq",
+        model: "llama-3.3-70b-versatile",
+        inputTokens: 80,
+        outputTokens: 4,
+      };
+    });
+
+    const run = await execute(makeResearchAgent(), pipelineDeps());
+    expect(run.status).toBe("ok");
+    expect(brokerFragmentSeenInPrompt).toBe(true);
   });
 });
