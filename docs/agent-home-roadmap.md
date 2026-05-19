@@ -1,18 +1,28 @@
 # Agent Home — Roadmap & Design Rationale (supporting material)
 
 **Status:** Reference / supporting doc (un-numbered intentionally — this is NOT an implementation spec)
-**Paired with:** `docs/25-spec-agent-home.md` (the slim Phase 1 implementation spec)
-**Last updated:** 2026-05-19
+**Paired with:** `docs/25-spec-agent-home.md` (the implementation spec for the next PR)
+**Last updated:** 2026-05-19 (revised after scope merge)
 
 This doc holds the deferred phases, the broader product model, and the design history of the Agent Home decision. It exists so the implementer of docs/25 isn't drowned by philosophy, but the rationale is still accessible for future readers and for the next-phase specs.
 
-If you are implementing Phase 1: **stop reading after the "Phase boundaries" section below.** The rest is for context only.
+If you are implementing the next PR: **stop reading after the "Phase boundaries" section below.** The rest is for context only.
+
+---
+
+## ⚠️ Track A / Track B split is RETIRED (2026-05-19)
+
+An earlier version of this doc separated Agent Home work into Track A (wrapper) and Track B (content quality). Sneha review 2026-05-19 retired that split: the wrapper alone delivers none of the five user-stated needs (prose, broker context, mind map, change highlight, three-to-remember), so they must ship together.
+
+The current docs/25 spec combines wrapper + content + visual differentiators into a single PR. Track B as a separate spec (docs/26) is no longer queued.
+
+The mind map is the only feature explicitly split off — into its own follow-up PR — because it deserves dedicated design treatment.
 
 ---
 
 ## Why this doc exists
 
-The docs/25 implementation spec was trimmed from ~530 lines to ~250 (Sneha review 2026-05-19) after the observation that "a 500-line spec for a boring PR is a smell." The trimmed-out content lives here. The slim spec stays implementation-focused; this doc carries the why.
+The earlier docs/25 lock revision was trimmed from ~530 lines to ~290 after the observation that "a 500-line spec for a boring PR is a smell." The 2026-05-19 scope merge brought some content back — the v3 schema, the prompt direction, the page layout — because the merged-scope PR is no longer "boring." The implementation spec is still focused; this roadmap doc carries the why.
 
 ---
 
@@ -58,31 +68,31 @@ This was the core correction over earlier drafts:
 
 ---
 
-## Track A vs Track B (parallel work streams)
+## Track A vs Track B — RETIRED 2026-05-19
 
-**Track A — Container** (docs/25, this doc's primary subject)
-- Persistence, timeline, status, source visibility
-- Phase 1 in progress; Phases 2-4 sequenced below
-- Outcome: agents feel persistent, not disposable
+This split is no longer in effect. The wrapper (Track A) and the content (Track B) ship together in the next PR because the wrapper alone delivers none of the user-stated needs. See the top-of-doc note.
 
-**Track B — Content** (docs/26 — queued)
-- Synthesis depth: full-article fetch via Tavily `include_raw_content`
-- Personalization: broker context fed into the briefing prompt
-- Cross-run framing: "what changed" / "what matters to me" / "what to watch next"
-- Outcome: agents say something memorable, not just specific
-
-Phase 1 ships the wrapper; Track B ships the content. They are sequenced together but specced separately so progress on one doesn't gate the other.
+What was Track B (broker integration, prose, cross-run framing) is now part of docs/25's next PR. Full-article fetch via Tavily `include_raw_content` is still queued for a later content-quality improvement, but it's no longer specced as a separate parallel track — it'll come up when the prose briefing's input richness becomes the bottleneck again.
 
 ---
 
-## Phase boundaries
+## Phase boundaries (revised 2026-05-19)
 
-### Phase 1 — Read-only IA + persistence (docs/25)
+### Next PR — Agent Home with prose briefing + visual differentiators (docs/25)
 - Route: `/workspace/agents/$agentId`
-- Header + Latest briefing + Source coverage + Activity timeline
-- Pure read-side UI over existing tables
-- NO new tables, NO new writes
-- See `docs/25-spec-agent-home.md` for the implementation spec.
+- Features 1-7 from docs/25 §3: agent home page, conversational prose briefing, personal-relevance frame, change-highlight callout, exactly-3-things-to-keep-in-mind, sources collapsed, status header
+- New v3 briefing schema replaces v2 for new runs (v2 stays for legacy render)
+- Broker fed into briefing prompt for personalization
+- See `docs/25-spec-agent-home.md` for the spec.
+
+### Follow-up PR — Mind map visualization
+- Visual concept map of what the agent has learned
+- Color-coded by provenance (new / continuing / recurring)
+- Shape (radial / tree / network graph) deferred — Sneha chooses when we get there
+- New `concepts[]` field added to v3 schema (or v3.1)
+- Visualization component (SVG-based or react-flow)
+- Mobile rendering decisions
+- Lands AFTER the prose-briefing PR ships and the direction is validated
 
 ### Phase 2 — User instructions and manual threads
 - Introduces `agent_messages` table (deferred from earlier drafts; held until there's a real consumer)
@@ -93,15 +103,15 @@ Phase 1 ships the wrapper; Track B ships the content. They are sequenced togethe
 - Read/unread state per timeline entry
 - Open question: does each manual thread become its own sub-agent, or stay as a tag inside the parent agent's runs?
 
-### Phase 3 — Detected durable themes
+### Phase 3 — Detected durable themes + activity strip
 - Agent notices recurring sub-topics in its corpus over many runs
 - Themes surface in the header signals (the "1 theme growing" copy from earlier draft examples)
-- Source coverage gets a usefulness signal (which hosts have been consistently informative vs. always-skipped)
-- The "Latest briefing" label may graduate to "Current state" or "Current read" here
+- Activity timeline visual strip (GitHub-style recency dots) — moved here from the next-PR scope
+- Source coverage as a meta view (top hosts over N runs with usefulness signal)
 - This is the phase where "accumulated state" actually exists
 
 ### Phase 4 — Derived artifacts
-- Generate-X buttons on the agent home: report / mind map / deck / living-document export
+- Generate-X buttons on the agent home: report / mind map export / deck / living-document export
 - Outputs are GENERATED FROM the home, NEVER replace the primary surface
 - This is where the NotebookLM-style multi-format menu fits — once we've earned it
 - Load-bearing rule: artifacts are derivatives, not the home itself

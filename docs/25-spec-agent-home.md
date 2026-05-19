@@ -1,293 +1,335 @@
-# docs/25 — Agent Home (Phase 1: read-only IA + persistence)
+# docs/25 — Agent Home: prose briefing + visual differentiators (next PR)
 
-**Status:** SPEC LOCKED — 2026-05-19 (Sneha)
+**Status:** SPEC LOCKED — 2026-05-19 (Sneha, revised scope)
 **Owner:** Sneha
-**Implementation PR:** TBD (next PR after merge)
-**Depends on:** docs/19 (briefing-first architecture), docs/20 (ResearchDigest v2)
-**Roadmap (beyond Phase 1):** `docs/agent-home-roadmap.md` (paired supporting doc)
-**Relates to:** docs/22 (Run Now — queued), docs/26 (Personalized briefing v3 — queued; THE content-quality track)
+**Implementation PR:** TBD (next code PR after merge)
+**Depends on:** docs/19 (briefing-first architecture), docs/20 (ResearchDigest template — gets v3 update inside this spec)
+**Roadmap (beyond this PR):** `docs/agent-home-roadmap.md`
+**Relates to:** docs/22 (Run Now — queued, separate), mind-map follow-up PR (queued)
 
 ---
 
-## Important framing — what this spec IS and ISN'T
+## Important framing — what changed since yesterday's lock
 
-Agent Home Phase 1 fixes the **surface** problem: agents feel disposable because each run is wrapped in a one-shot card view. After Phase 1, every active agent has a persistent home page where the latest report, the activity timeline, and source coverage are all visible.
+The earlier docs/25 framed Phase 1 as **read-only IA wrapper only** (Track A) and deferred all content-quality work to docs/26 (Track B). After review (Sneha 2026-05-19), that split is **retired**. The wrapper alone delivers none of the five user-stated needs:
 
-**It does NOT fix the INTELLIGENCE problem.** Briefing quality — synthesis depth, personalization, trend memory, "why this matters to me" — is the parallel track owned by **docs/26 (Personalized briefing v3)**. Do not ship Phase 1 framed as "this improves what the agent says." It improves *where the agent lives*.
+> "ChatGPT-style prose, how the information connects to user context, mind map to easily memorise, changing landscape highlighted in a different colour, important stuff to keep in mind."
 
-This split is deliberate:
-- **Track A (this spec)**: the container — persistence, timeline, status, source visibility
-- **Track B (docs/26)**: the content — broker integration, what-changed framing, why-this-matters
+Shipping just the wrapper would leave the SAME bland content inside a new page — exactly the failure mode of every prior fix. So Track A and Track B collapse: one PR ships both the home page surface AND the new content shape.
 
-Phase 1 is Track A only. If a reviewer is reading the implementation PR and expects content quality to improve, the spec or the PR copy is misleading them. Fix the copy.
+**Mind map is split off into its own follow-up PR** — it deserves its own design treatment and would either land badly here or push this PR too wide. Features 1-7 (everything except mind map) ship together.
 
 ---
 
 ## 1. Goal
 
-Give every active agent a persistent home page at `/workspace/agents/$agentId` that surfaces, in this order:
+Make the agents inbox stop feeling like Google results, decorated cards, or a NotebookLM document. After this PR, opening any agent should feel like a knowledgeable peer reporting back, in prose, with the things they think the user should remember, marked clearly where the world has shifted.
 
-1. **Header** with agent identity + alive signals
-2. **Latest briefing** (existing v2 render component, unchanged)
-3. **Source coverage** (10-run aggregate over `agent_findings`)
-4. **Activity timeline** (last 10 runs, newest first)
-
-The page reads from existing tables. No new tables. No new writes other than via existing runner paths.
+Cognitive-load reduction is the load-bearing test. If a user can scan the home page in 30 seconds and walk away with three retained ideas, the PR succeeded.
 
 ---
 
-## 2. Non-goals (Phase 1)
+## 2. Non-goals
 
-- No new tables (the `agent_messages` table from earlier drafts is **deferred to Phase 2**)
-- No reply / instruction input
-- No "themes" or "branches" or "topics" UI (Phase 3)
-- No Generate-X buttons (report, mind map, deck — Phase 4)
-- No notifications, share URLs, read/unread state
-- No improvements to briefing content or synthesis (that's **docs/26 / Track B**)
-- No "Run Now" trigger (docs/22)
-- No backfill SQL or schema migrations
-
----
-
-## 3. Route
-
-| Path | Behaviour |
-|---|---|
-| `/workspace/agents/$agentId` | The agent home page (this spec's primary surface) |
-| `/workspace/agents` | Agent list — the home-list (restyled inbox content) |
-| `/workspace/inbox` | Redirect to `/workspace/agents` for bookmark compat |
-
-Singular IDs go after the plural collection root. Future nested routes stay natural (`/workspace/agents/$agentId/runs/$runId` if ever needed).
+- Mind map visualization — **next PR after this**
+- Reply / instruction input — Phase 2
+- Detected themes across runs — Phase 3 (requires accumulated state, doesn't exist yet)
+- Generate-X buttons (report / deck / export) — Phase 4
+- Run Now trigger — separate spec (docs/22)
+- New tables, RPCs, RLS policies — none in this PR
+- Schema migrations to `agents`, `agent_runs`, `agent_findings` — none
+- Source coverage section from yesterday's lock — dropped (not in the user-stated needs; redundant with sources-collapsed)
+- Activity strip visualization — dropped from this PR; the textual timeline is enough
 
 ---
 
-## 4. Data sources
+## 3. Features the next PR delivers
 
-**Read-only over existing tables.** No writes. No new columns.
+### 3.1 Agent home page at `/workspace/agents/$agentId`
+Inbox stops being a card-list. Each agent gets its own page. The inbox `/workspace/agents` becomes a list of agent rows that link to homes. `/workspace/inbox` redirects.
 
-| Section | Source |
-|---|---|
-| Header (name, topics, cadence) | `agents` |
-| Header (last run time + status) | `agent_runs` newest by `agent_id` |
-| Latest briefing | `agent_runs.briefing` newest where `status IN ('ok','partial_success')` AND `briefing IS NOT NULL` |
-| Source coverage | `agent_findings` filtered to latest 10 runs — see §6 |
-| Activity timeline | `agent_runs` latest 10 by `started_at` |
+### 3.2 Conversational briefing (ChatGPT-prose style)
+**2-3 short paragraphs** of prose in the agent's voice. First-person ("I checked the LLM-safety beat this week…"). Reads like a peer reporting back — not a JSON-rendered-to-HTML document.
 
-The implementation may add one new server function (e.g. `getAgentHome(agentId)`) that returns this aggregate in a single round-trip. It MUST NOT add columns, tables, RLS policies, or RPCs.
+The prose absorbs what v2 split across `memorableTakeaways`, `readFirst`, `skipOrCollapse`, `distinctIdeas`. Source references happen inline, expandable.
+
+### 3.3 Personal-relevance frame (broker-driven)
+A short paragraph (≤200 chars) that uses the **trait broker** (already wired into chat) to angle the briefing at the user specifically. This is NC's differentiator over ChatGPT — ChatGPT doesn't carry user context between sessions; NC does.
+
+> Example: "Given that you've been asking about prompt-injection in chat lately, the Palo Alto methodology is the angle worth your time — the others are pitched at researchers, not founders making vendor decisions."
+
+### 3.4 What's new — highlighted callout
+A small visually-distinct callout (color band, not just a label) that surfaces what's NEW since the prior run. Renders only when a prior briefing exists and there is something genuinely new. Uses the existing `provenance: 'new'` mechanic. Empty / first-run case: callout hidden.
+
+Where appropriate, the prose body ALSO marks sentences about new items with a left-border accent (small, not loud). The user can see at a glance which sentences are about shifts vs. continuing context.
+
+### 3.5 Three things to keep in mind (LOCKED — exactly 3)
+A fixed list of **exactly three** imperative statements at the top of the page (above the prose). Compression discipline: the LLM cannot produce 0, 1, 2, 4, or 5 items. Always three.
+
+> Example:
+> 1. Red teaming ≠ systematic measurement. Use both.
+> 2. Palo Alto piece is the only one with methodology this week.
+> 3. Watch for automation tooling — that's where the field heads next.
+
+Position: at the TOP of the briefing for skim-mode users. Below the header but above the prose body. Items tagged `new` get visual treatment (color band or new-badge).
+
+The three are derived by the LLM during briefing generation — see §5 for prompt direction.
+
+### 3.6 Sources collapsed
+`<details>` block at the very bottom of the briefing. Default closed. Shows the list of sources the agent consulted with title + domain + clickable URL. Inline references in the prose anchor here.
+
+### 3.7 Status header
+Agent name + topics + cadence + last-run-status (text + dot, never color alone) + relative timestamp ("Updated 2h ago"). The "agent is alive" signals.
 
 ---
 
-## 5. Page layout
+## 4. Page layout
 
 ```
 ┌────────────────────────────────────────────────────────────┐
 │  HEADER                                                    │
-│  [Agent name]                                              │
-│  Topics · Cadence · Status · Last run: [relative time]     │
+│  [Agent name]  · [topics]  · [cadence]                     │
+│  Updated [rel-time] · [● ok / failed / running / skipped]  │
 ├────────────────────────────────────────────────────────────┤
-│  LATEST BRIEFING                                           │
-│  [v2 briefing render component — reused unchanged]         │
-│  (falls back to degraded copy per §7 if not available)     │
+│  THREE THINGS TO KEEP IN MIND  (exactly 3, always)         │
+│  1. [imperative] [optional NEW badge]                       │
+│  2. [imperative]                                            │
+│  3. [imperative] [optional NEW badge]                       │
 ├────────────────────────────────────────────────────────────┤
-│  SOURCE COVERAGE  (hidden if empty)                        │
-│  Microsoft: 4                                              │
-│  Palo Alto Networks: 2                                     │
-│  CSET: 1                                                   │
+│  WHAT'S NEW THIS WEEK  (highlighted callout, hidden if     │
+│                          first run or no genuine change)    │
+│  [one-sentence delta]                                       │
 ├────────────────────────────────────────────────────────────┤
-│  ACTIVITY TIMELINE  (newest first; latest expanded)        │
-│  ▼ Today, 14:22  [ok]                                       │
-│    "Red teaming for LLM safety advances"                   │
-│    [expandable: full briefing for that run]                 │
-│  ▸ Yesterday, 09:11  [ok]                                   │
-│  ▸ 16 May, 23:17  [ok]                                      │
+│  THE READ                                                  │
+│  [2-3 paragraphs of prose in agent voice, first-person.    │
+│   Inline source references. Sentences about new items      │
+│   get a small left-border accent.]                          │
+├────────────────────────────────────────────────────────────┤
+│  WHY THIS MATTERS TO YOU  (broker-driven, hidden if no     │
+│                             broker context available)      │
+│  [one short paragraph]                                      │
+├────────────────────────────────────────────────────────────┤
+│  ▸ Sources checked: [N]  (collapsed by default)            │
 └────────────────────────────────────────────────────────────┘
 ```
 
-### Section semantics
-
-- **Header**: surfaces "is this agent alive" signals (last run time as relative timestamp, status badge, briefing-produced-y/n implicit via the next section). Without these the page reads as a static document.
-- **Latest briefing**: the v2 component from PR #26. Reused, NOT modified. Top section is labelled exactly **"Latest briefing"** — not "Latest State," not "Current state."
-- **Source coverage**: descriptive host:count list. See §6 for the locked rules. Hidden entirely when empty.
-- **Activity timeline**: chronological run list. See §8 status-taxonomy for which statuses appear and how.
+(After Phase 2: a reply input appears at the bottom. After mind-map PR: a small "View mind map" link near the top. Neither is in this PR.)
 
 ---
 
-## 6. Source coverage — locked rules
+## 5. Briefing schema — v3 (replaces v2 in research-digest template)
 
-Sneha review 2026-05-19. Implementation deviation from these = scope drift:
+The structured v2 schema (`memorableTakeaways[]`, `readFirst[]`, etc.) is replaced for new runs. v2 stays as a render-fallback for legacy data.
 
-- **Scope**: latest 10 runs for this agent (by `agent_runs.started_at` desc, then `agent_findings` joined on `agent_run_id`)
-- **Include**: findings with `score >= agent.config.minScore` (the existing keep threshold)
-- **Group by**: normalized host of `source_url` (lowercase, trailing slash stripped, no `www.` prefix)
-- **Sort**: count desc, then alphabetical
-- **Cap**: top 8 hosts
-- **Empty**: hide the entire section
-- **Label**: "Source coverage" (not "Sources observed," not "Evidence map," not "Source map")
-- **Format**: flat `Host: count` lines, one per line
+```ts
+type ResearchDigestBriefingV3 = {
+  version: 3;
+  kind: 'research';
 
-If implementation finds these rules infeasible within the bounded files, **cut the section entirely** rather than ship a vague version. A vague source map is worse than no source map.
+  /** Exactly 3 imperative statements. The LLM MUST produce three —
+   *  not 0-3, not up to 3. If the batch is too thin for three real
+   *  imperatives, the LLM must say so honestly in the prose body
+   *  AND in qualityNote, but still emit three items (the third
+   *  may be a forward-looking "watch for X" rather than an
+   *  insight from THIS batch). */
+  keepInMind: Array<{
+    text: string;                              // imperative, ≤120 chars
+    provenance: 'new' | 'continuing' | 'recurring';
+  }>;
+
+  /** 2-3 short paragraphs of prose in first-person agent voice.
+   *  Inline source references using [n] anchors that match the
+   *  index in the sources[] array below. */
+  proseBody: string;                           // ~400-700 chars total
+
+  /** Optional broker-driven angle. Null when no broker context
+   *  is available (or when broker provides nothing useful for
+   *  this topic — must not fabricate relevance). */
+  personalRelevance: string | null;            // ≤300 chars
+
+  /** Optional change callout. Null on first run for this agent
+   *  OR when the new batch is genuinely indistinguishable from
+   *  prior briefings. */
+  whatsNew: string | null;                     // ≤200 chars
+
+  /** Optional batch caveat. NOT for surfacing system failures
+   *  (those go in failureClass). */
+  qualityNote: string | null;                  // ≤200 chars
+
+  /** Sources the agent consulted this run, in the order they're
+   *  referenced inline in proseBody ([1], [2], etc.). */
+  sources: Array<{
+    dedupeKey: string;
+    title: string;
+    url: string;
+    domain: string;                            // normalized host
+  }>;
+
+  /** Failure marker — carries forward from v2 fix. Present only
+   *  on failure briefings; fetchPriorBriefing filters these out
+   *  as prior context. */
+  failureClass?: 'rate_limited' | 'chain_exhausted' | 'malformed' | 'generic';
+};
+```
+
+### Render dispatch (briefing.version)
+
+| Version | Path | Notes |
+|---|---|---|
+| `version: 3` | New v3 render — see §4 layout | This PR |
+| `version: 2` | Existing v2 render component | PR #26 |
+| `version: 1` | PR #24 legacy flat path | Sunset condition per docs/19 §6 |
+| `NULL` | Degraded state — see §7 | Per docs/19 §6 |
+
+All four paths must coexist; the inbox dispatches on the field.
+
+---
+
+## 6. Prompt direction (for the implementation PR)
+
+The v3 briefing prompt produces prose, not fields. Key prompt constraints (full prompt lands in the implementation PR):
+
+- **Agent voice**: first-person, peer-register, direct. Not friendly-bot, not stiffly-academic. Hedges only when honesty requires it; otherwise opinionated.
+- **Open by getting to the point**: no "Hello! I have checked this batch for you." The agent opens at the substance: "Mostly explainer pieces this week, except one — Palo Alto's piece on adversarial testing methodology…"
+- **Use broker fragment**: when generating `personalRelevance`, the prompt receives the broker fragment and is instructed to angle the briefing at this user. If broker context is absent or unrelated to the topic, return `null` — do NOT fabricate relevance.
+- **Exactly 3 keep-in-mind items**: enforce in the prompt instruction AND in Zod validation. A returned 2-item or 4-item array fails parse → falls to failure briefing path.
+- **Source references inline**: prose uses `[1]`, `[2]` notation matching `sources[]` indices. Easy to render as clickable footnotes.
+- **Specificity contract from PR #27 carries forward**: ban platitudes, require concrete claims, prefer "skip the rest" over "they're all useful."
+- **Epistemic hedging from PR #22 carries forward**: no broad absence claims, no definitive-best claims, scope to "this batch."
+
+Voice exemplars (anchor for the LLM):
+
+> GOOD: "Mostly explainer pieces this week, except one. Palo Alto's piece on adversarial testing methodology is the only thing here that adds something — the others restate the same definition in different words. The interesting tension: Microsoft's docs argue red-teaming shouldn't replace systematic measurement [1], while the WEF piece treats it as the path forward [3]. If your week is tight, skip everything except [2]."
+>
+> BAD: "Hello! I have analyzed five sources this week on red teaming. Red teaming is a crucial practice for AI safety. Here are the key takeaways I found…"
 
 ---
 
 ## 7. Empty / degraded states
 
-### Agent has no runs yet
-Render the shell. Header shows "No runs yet." Latest briefing section shows:
+| Case | Header treatment | Body |
+|---|---|---|
+| No runs yet | "No runs yet" | "This agent has been created but hasn't completed an observation cycle. Once it runs, its briefing and activity will appear here." |
+| Latest run `status='ok'` + briefing NULL | "Updated [rel-time] · ok · no briefing" | "No briefing available for the latest run. [items_kept count] findings persisted; expand sources to see them." |
+| Latest run `failed` / `timeout` | "Last attempt failed [rel-time]" | "Latest run did not complete. Reason: [scrubbed error class]. The previous successful briefing remains in the timeline." |
+| Latest run `skipped_budget_exceeded` | "Skipped — budget cap [rel-time]" | "Skipped this cycle (daily run budget reached). Next attempt in [time]." |
+| `version: 2` briefing exists (legacy) | Header normal | v2 render component (PR #26) used inline. No prose-style render. |
+| `version: 1` / NULL (very old) | Header normal | PR #24 legacy flat render. No prose-style render. |
 
-> No runs yet.
->
-> This agent has been created but hasn't completed an observation cycle. Once it runs, its latest briefing and activity timeline will appear here.
-
-Source coverage hidden. Timeline shows "No runs yet" placeholder.
-
-### Latest run exists but `briefing IS NULL`
-Header shows last run time + status. Latest briefing section shows:
-
-> No briefing available for the latest run.
-> Completed at [timestamp] · [items_kept count] findings persisted.
-
-Source coverage still computed from `agent_findings` (works regardless of briefing). Timeline still works.
-
-### Latest run failed (`status='failed'` or `'timeout'`)
-Header surfaces the failure status badge clearly. Latest briefing section shows:
-
-> Latest run did not complete.
-> [Status badge] at [timestamp] · Reason: [scrubbed error class].
-
-The previous successful briefing — if any — is NOT auto-promoted to the top. The user sees that the latest attempt didn't work. To find the last successful briefing they expand the corresponding timeline entry.
-
-### Latest run skipped (`status='skipped_budget_exceeded'`)
-Header shows "Skipped this cycle (budget cap)." Latest briefing section blank/hidden. Timeline shows the skip row.
+**Load-bearing rule** (carried from yesterday's lock): a terminal run appears in the activity timeline WITHOUT updating the prose briefing surface. Failed/timeout/skipped runs are visible (the agent feels alive) without polluting the latest report.
 
 ---
 
-## 8. Status taxonomy — locked
+## 8. Status taxonomy
 
-Five terminal/in-flight `agent_runs.status` values. Phase 1 must render all of them without crashing.
+Five terminal/in-flight `agent_runs.status` values (unchanged from yesterday's lock):
 
-| Status | Updates Latest Briefing? | Appears in Activity Timeline? | Header treatment |
-|---|---|---|---|
-| `ok` + briefing populated | ✅ yes | ✅ yes | "Updated [rel-time] · ok" |
-| `ok` + briefing NULL | ❌ no (show degraded latest §7) | ✅ yes | "Updated [rel-time] · ok · no briefing" |
-| `partial_success` + briefing populated | ✅ yes | ✅ yes | Same as `ok` |
-| `failed` | ❌ no | ✅ yes | "Last attempt failed [rel-time]" |
-| `timeout` | ❌ no | ✅ yes | Same as `failed` |
-| `skipped_budget_exceeded` | ❌ no | ✅ yes | "Skipped — budget cap [rel-time]" |
-| `running` (in-flight) | ❌ no (yet) | ✅ yes (with pulse) | "Running now…" |
+| Status | Updates page briefing? | Header treatment |
+|---|---|---|
+| `ok` + briefing populated | ✅ yes | "Updated [rel-time] · ok" |
+| `ok` + briefing NULL | ❌ degraded copy | "Updated [rel-time] · ok · no briefing" |
+| `partial_success` + briefing | ✅ yes | same as `ok` |
+| `failed` | ❌ no | "Last attempt failed [rel-time]" |
+| `timeout` | ❌ no | same as `failed` |
+| `skipped_budget_exceeded` | ❌ no | "Skipped — budget cap [rel-time]" |
+| `running` (in-flight) | ❌ pulse | "Running now…" |
 
-**Load-bearing product rule (Sneha review 2026-05-19):**
-
-> A terminal run can appear in the Activity Timeline WITHOUT updating Latest Briefing.
-
-This separates "what the agent attempted" from "what the agent successfully reported." Failed/timeout/skipped runs are visible (you can see the agent is alive) without polluting the latest briefing surface.
+All seven must render without crashing.
 
 ---
 
 ## 9. Acceptance criteria
 
 ### Schema + runtime
-- [ ] No new tables, columns, RLS policies, or RPCs
-- [ ] No new runner writes; the existing runner is unchanged
-- [ ] Exactly one new server function (`getAgentHome(agentId)`) that reads existing data
+- [ ] `ResearchDigestBriefingV3` Zod schema added; v2 schema kept for legacy renders
+- [ ] Briefing prompt rewritten to produce v3 output; `summarise()` remains a no-op pass-through (no per-item LLM)
+- [ ] `keepInMind` array length === 3 enforced by Zod; non-three counts → Zod fails → failure briefing path
+- [ ] Broker fragment threaded into briefing prompt when generating `personalRelevance` (returns null if broker context is absent/irrelevant)
+- [ ] `whatsNew` and `personalRelevance` are both optional — `null` is valid
 
-### Route + redirect
+### Route + page
 - [ ] `/workspace/agents/$agentId` renders the home page
-- [ ] `/workspace/agents` renders the agent list with restyled rows (status-line content per §10 below)
+- [ ] `/workspace/agents` renders the agent list with restyled rows
 - [ ] `/workspace/inbox` redirects (or aliases) to `/workspace/agents`
 
 ### Page rendering
-- [ ] Header shows agent name + topics + cadence + last-run-status + relative last-run-time
-- [ ] Top section is labelled exactly **"Latest briefing"** (asserted by test — strings must match)
-- [ ] Latest briefing renders v2 component for v2 briefings; PR #24 legacy flat path for v1; degraded copy per §7 otherwise
-- [ ] Source coverage renders per §6 rules; hidden when empty
-- [ ] Timeline shows latest 10 runs, newest first, latest expanded, older collapsed
-- [ ] All 6 status values from §8 render without crashing
+- [ ] Header shows agent name + topics + cadence + status word + status dot + relative timestamp
+- [ ] **"Three things to keep in mind"** renders exactly 3 items; items tagged `new` get visual treatment
+- [ ] **"What's new this week"** callout renders only when `whatsNew !== null`; visually distinct (color band)
+- [ ] **Prose body** renders v3 `proseBody` as paragraphs; sentences referencing `[n]` anchor to sources
+- [ ] **"Why this matters to you"** section renders only when `personalRelevance !== null`
+- [ ] **Sources collapsed** — `<details>` block at the bottom; closed by default; click expands to source list
+- [ ] **Render dispatch**: v3 → new prose render; v2 → existing v2 component; v1/NULL → PR #24 legacy
+
+### Failure + degraded
+- [ ] All §7 degraded states render correctly
+- [ ] All §8 status values render without crashing
+- [ ] Briefing failure persists a `failureClass`-marked v3 briefing; fetchPriorBriefing skips it next run
 
 ### Accessibility (minimum)
-- [ ] Status badges include readable text label, NOT color alone (e.g. "Failed" not just a red dot)
-- [ ] Timeline expand/collapse controls reachable via keyboard (`<details>` element or equivalent)
-- [ ] Empty / degraded states are plain text, NOT icon-only
+- [ ] Status badges include readable text label (not color alone)
+- [ ] `<details>` for sources is keyboard-accessible
+- [ ] "What's new" highlight uses both color AND a text/badge marker (not color alone)
+- [ ] Empty / degraded states are plain text (not icon-only)
 
 ### Mobile (minimum)
-- [ ] Layout readable on 375px width without horizontal scroll
-- [ ] All four page sections render at mobile width
+- [ ] Layout readable at 375px width without horizontal scroll
+- [ ] Header collapses status meta to a second line on mobile
+- [ ] All 7 page sections render at mobile width
 
 ### Non-functional
 - [ ] tsc clean on touched files
-- [ ] Tests for: getAgentHome shape, source-coverage aggregation rules, fallback chain across §7 states, all 6 status values from §8
+- [ ] Tests for: v3 Zod validation (incl. exactly-3 rule), prose rendering, render dispatch by version, broker integration in prompt, all degraded states, all status values
+- [ ] One real run via `scripts/run-one-agent.ts` produces a v3 briefing; opening the home page reads as "the agent reported back" (subjective check, but the structured tests above pin the shape)
 
-### Operational verification gate
-After deploy, open any agent with at least one completed run at `/workspace/agents/<agentId>`. Confirm:
-- Header shows the relative timestamp and status badge
-- Latest briefing renders the v2 component (or degraded copy if the agent only has v1 / NULL briefings)
-- Source coverage either renders the host:count list or is hidden
-- Timeline shows the recent runs with latest expanded
+### Bounded surface
+The implementation PR touches only:
+- `src/server/agents/templates/research-digest.ts` (v3 schema + prompt rewrite + briefing function update)
+- `src/lib/agent-home.functions.ts` + `.server.ts` (new — getAgentHome serverFn)
+- `src/lib/findings.functions.ts` + `.server.ts` (new listAgentRows for the inbox)
+- `src/routes/workspace.inbox.tsx` (rewrite as agent list)
+- `src/routes/workspace.agents.$agentId.tsx` (new — the home page)
+- `src/components/AgentHomeBriefing.tsx` (new — the v3 prose render component)
+- `tests/leak-suite/phase30-research-digest.test.ts` (extended for v3)
+- `tests/agent-home/*` (new)
 
-If the page reads as "the agent's home" — alive, persistent, inspectable — Phase 1 ships.
-
----
-
-## 10. Agent list row status line
-
-When the inbox renders the agent list (`/workspace/agents`), each row shows:
-
-```
-[Agent name]
-[relative-time] · [status] · [optional short signal]
-```
-
-Phase 1 examples:
-- `Updated today · ok · 2 new findings`
-- `Updated 2h ago · ok · no briefing yet`
-- `Updated yesterday · failed`
-- `Updated 3 days ago · check overdue`
-- `No runs yet`
-
-Rules:
-- ONE short line
-- Relative time, never absolute
-- Status word always visible (no color-only)
-- Phase 1 does NOT include "themes," "branches," or "compounding insight" indicators — those are Phase 3
+Anything outside = scope drift, review bounces.
 
 ---
 
-## 11. Explicitly deferred (not Phase 1)
+## 10. Explicitly deferred to follow-up PRs
 
-All of these go into the next-spec queue, NOT this implementation PR:
+| Item | When |
+|---|---|
+| **Mind map visualization** | Next PR after this one |
+| Reply / instruction input | Phase 2 |
+| Detected themes across runs | Phase 3 |
+| Source-coverage / Activity-strip visuals | Phase 3 or later (skipped from this PR) |
+| Generate-X artifacts (report / mind-map export / deck) | Phase 4 |
+| Run Now button | docs/22 |
+| Read/unread state | Phase 2 nicety |
 
-| Item | Phase | Spec |
-|---|---|---|
-| `agent_messages` table + writes | Phase 2 | (in roadmap) |
-| User instructions / reply input | Phase 2 | (in roadmap) |
-| Manual user-created threads | Phase 2 | (in roadmap) |
-| Detected durable themes | Phase 3 | (in roadmap) |
-| Source coverage usefulness scoring | Phase 3 | (in roadmap) |
-| Derived artifacts (report, mind map, deck) | Phase 4 | (in roadmap) |
-| Living document export | Phase 4 | (in roadmap) |
-| Content-quality / personalization | **Track B** | **docs/26** |
-| Run Now trigger | parallel | docs/22 |
-
-> **The agent should have a home, not just a thread and not just a document.** The home page is the container. Better content is a separate track. Don't conflate.
+> "The agent should have a home, not just a thread and not just a document. The home page is the container; the prose IS the content; the mind map is the visual; nothing is the document." — combined Sneha review 2026-05-18 + 2026-05-19
 
 ---
 
-## Appendix: scope-drift checklist for the implementation PR reviewer
+## Appendix: scope-drift checklist for the implementation reviewer
 
-The PR ships only if NONE of these are present. If any are: bounce.
+The PR ships only if NONE of these are present. Bounce if any are:
 
-- [ ] No new tables — including `agent_messages`
+- [ ] No new tables (no `agent_messages`, no anything else)
+- [ ] No backfill SQL
+- [ ] No schema changes to `agents` / `agent_runs` / `agent_findings`
+- [ ] No mind map visualization (placeholder OR active)
 - [ ] No reply / instruction input UI
-- [ ] No "Generate report/mind map/deck" buttons
-- [ ] No themes/branches UI (placeholder or active)
+- [ ] No "Generate report / mind map / deck" buttons
+- [ ] No themes / branches UI (placeholder or active)
 - [ ] No "Run Now" button
 - [ ] No notifications / share URLs / read-unread state
-- [ ] No changes to the briefing prompt (Track B)
-- [ ] No backfill SQL
 - [ ] No new runner writes
-- [ ] No agent_findings or agent_runs schema changes
-- [ ] No accessibility-only-via-color
+- [ ] No `keepInMind.length !== 3` cases passing validation
+- [ ] No color-only status indicators
 - [ ] No desktop-only layout
-- [ ] Top section is labelled "Latest briefing," not "Latest State"
-- [ ] Source coverage either follows §6 rules exactly or is omitted entirely
+- [ ] Top "Three things" section uses the exact label (string-asserted in tests)
 
-If all pass: ship it. Track B (docs/26) follows immediately.
+If all clear: ship it. Mind-map PR follows immediately.
