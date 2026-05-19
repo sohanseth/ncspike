@@ -109,7 +109,30 @@ export const googleProvider: InferenceProvider = {
       });
     }
     if (!res.ok) {
-      throw new InferenceError(`Google AI HTTP ${res.status}`, "google", {
+      // Capture the response body so the diagnostic surfaces WHY Google
+      // returned non-2xx. Google's 400s often include an `error.message`
+      // string telling you exactly which field is rejected (model name,
+      // safety setting, request shape). Without this, the chain throws
+      // a bare "HTTP 400" and the operator has no path to a fix.
+      let detail = "";
+      try {
+        const body = await res.text();
+        // Try JSON first (Google's standard error shape); fall back to raw.
+        try {
+          const obj = JSON.parse(body) as { error?: { message?: string; status?: string } };
+          if (obj?.error?.message) {
+            detail = ` — ${obj.error.message.slice(0, 200)}`;
+            if (obj.error.status) detail = ` (${obj.error.status})${detail}`;
+          } else {
+            detail = ` — ${body.slice(0, 200)}`;
+          }
+        } catch {
+          detail = ` — ${body.slice(0, 200)}`;
+        }
+      } catch {
+        // Reading the body failed; fall through with no detail.
+      }
+      throw new InferenceError(`Google AI HTTP ${res.status}${detail}`, "google", {
         retriable: false,
         errorClass: "bad_response_shape",
       });
