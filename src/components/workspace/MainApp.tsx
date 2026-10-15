@@ -432,7 +432,7 @@ function TopBar({
           style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))",boxShadow:"0 0 14px rgba(139,92,246,0.3)"}}>
           <Zap size={13} style={{color:"var(--foreground)"}}/>
         </div>
-        <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"var(--font-display)"}}>NeuralConnexions</span>
+        <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden xl:block" style={{fontFamily:"var(--font-display)"}}>NeuralConnexions</span>
       </button>
 
       {/* Domain tiles moved out of the header — they now live under the
