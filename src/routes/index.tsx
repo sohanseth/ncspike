@@ -36,6 +36,8 @@ export const Route = createFileRoute("/")({
         content:
           "Triage, memory, overnight research, and drafts in your voice. Email bodies never leave your device by default.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Landing,

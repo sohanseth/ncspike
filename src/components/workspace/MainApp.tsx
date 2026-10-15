@@ -38,6 +38,7 @@ import { readPreferLocalAudio } from "@/lib/voice-preferences";
 import { supabase } from "@/integrations/supabase/client";
 import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
+import { Button } from "@/components/ui/button";
 import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
@@ -125,16 +126,14 @@ interface Signal {
 
 // ─── Domain colors ────────────────────────────────────────────────────────────
 
-const C: Record<DomainId, {
-  text: string; border: string; dot: string; bar: string;
-  hex: string; light: string; glow: string; tile: string; icon: string;
-}> = {
-  learning:     { text:"text-violet-400",  border:"border-violet-400/20",  dot:"bg-violet-400/60",  bar:"bg-violet-400",   hex:"#8b5cf6", light:"#c4b5fd", glow:"rgba(139,92,246,0.2)",  tile:"#6d28d9", icon:"#ede9fe" },
-  professional: { text:"text-sky-400",     border:"border-sky-400/20",     dot:"bg-sky-400/60",     bar:"bg-sky-400",      hex:"#38bdf8", light:"#7dd3fc", glow:"rgba(56,189,248,0.18)", tile:"#0284c7", icon:"#e0f2fe" },
-  social:       { text:"text-rose-400",    border:"border-rose-400/20",    dot:"bg-rose-400/60",    bar:"bg-rose-400",     hex:"#fb7185", light:"#fda4af", glow:"rgba(251,113,133,0.18)",tile:"#e11d48", icon:"#ffe4e6" },
-  family:       { text:"text-amber-400",   border:"border-amber-400/20",   dot:"bg-amber-400/60",   bar:"bg-amber-400",    hex:"#fbbf24", light:"#fde68a", glow:"rgba(251,191,36,0.18)", tile:"#d97706", icon:"#fef3c7" },
-  personal:     { text:"text-emerald-400", border:"border-emerald-400/20", dot:"bg-emerald-400/60", bar:"bg-emerald-400",  hex:"#34d399", light:"#6ee7b7", glow:"rgba(52,211,153,0.16)", tile:"#059669", icon:"#d1fae5" },
-};
+const C = Object.fromEntries(
+  (["learning", "professional", "social", "family", "personal"] as const).map(id => [id, {
+    text: `text-${id}`, border: `border-${id}/20`, dot: `bg-${id}/60`, bar: `bg-${id}`,
+    hex: `var(--${id})`, light: `var(--${id})`,
+    glow: `color-mix(in oklch, var(--${id}) 12%, transparent)`,
+    tile: `var(--${id}-surface)`, icon: `var(--${id})`,
+  }]),
+) as Record<DomainId, { text: string; border: string; dot: string; bar: string; hex: string; light: string; glow: string; tile: string; icon: string }>;
 
 // ─── Data ─────────────────────────────────────────────────────────────────────
 
@@ -330,8 +329,8 @@ const CAT_DOT: Record<MemoryCategory,string> = {
   "Deadlines":"bg-red-400","Writing style":"bg-amber-400","Recurring":"bg-teal-400",
 };
 const CONF: Record<Confidence,string> = {
-  high:"text-emerald-300 border-emerald-500/25 bg-emerald-500/10",
-  medium:"text-amber-300 border-amber-500/25 bg-amber-500/10",
+  high:"text-personal border-emerald-500/25 bg-emerald-500/10",
+  medium:"text-family border-amber-500/25 bg-amber-500/10",
   low:"text-red-300 border-red-500/25 bg-red-500/10",
 };
 const DOMAIN_ORDER: DomainId[] = ["learning","professional","social","family","personal"];
@@ -364,13 +363,13 @@ function DomainTiles({ onDomain }: { onDomain:(id:DomainId)=>void }) {
             className="group relative flex flex-col items-center gap-1 p-0.5"
             title={d.label}>
             <div className="w-9 h-9 rounded-xl flex items-center justify-center transition-all group-hover:scale-105 group-hover:brightness-110"
-              style={{background:`linear-gradient(135deg, ${c.tile}dd, ${c.tile}88)`,boxShadow:`0 2px 12px ${c.glow}`}}>
+              style={{background:`linear-gradient(135deg, ${c.tile}, ${c.tile})`,boxShadow:`0 2px 12px ${c.glow}`}}>
               <Icon size={16} style={{color:c.icon}}/>
               {urgentCount>0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 border border-background flex items-center justify-center text-[7px] font-bold text-white">{urgentCount}</span>
+                <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 border border-background flex items-center justify-center text-[7px] font-bold text-destructive-foreground">{urgentCount}</span>
               )}
             </div>
-            <span className="text-[8.5px] font-mono text-muted-foreground/50 tracking-wide hidden sm:block">{d.label.slice(0,4).toUpperCase()}</span>
+            <span className="text-[8.5px] font-mono text-muted-foreground tracking-wide hidden sm:block">{d.label.slice(0,4).toUpperCase()}</span>
           </button>
         );
       })}
@@ -396,31 +395,13 @@ function ActionPill({
   title?: string;
 }) {
   return (
-    <button
-      onClick={onClick}
-      title={title ?? label}
-      aria-label={title ?? label}
-      className={`group relative flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border transition-all flex-shrink-0 hover:-translate-y-px ${
-        active
-          ? "text-foreground/95 border-white/20 shadow-[0_4px_18px_rgba(0,0,0,0.4)]"
-          : "border-white/[0.08] text-foreground/70 hover:text-foreground hover:border-white/20"
-      }`}
-      style={{
-        fontFamily: "'DM Sans',sans-serif",
-        background: active
-          ? `linear-gradient(135deg, ${accent}33, ${accent}10)`
-          : "linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
-        boxShadow: active ? `0 0 18px ${accent}55, inset 0 0 0 1px ${accent}55` : undefined,
-      }}
+    <Button variant="outline"
+      onClick={onClick} title={title ?? label} aria-label={title ?? label}
+      className={`group h-9 gap-2 rounded-lg px-3.5 text-xs shadow-none ${active ? "bg-primary/30 border-success/35 text-foreground" : "bg-card border-border text-foreground/80 hover:bg-secondary"}`}
     >
-      <span
-        className="inline-flex items-center justify-center transition-transform group-hover:scale-110"
-        style={{ color: accent, filter: `drop-shadow(0 0 6px ${accent}99)` }}
-      >
-        {icon}
-      </span>
+      <span className="inline-flex items-center justify-center" style={{color:accent}}>{icon}</span>
       <span className="hidden sm:block">{label}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -448,10 +429,10 @@ function TopBar({
       {/* Logo */}
       <button onClick={()=>{ setMapView(null); setTool(null); }} className="flex items-center gap-2 hover:opacity-80 transition-opacity flex-shrink-0">
         <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-          style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)",boxShadow:"0 0 14px rgba(139,92,246,0.3)"}}>
-          <Zap size={13} style={{color:"#ddd6fe"}}/>
+          style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))",boxShadow:"0 0 14px rgba(139,92,246,0.3)"}}>
+          <Zap size={13} style={{color:"var(--foreground)"}}/>
         </div>
-        <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>NeuralConnexions</span>
+        <span className="text-[13px] font-semibold tracking-tight text-foreground/80 hidden lg:block" style={{fontFamily:"var(--font-display)"}}>NeuralConnexions</span>
       </button>
 
       {/* Domain tiles moved out of the header — they now live under the
@@ -469,7 +450,7 @@ function TopBar({
         <ActionPill
           icon={<Search size={14}/>}
           label="Search"
-          accent="#38bdf8"
+          accent="var(--professional)"
           title="Search Google"
           onClick={() => {
             const q = window.prompt("Search Google for:")?.trim();
@@ -495,7 +476,7 @@ function TopBar({
             </span>
           }
           label="Chat"
-          accent="#9b6dfa"
+          accent="var(--learning)"
           active={tool==="chat"}
           title="Chat or talk"
           onClick={()=>setTool(tool==="chat"?null:"chat")}
@@ -505,7 +486,7 @@ function TopBar({
         <ActionPill
           icon={<PenLine size={14}/>}
           label="Compose"
-          accent="#fb7185"
+          accent="var(--social)"
           active={tool==="compose"}
           onClick={()=>setTool(tool==="compose"?null:"compose")}
         />
@@ -516,7 +497,7 @@ function TopBar({
         <ActionPill
           icon={<User size={14}/>}
           label="You"
-          accent="#34d399"
+          accent="var(--personal)"
           active={["mindmap","memory","signals"].includes(mapView??"")}
           onClick={onExplore}
         />
@@ -527,8 +508,8 @@ function TopBar({
         {/* Connections */}
         <Link to="/workspace/connections"
          
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-border text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted transition-all flex-shrink-0"
+          style={{fontFamily:"var(--font-sans)"}}
           title="Connect Gmail & Calendar">
           <Plug size={13}/>
           <span className="hidden sm:block">Connect</span>
@@ -536,8 +517,8 @@ function TopBar({
 
         {/* Test */}
         <button onClick={onTest}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-[12.5px] font-medium border border-amber-500/30 bg-amber-500/10 text-family hover:bg-amber-500/20 transition-all flex-shrink-0"
+          style={{fontFamily:"var(--font-sans)"}}
           title="Test Scout & OAuth">
           <Sparkles size={13}/>
           <span className="hidden sm:block">Test</span>
@@ -547,20 +528,20 @@ function TopBar({
 
         {/* Personalization (Phase 2.7 D8 — settings entry for the trait broker) */}
         <Link to="/workspace/personalization" title="Personalization settings"
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-border text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted transition-all flex-shrink-0"
+          style={{fontFamily:"var(--font-sans)"}}>
           <Shield size={13}/>
           <span className="hidden sm:block">Personalization</span>
         </Link>
 
         {/* Avatar */}
         <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-          style={{background:"linear-gradient(135deg,#6d28d9,#4c1d95)",color:"#ede9fe"}}>S</div>
+          style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))",color:"#ede9fe"}}>S</div>
 
         {/* Sign out */}
         <button onClick={handleSignOut} title="Sign out" aria-label="Sign out"
-          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-white/[0.1] text-muted-foreground hover:text-foreground hover:border-white/20 hover:bg-white/[0.05] transition-all flex-shrink-0"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          className="flex items-center gap-2 px-3 py-2 rounded-xl text-[12.5px] font-medium border border-border text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted transition-all flex-shrink-0"
+          style={{fontFamily:"var(--font-sans)"}}>
           <LogOut size={13}/>
           <span className="hidden sm:block">Sign out</span>
         </button>
@@ -595,9 +576,9 @@ function MobileQuickBar({ onChat }: { onChat: () => void }) {
         aria-label="Open chat"
         className="w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border border-primary/40 bg-primary/[0.07] text-left text-[14px] text-foreground/90 active:bg-primary/[0.13] transition-colors"
       >
-        <Sparkles size={16} className="text-primary flex-shrink-0" />
+        <Sparkles size={16} className="text-success flex-shrink-0" />
         <span className="flex-1 truncate">Ask anything…</span>
-        <Send size={15} className="text-primary flex-shrink-0" />
+        <Send size={15} className="text-success flex-shrink-0" />
       </button>
     </div>
   );
@@ -643,28 +624,28 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinn
   const activity = liveCount !== undefined ? Math.min(1, liveCount / 5) : domain.activity;
   return (
     <div onClick={onClick} className={`h-full rounded-2xl border ${c.border} cursor-pointer overflow-hidden flex flex-col p-4 gap-3 transition-all hover:brightness-110 group relative`}
-      style={{background:`radial-gradient(ellipse at 12% 12%,${c.glow},transparent 50%),#1e1934`}}>
+      style={{background:c.tile}}>
       {onTogglePin && (
         <button
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-success" : "opacity-0 group-hover:opacity-100 bg-muted border-border text-muted-foreground hover:text-foreground/80 hover:bg-muted"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </button>
       )}
       <div className="flex items-center justify-between flex-shrink-0 gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}55)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+            style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,boxShadow:`0 1px 8px ${c.glow}`}}>
             <Icon size={12} style={{color:c.icon}}/>
           </div>
-          <span className="text-[12px] font-semibold text-foreground/85 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{domain.label}</span>
+          <span className="text-[12px] font-semibold text-foreground/85 truncate" style={{fontFamily:"var(--font-sans)"}}>{domain.label}</span>
         </div>
         {urgency && hasUrgency ? (
           <UrgencyBadges counts={urgency} compact={size==="sm"}/>
         ) : size!=="sm" && (
           <div className="flex items-center gap-1.5">
-            <div className="w-10 h-[2.5px] rounded-full bg-white/[0.07] overflow-hidden">
+            <div className="w-10 h-[2.5px] rounded-full bg-muted overflow-hidden">
               <div className={`h-full rounded-full ${c.bar}`} style={{width:`${activity*100}%`,opacity:0.8}}/>
             </div>
           </div>
@@ -676,8 +657,8 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinn
           <div key={item.id} className="flex items-start gap-2.5 min-w-0">
             <span className={`mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 ${item.urgent?"bg-red-400 shadow-[0_0_5px_rgba(248,113,113,0.7)]":c.dot}`}/>
             <div className="flex-1 min-w-0">
-              <p className="text-[11.5px] text-foreground/80 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.text}</p>
-              {size==="xl" && <p className="text-[10px] text-muted-foreground/70 truncate">{item.meta}</p>}
+              <p className="text-[11.5px] text-foreground/80 leading-snug truncate" style={{fontFamily:"var(--font-sans)"}}>{item.text}</p>
+              {size==="xl" && <p className="text-[10px] text-muted-foreground truncate">{item.meta}</p>}
             </div>
             {item.progress>0 && size==="xl" && <Ring progress={item.progress} color={c.light}/>}
           </div>
@@ -685,13 +666,13 @@ function DomainCard({ domain, size, onClick, liveItems, liveCount, urgency, pinn
       </div>
 
       {size!=="sm" && (
-        <div className="flex-shrink-0 flex items-center justify-between pt-2 border-t border-white/[0.06]">
+        <div className="flex-shrink-0 flex items-center justify-between pt-2 border-t border-border">
           <div className="flex gap-1">
             {domain.sources.slice(0,3).map(s=>(
-              <span key={s} className="text-[8px] font-mono text-muted-foreground/35 px-1.5 py-px rounded-md bg-white/[0.03]">{s}</span>
+              <span key={s} className="text-[8px] font-mono text-muted-foreground px-1.5 py-px rounded-md bg-muted">{s}</span>
             ))}
           </div>
-          <ArrowRight size={10} className="text-muted-foreground/20 group-hover:text-muted-foreground/55 transition-colors"/>
+          <ArrowRight size={10} className="text-muted-foreground/20 group-hover:text-muted-foreground transition-colors"/>
         </div>
       )}
     </div>
@@ -712,11 +693,11 @@ function IconBtn({ icon: Icon, label, onClick, color="default" }: {
   color?: "default"|"green"|"red"|"amber"|"violet";
 }) {
   const colors = {
-    default: "text-muted-foreground/50 hover:text-foreground/80 hover:bg-white/[0.07] hover:border-white/15",
-    green:   "text-muted-foreground/50 hover:text-emerald-400 hover:bg-emerald-400/[0.07] hover:border-emerald-400/25",
-    red:     "text-muted-foreground/50 hover:text-red-400 hover:bg-red-400/[0.07] hover:border-red-400/20",
-    amber:   "text-muted-foreground/50 hover:text-amber-400 hover:bg-amber-400/[0.07] hover:border-amber-400/20",
-    violet:  "text-muted-foreground/50 hover:text-primary hover:bg-primary/[0.08] hover:border-primary/25",
+    default: "text-muted-foreground hover:text-foreground/80 hover:bg-muted hover:border-border",
+    green:   "text-muted-foreground hover:text-personal hover:bg-emerald-400/[0.07] hover:border-emerald-400/25",
+    red:     "text-muted-foreground hover:text-red-400 hover:bg-red-400/[0.07] hover:border-red-400/20",
+    amber:   "text-muted-foreground hover:text-family hover:bg-amber-400/[0.07] hover:border-amber-400/20",
+    violet:  "text-muted-foreground hover:text-success hover:bg-primary/[0.08] hover:border-primary/25",
   };
   return (
     <button onClick={onClick} title={label}
@@ -751,10 +732,10 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
   const shown   = showAll ? visible : visible.slice(0,4);
 
   if(!visible.length && !justDone.length) return (
-    <div className="flex-shrink-0 rounded-2xl border border-white/[0.06] px-4 py-3 flex items-center gap-3"
+    <div className="flex-shrink-0 rounded-2xl border border-border px-4 py-3 flex items-center gap-3"
       style={{background:"rgba(255,255,255,0.01)"}}>
-      <Check size={12} className="text-emerald-400"/>
-      <p className="text-[12px] text-muted-foreground/50" style={{fontFamily:"'DM Sans',sans-serif"}}>All clear — nothing urgent right now</p>
+      <Check size={12} className="text-personal"/>
+      <p className="text-[12px] text-muted-foreground" style={{fontFamily:"var(--font-sans)"}}>All clear — nothing urgent right now</p>
     </div>
   );
 
@@ -764,10 +745,10 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
       {justDone.filter(id=>done.includes(id)).map(id=>{
         const item = ACTION_QUEUE.find(a=>a.id===id); if(!item) return null;
         return (
-          <div key={`undo-${id}`} className="flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06] bg-white/[0.02]">
-            <Check size={11} className="text-emerald-400 flex-shrink-0"/>
-            <p className="text-[11.5px] text-muted-foreground/60 flex-1 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.text}</p>
-            <button onClick={()=>undo(id)} className="flex items-center gap-1 text-[10px] font-mono text-primary/60 hover:text-primary transition-colors flex-shrink-0">
+          <div key={`undo-${id}`} className="flex items-center gap-3 px-4 py-2.5 rounded-2xl border border-border bg-muted">
+            <Check size={11} className="text-personal flex-shrink-0"/>
+            <p className="text-[11.5px] text-muted-foreground flex-1 truncate" style={{fontFamily:"var(--font-sans)"}}>{item.text}</p>
+            <button onClick={()=>undo(id)} className="flex items-center gap-1 text-[10px] font-mono text-success/60 hover:text-success transition-colors flex-shrink-0">
               <RotateCcw size={9}/> undo
             </button>
           </div>
@@ -783,18 +764,18 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
             style={{background:t.bg}}>
             {/* Domain tile */}
             <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+              style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,boxShadow:`0 1px 8px ${c.glow}`}}>
               <DomIcon size={12} style={{color:c.icon}}/>
             </div>
             {/* Text */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${t.dot}`}/>
-                <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/45">{t.label}</span>
-                {item.type==="proactive" && <Lightbulb size={9} className="text-primary/50"/>}
+                <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">{t.label}</span>
+                {item.type==="proactive" && <Lightbulb size={9} className="text-success/50"/>}
               </div>
-              <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.text}</p>
-              <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.meta}</p>
+              <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"var(--font-sans)"}}>{item.text}</p>
+              <p className="text-[10.5px] text-muted-foreground mt-0.5 truncate">{item.meta}</p>
             </div>
             {/* Icon actions — visible on hover, always visible on touch */}
             <div className="flex items-center gap-0.5 flex-shrink-0 opacity-40 group-hover:opacity-100 transition-opacity">
@@ -820,7 +801,7 @@ function ActionQueue({ onCompose, onRunOvernight, onDomain }: {
 
       {!showAll && visible.length > 4 && (
         <button onClick={()=>setShowAll(true)}
-          className="text-[10.5px] text-muted-foreground/40 font-mono hover:text-muted-foreground/70 transition-colors text-left px-1">
+          className="text-[10.5px] text-muted-foreground font-mono hover:text-muted-foreground transition-colors text-left px-1">
           · {visible.length - 4 + ACTION_QUEUE_OVERFLOW} more items across all domains
         </button>
       )}
@@ -841,7 +822,7 @@ const CAT_STYLE: Record<InboxItem["category"], { label: string; dot: string; bor
   today:        { label: "Today",      dot: "bg-amber-400",                                       border: "border-amber-400/20",  bg: "rgba(251,191,36,0.04)" },
   proactive:    { label: "Proactive",  dot: "bg-violet-400",                                      border: "border-violet-400/20", bg: "rgba(139,92,246,0.04)" },
   needs_review: { label: "Review",     dot: "bg-cyan-400",                                        border: "border-cyan-400/20",   bg: "rgba(34,211,238,0.04)" },
-  ignore:       { label: "Low",        dot: "bg-muted-foreground/40",                             border: "border-white/[0.06]",  bg: "rgba(255,255,255,0.015)" },
+  ignore:       { label: "Low",        dot: "bg-muted-foreground/40",                             border: "border-border",  bg: "rgba(255,255,255,0.015)" },
 };
 
 function useInbox() {
@@ -894,10 +875,10 @@ function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: (
     } finally { setBusy(false); }
   }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 backdrop-blur-sm p-4">
       <div className="w-full max-w-md rounded-2xl glass-elevated p-5">
         <div className="flex items-center gap-2 mb-3">
-          <Sparkles size={14} className="text-primary"/>
+          <Sparkles size={14} className="text-success"/>
           <h2 className="text-sm font-semibold tracking-tight font-display">Turn on Voice Drafts</h2>
         </div>
         <p className="text-[12.5px] text-foreground/80 mb-3 leading-relaxed">
@@ -908,14 +889,14 @@ function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: (
           <li>Your <strong>full sent folder is never sent</strong> — only a derived voice profile (sign-off, openers, average sentence length).</li>
           <li>Drafts are saved <strong>encrypted</strong> in your account. <strong>Nothing is sent automatically</strong> — every reply needs your click.</li>
         </ul>
-        {err && <p className="text-[11px] text-rose-300/80 mb-2">{err}</p>}
+        {err && <p className="text-[11px] text-social/80 mb-2">{err}</p>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} disabled={busy}
-            className="px-3 py-1.5 rounded-md text-[12px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+            className="px-3 py-1.5 rounded-md text-[12px] text-muted-foreground/80 hover:bg-muted hover:text-foreground disabled:opacity-50">
             Not now
           </button>
           <button onClick={accept} disabled={busy}
-            className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-primary/15 text-primary ring-1 ring-primary/30 hover:bg-primary/20 disabled:opacity-50">
+            className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-primary/15 text-success ring-1 ring-primary/30 hover:bg-primary/20 disabled:opacity-50">
             {busy ? "Saving…" : "I understand, enable"}
           </button>
         </div>
@@ -1393,17 +1374,17 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
 
   const button =
     phase === "analyzing" ? (
-      <span className="text-[10.5px] font-mono text-muted-foreground/60 px-2">Reading…</span>
+      <span className="text-[10.5px] font-mono text-muted-foreground px-2">Reading…</span>
     ) : phase === "generating" ? (
-      <span className="text-[10.5px] font-mono text-muted-foreground/60 px-2">Drafting…</span>
+      <span className="text-[10.5px] font-mono text-muted-foreground px-2">Drafting…</span>
     ) : phase === "idle" ? (
       <button onClick={startDraft}
-        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25 transition-colors"
+        className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-success/85 hover:bg-primary/10 ring-1 ring-primary/25 transition-colors"
         title="Draft a reply in your voice">
         <Sparkles size={11}/> Draft reply
       </button>
     ) : (
-      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-primary/70 ring-1 ring-primary/25">
+      <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-medium text-success/70 ring-1 ring-primary/25">
         <Sparkles size={11}/> {phase === "asking" ? "Quick check" : "Drafted"}
       </span>
     );
@@ -1411,12 +1392,12 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   const askingPanel = phase === "asking" ? (
     <div className="w-full mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 flex flex-col gap-2.5">
       <div className="flex items-center gap-2">
-        <Sparkles size={11} className="text-primary"/>
-        <span className="text-[9px] font-mono uppercase tracking-wider text-primary/70">Assistant check-in</span>
-        {err && <span className="text-[10px] text-rose-300/80 ml-auto">{err}</span>}
+        <Sparkles size={11} className="text-success"/>
+        <span className="text-[9px] font-mono uppercase tracking-wider text-success/70">Assistant check-in</span>
+        {err && <span className="text-[10px] text-social/80 ml-auto">{err}</span>}
       </div>
       {pendingNote && (
-        <p className="text-[12px] text-foreground/75 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+        <p className="text-[12px] text-foreground/75 leading-relaxed" style={{fontFamily:"var(--font-sans)"}}>
           {pendingNote}
         </p>
       )}
@@ -1439,10 +1420,10 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                 value={answers[q.id] ?? ""}
                 placeholder={q.placeholder}
                 onChange={(e) => setAnswers((a) => ({ ...a, [q.id]: e.target.value }))}
-                className="bg-transparent border border-white/[0.08] rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground/35 focus:outline-none focus:ring-1 focus:ring-primary/40"
+                className="bg-transparent border border-border rounded-md px-2 py-1.5 text-[12px] text-foreground/90 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/40"
               />
               {prepNeeded && (
-                <span className="text-[10px] text-muted-foreground/45 mt-0.5">
+                <span className="text-[10px] text-muted-foreground mt-0.5">
                   Answer prep time first to use your calendar.
                 </span>
               )}
@@ -1457,8 +1438,8 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                         onClick={() => toggleAvailSlot(q.id, s.human)}
                         className={
                           inAnswer
-                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] bg-primary/15 text-primary/90 ring-1 ring-primary/30 hover:bg-primary/20"
-                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-muted-foreground/55 ring-1 ring-white/[0.08] hover:ring-primary/30 hover:text-foreground/75"
+                            ? "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] bg-primary/15 text-success/90 ring-1 ring-primary/30 hover:bg-primary/20"
+                            : "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10.5px] text-muted-foreground ring-1 ring-white/[0.08] hover:ring-primary/30 hover:text-foreground/75"
                         }
                         title={inAnswer ? "Remove from reply" : "Add to reply"}
                       >
@@ -1475,7 +1456,7 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                     <button
                       type="button"
                       onClick={() => suggestAvailabilityFromCalendar(q.id)}
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-primary/75 hover:bg-primary/10 hover:text-primary"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] text-success/75 hover:bg-primary/10 hover:text-success"
                     >
                       <CalendarDays size={10}/> Use my calendar
                     </button>
@@ -1484,32 +1465,32 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
                     <button
                       type="button"
                       onClick={() => suggestAvailabilityFromCalendar(q.id)}
-                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground/55 hover:text-foreground/75"
+                      className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-muted-foreground hover:text-foreground/75"
                       title="Re-fetch free slots from your calendar"
                     >
                       <RefreshCw size={9}/> Refresh
                     </button>
                   )}
                   {availSuggest.status === "loading" && (
-                    <span className="text-[10.5px] font-mono text-muted-foreground/60">
+                    <span className="text-[10.5px] font-mono text-muted-foreground">
                       Checking your calendar…
                     </span>
                   )}
                   {availSuggest.status === "empty" && (
-                    <span className="text-[10.5px] text-muted-foreground/60">
+                    <span className="text-[10.5px] text-muted-foreground">
                       No free slots in the next week — type your own.
                     </span>
                   )}
                   {availSuggest.status === "no_calendar" && (
-                    <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1">
+                    <span className="text-[10.5px] text-muted-foreground inline-flex items-center gap-1">
                       Calendar not connected.{" "}
-                      <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                      <Link to="/workspace/connections" className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                         Connect →
                       </Link>
                     </span>
                   )}
                   {availSuggest.status === "error" && (
-                    <span className="text-[10.5px] text-rose-300/70">
+                    <span className="text-[10.5px] text-social/70">
                       Couldn't reach calendar — type your own.
                     </span>
                   )}
@@ -1521,15 +1502,15 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       </div>
       <div className="flex items-center gap-1.5">
         <button onClick={submitAnswers} disabled={phase !== "asking"}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-success ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
           <Sparkles size={11}/> Draft with this
         </button>
         <button onClick={skipQuestions} disabled={phase !== "asking"}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/70 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50">
           Skip & draft anyway
         </button>
         <button onClick={dismiss}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:bg-white/5 hover:text-foreground ml-auto">
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground ml-auto">
           <X size={11}/> Cancel
         </button>
       </div>
@@ -1539,13 +1520,13 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
   const panel = (phase === "open" || phase === "sending") ? (
     <div className="w-full mt-2 rounded-xl border border-primary/20 bg-primary/[0.04] p-3 flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Sparkles size={11} className="text-primary"/>
-        <span className="text-[9px] font-mono uppercase tracking-wider text-primary/70">{draft?.template} draft</span>
-        {err && <span className="text-[10px] text-rose-300/80 ml-auto">{err}</span>}
+        <Sparkles size={11} className="text-success"/>
+        <span className="text-[9px] font-mono uppercase tracking-wider text-success/70">{draft?.template} draft</span>
+        {err && <span className="text-[10px] text-social/80 ml-auto">{err}</span>}
       </div>
       {draft?.assistantNote && (
         <div className="rounded-lg border border-primary/15 bg-primary/[0.05] px-2.5 py-2">
-          <p className="text-[11.5px] text-foreground/75 leading-relaxed italic" style={{fontFamily:"'DM Sans',sans-serif"}}>
+          <p className="text-[11.5px] text-foreground/75 leading-relaxed italic" style={{fontFamily:"var(--font-sans)"}}>
             {draft.assistantNote}
           </p>
         </div>
@@ -1554,35 +1535,35 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={Math.min(12, Math.max(4, body.split("\n").length + 1))}
-        className="w-full bg-transparent border border-white/[0.06] rounded-lg p-2 text-[12.5px] text-foreground/90 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/40 resize-y"
+        className="w-full bg-transparent border border-border rounded-lg p-2 text-[12.5px] text-foreground/90 font-sans leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/40 resize-y"
       />
       <div className="flex items-center gap-1.5 flex-wrap">
         <button onClick={copyAndMarkSent}
           disabled={phase === "sending" || !body.trim() || copied}
-          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-primary ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
+          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium bg-primary/20 text-success ring-1 ring-primary/30 hover:bg-primary/25 disabled:opacity-50">
           <Check size={11}/> {copied ? "Copied & marked sent" : phase === "sending" ? "Saving…" : "Copy reply & mark sent"}
         </button>
         {!inIframe && (
           <a href={gmailUrl} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
+            className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-muted hover:text-foreground">
             <Send size={11}/> Open Gmail
           </a>
         )}
         <a href={mailtoUrl}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground">
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-muted hover:text-foreground">
           mailto…
         </a>
         {inIframe && copied && (
-          <span className="text-[10.5px] text-muted-foreground/60 px-1">
+          <span className="text-[10.5px] text-muted-foreground px-1">
             Paste into Gmail in another tab. (Direct link works in your deployed app, blocked in this preview.)
           </span>
         )}
         <button onClick={regenerate} disabled={phase === "sending"}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground disabled:opacity-50">
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-muted hover:text-foreground disabled:opacity-50">
           <RefreshCw size={11}/> Regenerate
         </button>
         <button onClick={dismiss} disabled={phase === "sending"}
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/60 hover:bg-white/5 hover:text-foreground disabled:opacity-50 ml-auto">
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50 ml-auto">
           <X size={11}/> Dismiss
         </button>
       </div>
@@ -1590,55 +1571,55 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
           sender into a 2-3 sentence read. Always offered (the sender is known
           by definition once a draft exists), but loads lazily on click. */}
       {draft && (
-        <div className="border-t border-white/[0.06] pt-2 mt-1 flex flex-col gap-1.5">
+        <div className="border-t border-border pt-2 mt-1 flex flex-col gap-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             {(contextBrief.phase === "idle" || contextBrief.phase === "error") && (
               <button onClick={researchContext}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-success/85 hover:bg-primary/10 ring-1 ring-primary/25"
                 title="Synthesize a brief about this sender from your prior threads">
                 <BookOpen size={11}/> Context on this sender
               </button>
             )}
             {contextBrief.phase === "loading" && (
-              <span className="text-[10.5px] font-mono text-muted-foreground/70">Reading prior threads…</span>
+              <span className="text-[10.5px] font-mono text-muted-foreground">Reading prior threads…</span>
             )}
             {contextBrief.phase === "no_history" && (
-              <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1.5">
+              <span className="text-[10.5px] text-muted-foreground inline-flex items-center gap-1.5">
                 <BookOpen size={11}/> No prior history with this sender.
               </span>
             )}
             {contextBrief.phase === "ok" && (
-              <span className="text-[10.5px] text-muted-foreground/60 inline-flex items-center gap-1.5">
+              <span className="text-[10.5px] text-muted-foreground inline-flex items-center gap-1.5">
                 <BookOpen size={11}/> Context · {contextBrief.sourceCount} prior thread{contextBrief.sourceCount === 1 ? "" : "s"}
               </span>
             )}
             {contextBrief.phase === "error" && (
-              <span className="text-[10.5px] text-rose-300/80">Couldn't load: {contextBrief.message}</span>
+              <span className="text-[10.5px] text-social/80">Couldn't load: {contextBrief.message}</span>
             )}
             {/* Defer-to-overnight twin chip. Cheap to use repeatedly because
                 the queue dedupes — clicking after a duplicate is a no-op. */}
             {scheduleState.phase === "idle" && (
               <button onClick={scheduleResearchOvernight}
-                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-white/5 hover:text-foreground"
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-muted-foreground/80 hover:bg-muted hover:text-foreground"
                 title="Queue this research for the overnight batch instead of running it now">
                 <Bell size={11}/> Research overnight
               </button>
             )}
             {scheduleState.phase === "enqueuing" && (
-              <span className="text-[10.5px] font-mono text-muted-foreground/70">Scheduling…</span>
+              <span className="text-[10.5px] font-mono text-muted-foreground">Scheduling…</span>
             )}
             {scheduleState.phase === "scheduled" && (
-              <span className="text-[10.5px] text-emerald-300/80 inline-flex items-center gap-1.5">
+              <span className="text-[10.5px] text-personal/80 inline-flex items-center gap-1.5">
                 <Check size={11}/> Queued for {scheduleState.whenHuman}
               </span>
             )}
             {scheduleState.phase === "duplicate" && (
-              <span className="text-[10.5px] text-muted-foreground/70 inline-flex items-center gap-1.5">
+              <span className="text-[10.5px] text-muted-foreground inline-flex items-center gap-1.5">
                 <Check size={11}/> Already in tonight's queue
               </span>
             )}
             {scheduleState.phase === "error" && (
-              <span className="text-[10.5px] text-rose-300/80">Couldn't queue: {scheduleState.message}</span>
+              <span className="text-[10.5px] text-social/80">Couldn't queue: {scheduleState.message}</span>
             )}
           </div>
           {contextBrief.phase === "ok" && (
@@ -1651,38 +1632,38 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       {/* Prep-block follow-up: only when we have both a meeting slot to anchor
           on AND the user told us how much prep time they want. */}
       {draft?.proposedSlots && draft.proposedSlots.length > 0 && answers.prep_time?.trim() && (
-        <div className="border-t border-white/[0.06] pt-2 mt-1 flex items-center gap-2 flex-wrap">
+        <div className="border-t border-border pt-2 mt-1 flex items-center gap-2 flex-wrap">
           {prepBlock.phase === "idle" && (
             <button onClick={blockPrepTime}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25">
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-success/85 hover:bg-primary/10 ring-1 ring-primary/25">
               <CalendarDays size={11}/> Block prep time on my calendar
             </button>
           )}
           {prepBlock.phase === "blocking" && (
-            <span className="text-[10.5px] font-mono text-muted-foreground/70">Blocking prep time…</span>
+            <span className="text-[10.5px] font-mono text-muted-foreground">Blocking prep time…</span>
           )}
           {prepBlock.phase === "done" && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-300/85">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-personal/85">
               <Check size={11}/> Prep blocked: {prepBlock.human}
               {prepBlock.htmlLink && (
                 <a href={prepBlock.htmlLink} target="_blank" rel="noopener noreferrer"
-                  className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                   Open in Calendar →
                 </a>
               )}
             </span>
           )}
           {prepBlock.phase === "error" && (
-            <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
+            <span className="text-[10.5px] text-social/80 inline-flex items-center gap-1.5">
               {prepBlock.reason === "scope" ? (
                 <>Google Calendar is connected with read-only access.{" "}
-                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  <Link to="/workspace/connections" className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                     Reconnect to enable event creation →
                   </Link>
                 </>
               ) : prepBlock.reason === "no_calendar" ? (
                 <>No calendar connected.{" "}
-                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  <Link to="/workspace/connections" className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                     Connect Google Calendar →
                   </Link>
                 </>
@@ -1696,40 +1677,40 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
       {/* Follow-up reminder: optional one-click chip surfaced when the assistant
           thinks this thread is worth coming back to (decisions, sales chases). */}
       {draft?.followUp && (
-        <div className="border-t border-white/[0.06] pt-2 mt-1 flex items-center gap-2 flex-wrap">
+        <div className="border-t border-border pt-2 mt-1 flex items-center gap-2 flex-wrap">
           {followUp.phase === "idle" && (
             <button onClick={scheduleFollowUp}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-primary/85 hover:bg-primary/10 ring-1 ring-primary/25"
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] text-success/85 hover:bg-primary/10 ring-1 ring-primary/25"
               title={`"${draft.followUp.summary}" — adds a 30-min hold at 9 AM, ${draft.followUp.afterDays} day${draft.followUp.afterDays === 1 ? "" : "s"} from now`}
             >
               <BellRing size={11}/> Remind me in {draft.followUp.afterDays} day{draft.followUp.afterDays === 1 ? "" : "s"}
             </button>
           )}
           {followUp.phase === "blocking" && (
-            <span className="text-[10.5px] font-mono text-muted-foreground/70">Setting reminder…</span>
+            <span className="text-[10.5px] font-mono text-muted-foreground">Setting reminder…</span>
           )}
           {followUp.phase === "done" && (
-            <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-300/85">
+            <span className="inline-flex items-center gap-1.5 text-[11px] text-personal/85">
               <Check size={11}/> Reminder set: {followUp.human}
               {followUp.htmlLink && (
                 <a href={followUp.htmlLink} target="_blank" rel="noopener noreferrer"
-                  className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                   Open in Calendar →
                 </a>
               )}
             </span>
           )}
           {followUp.phase === "error" && (
-            <span className="text-[10.5px] text-rose-300/80 inline-flex items-center gap-1.5">
+            <span className="text-[10.5px] text-social/80 inline-flex items-center gap-1.5">
               {followUp.reason === "scope" ? (
                 <>Google Calendar is connected with read-only access.{" "}
-                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  <Link to="/workspace/connections" className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                     Reconnect to enable event creation →
                   </Link>
                 </>
               ) : followUp.reason === "no_calendar" ? (
                 <>No calendar connected.{" "}
-                  <Link to="/workspace/connections" className="text-primary/80 hover:text-primary underline-offset-2 hover:underline">
+                  <Link to="/workspace/connections" className="text-success/80 hover:text-success underline-offset-2 hover:underline">
                     Connect Google Calendar →
                   </Link>
                 </>
@@ -1771,17 +1752,17 @@ function InboxRow({
       style={{background:s.bg}}>
       <div className="flex items-center gap-3">
         <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+          style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,boxShadow:`0 1px 8px ${c.glow}`}}>
           <Mail size={12} style={{color:c.icon}}/>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 mb-0.5">
             <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.dot}`}/>
-            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground/55">{s.label}</span>
-            {item.reason && <span className="text-[9px] text-muted-foreground/40 truncate">· {item.reason}</span>}
+            <span className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">{s.label}</span>
+            {item.reason && <span className="text-[9px] text-muted-foreground truncate">· {item.reason}</span>}
           </div>
-          <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
-          <p className="text-[10.5px] text-muted-foreground/45 mt-0.5 truncate">{item.from}</p>
+          <p className="text-[12.5px] text-foreground/88 leading-snug truncate" style={{fontFamily:"var(--font-sans)"}}>{item.subject}</p>
+          <p className="text-[10.5px] text-muted-foreground mt-0.5 truncate">{item.from}</p>
         </div>
         <div className="flex items-center gap-1 flex-shrink-0 opacity-90 group-hover:opacity-100 transition-opacity">
           {draftable && draft.button}
@@ -1814,20 +1795,20 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
   if (error) {
     return (
       <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-3">
-        <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {error}</p>
-        <Link to="/workspace/connections" className="text-[10.5px] text-primary/70 font-mono hover:text-primary">Connect Gmail →</Link>
+        <p className="text-[11.5px] text-social/80">Couldn't load inbox: {error}</p>
+        <Link to="/workspace/connections" className="text-[10.5px] text-success/70 font-mono hover:text-success">Connect Gmail →</Link>
       </div>
     );
   }
   if (!items) {
-    return <div className="flex-shrink-0 rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading inbox…</div>;
+    return <div className="flex-shrink-0 rounded-2xl border border-border px-4 py-3 text-[11.5px] text-muted-foreground">Loading inbox…</div>;
   }
   if (items.length === 0) {
     return (
-      <div className="flex-shrink-0 rounded-2xl border border-white/[0.06] px-4 py-3 flex items-center gap-3">
-        <Inbox size={12} className="text-muted-foreground/60"/>
-        <p className="text-[12px] text-muted-foreground/60 flex-1" style={{fontFamily:"'DM Sans',sans-serif"}}>No inbox items yet.</p>
-        <Link to="/workspace/connections" className="text-[10.5px] text-primary/70 font-mono hover:text-primary whitespace-nowrap">Pull emails →</Link>
+      <div className="flex-shrink-0 rounded-2xl border border-border px-4 py-3 flex items-center gap-3">
+        <Inbox size={12} className="text-muted-foreground"/>
+        <p className="text-[12px] text-muted-foreground flex-1" style={{fontFamily:"var(--font-sans)"}}>No inbox items yet.</p>
+        <Link to="/workspace/connections" className="text-[10.5px] text-success/70 font-mono hover:text-success whitespace-nowrap">Pull emails →</Link>
       </div>
     );
   }
@@ -1841,9 +1822,9 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
   return (
     <div className="flex-shrink-0 flex flex-col gap-1.5">
       {visible.length === 0 && (
-        <div className="rounded-2xl border border-white/[0.06] px-4 py-3 flex items-center gap-3">
-          <Check size={12} className="text-emerald-400"/>
-          <p className="text-[12px] text-muted-foreground/60" style={{fontFamily:"'DM Sans',sans-serif"}}>All clear — nothing urgent right now</p>
+        <div className="rounded-2xl border border-border px-4 py-3 flex items-center gap-3">
+          <Check size={12} className="text-personal"/>
+          <p className="text-[12px] text-muted-foreground" style={{fontFamily:"var(--font-sans)"}}>All clear — nothing urgent right now</p>
         </div>
       )}
       {visible.map(item => {
@@ -1874,7 +1855,7 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
       })}
       {!showLow && low.length > 0 && (
         <button onClick={()=>setShowLow(true)}
-          className="text-[10.5px] text-muted-foreground/40 font-mono hover:text-muted-foreground/70 transition-colors text-left px-1">
+          className="text-[10.5px] text-muted-foreground font-mono hover:text-muted-foreground transition-colors text-left px-1">
           · {low.length} low-priority {low.length === 1 ? "item" : "items"}
         </button>
       )}
@@ -2036,13 +2017,13 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       {/* Mobile-only Brief card. Larger and more prominent than the desktop
           greeting pill — this is the "one thing right now" that the personal-OS
           framing depends on. */}
-      <div className="md:hidden flex-shrink-0 flex flex-col gap-2 px-4 py-3.5 rounded-2xl border border-white/[0.06]"
-        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(30,25,52,0.6)"}}>
+      <div className="md:hidden flex-shrink-0 flex flex-col gap-2 px-4 py-3.5 rounded-2xl border border-border"
+        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.10) 0%,transparent 60%),var(--surface-elevated)"}}>
         <div className="flex items-center justify-between text-[10.5px] font-mono">
-          <span className="text-muted-foreground/60">{greet}, {firstName}</span>
-          <span className="text-muted-foreground/40">{dateLabel}</span>
+          <span className="text-muted-foreground">{greet}, {firstName}</span>
+          <span className="text-muted-foreground">{dateLabel}</span>
         </div>
-        <p className="text-[15px] font-medium text-foreground/95 leading-snug" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <p className="text-[15px] font-medium text-foreground/95 leading-snug" style={{fontFamily:"var(--font-display)"}}>
           {briefText}
         </p>
         {totalUrgent > 0 && (
@@ -2055,10 +2036,10 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
       </div>
 
       {/* Desktop pill: original compact format — greeting + urgent count + date. */}
-      <div className="hidden md:flex flex-shrink-0 items-center gap-3 px-4 py-2.5 rounded-2xl border border-white/[0.06]"
-        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
+      <div className="hidden md:flex flex-shrink-0 items-center gap-3 px-4 py-2.5 rounded-2xl border border-border"
+        style={{background:"radial-gradient(ellipse at 0% 50%,rgba(139,92,246,0.06) 0%,transparent 60%),var(--surface-elevated)"}}>
         <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{background:"#9b6dfa",boxShadow:"0 0 8px rgba(155,109,250,0.7)"}}/>
-        <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <span className="flex-1 text-[13px] text-foreground/80 font-medium truncate" style={{fontFamily:"var(--font-display)"}}>
           {greet}, {firstName}
         </span>
         {totalUrgent > 0 && (
@@ -2068,7 +2049,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
             {totalUrgent} urgent
           </span>
         )}
-        <span className="text-[10.5px] text-muted-foreground/40 font-mono">{dateLabel}</span>
+        <span className="text-[10.5px] text-muted-foreground font-mono">{dateLabel}</span>
       </div>
 
       {/* Domain tiles — moved here from the header so they sit right under the
@@ -2079,7 +2060,7 @@ function HomeCanvas({ onDomain, onOther, doneIds }: {
 
       {inboxErr && (
         <div className="flex-shrink-0 rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-2.5">
-          <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr} · <Link to="/workspace/connections" className="text-primary/80 hover:text-primary font-mono">connect Gmail →</Link></p>
+          <p className="text-[11.5px] text-social/80">Couldn't load inbox: {inboxErr} · <Link to="/workspace/connections" className="text-success/80 hover:text-success font-mono">connect Gmail →</Link></p>
         </div>
       )}
 
@@ -2149,23 +2130,23 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
   const preview = items.slice(0, maxItems);
   return (
     <button onClick={onClick}
-      className={`group relative w-full h-full rounded-2xl border border-white/[0.07] cursor-pointer overflow-hidden hover:border-white/20 hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
-      style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),rgba(30,25,52,0.5)"}}>
+      className={`group relative w-full h-full rounded-2xl border border-border cursor-pointer overflow-hidden hover:border-border hover:brightness-110 transition-all text-left flex ${isSM ? "items-center gap-3 px-4" : "flex-col p-4 gap-3"}`}
+      style={{background:"radial-gradient(ellipse at 0% 0%,rgba(255,255,255,0.05) 0%,transparent 60%),var(--surface-elevated)"}}>
       {onTogglePin && (
         <span
           role="button"
           onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
           title={pinned ? "Unpin" : "Pin to top"}
-          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-primary" : "opacity-0 group-hover:opacity-100 bg-white/[0.04] border-white/[0.08] text-muted-foreground/60 hover:text-foreground/80 hover:bg-white/[0.08]"}`}>
+          className={`absolute top-2 right-2 z-10 w-6 h-6 rounded-md flex items-center justify-center border transition-all after:content-[''] after:absolute after:-inset-2.5 after:md:hidden ${pinned ? "opacity-100 bg-primary/20 border-primary/40 text-success" : "opacity-0 group-hover:opacity-100 bg-muted border-border text-muted-foreground hover:text-foreground/80 hover:bg-muted"}`}>
           {pinned ? <PinOff size={11}/> : <Pin size={11}/>}
         </span>
       )}
       <div className={`flex items-center justify-between flex-shrink-0 ${isSM ? "" : "w-full"}`}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]`}>
+          <div className={`${isXL ? "w-8 h-8" : "w-6 h-6"} rounded-lg flex items-center justify-center flex-shrink-0 bg-muted border border-border`}>
             <Inbox size={isXL ? 14 : 12} className="text-muted-foreground/80"/>
           </div>
-          <span className={`${isXL ? "text-[13px]" : "text-[12px]"} font-semibold text-foreground/85 truncate`} style={{fontFamily:"'DM Sans',sans-serif"}}>Other</span>
+          <span className={`${isXL ? "text-[13px]" : "text-[12px]"} font-semibold text-foreground/85 truncate`} style={{fontFamily:"var(--font-sans)"}}>Other</span>
         </div>
         {!isSM && count > 0 && (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-mono text-[10px] font-semibold border flex-shrink-0"
@@ -2178,38 +2159,38 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
       {isSM ? (
         <div className="flex-1 min-w-0">
           {preview[0] ? (
-            <p className="text-[11px] text-foreground/75 truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{preview[0].subject}</p>
+            <p className="text-[11px] text-foreground/75 truncate" style={{fontFamily:"var(--font-sans)"}}>{preview[0].subject}</p>
           ) : (
-            <p className="text-[9.5px] text-muted-foreground/55 truncate font-mono">nothing pending</p>
+            <p className="text-[9.5px] text-muted-foreground truncate font-mono">nothing pending</p>
           )}
           {count > 1 && (
-            <p className="text-[9px] text-muted-foreground/40 truncate font-mono">+{count - 1} more</p>
+            <p className="text-[9px] text-muted-foreground truncate font-mono">+{count - 1} more</p>
           )}
         </div>
       ) : (
         <div className="flex-1 flex flex-col gap-1.5 min-h-0 overflow-hidden w-full">
           {preview.length === 0 ? (
-            <p className="text-[10.5px] text-muted-foreground/55 font-mono">Nothing uncategorized</p>
+            <p className="text-[10.5px] text-muted-foreground font-mono">Nothing uncategorized</p>
           ) : (
             preview.map(item => (
               <div key={item.id} className="flex items-start gap-2.5 min-w-0">
                 <span className="mt-[5px] w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40"/>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[11.5px] text-foreground/80 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.subject}</p>
-                  {isXL && <p className="text-[10px] text-muted-foreground/55 truncate">{item.from}</p>}
+                  <p className="text-[11.5px] text-foreground/80 leading-snug truncate" style={{fontFamily:"var(--font-sans)"}}>{item.subject}</p>
+                  {isXL && <p className="text-[10px] text-muted-foreground truncate">{item.from}</p>}
                 </div>
               </div>
             ))
           )}
           {count > preview.length && (
-            <p className="text-[9.5px] text-muted-foreground/40 font-mono mt-auto">+{count - preview.length} more</p>
+            <p className="text-[9.5px] text-muted-foreground font-mono mt-auto">+{count - preview.length} more</p>
           )}
         </div>
       )}
 
       {!isSM && (
-        <div className="flex-shrink-0 flex items-center justify-end pt-2 border-t border-white/[0.06] w-full">
-          <ArrowRight size={11} className="text-muted-foreground/30 group-hover:text-muted-foreground/70 transition-colors"/>
+        <div className="flex-shrink-0 flex items-center justify-end pt-2 border-t border-border w-full">
+          <ArrowRight size={11} className="text-muted-foreground group-hover:text-muted-foreground transition-colors"/>
         </div>
       )}
     </button>
@@ -2262,30 +2243,30 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
   const cardC = c ?? fallbackC;
 
   return (
-    <div className="fixed inset-0 z-40 flex flex-col" style={{background:"rgba(14,11,26,0.98)",backdropFilter:"blur(24px)"}}>
+    <div className="fixed inset-0 z-40 flex flex-col" style={{background:"var(--surface-elevated)",backdropFilter:"blur(24px)"}}>
       {/* Header with prominent back button */}
-      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-white/[0.08] bg-background/70 backdrop-blur-md"
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-border bg-background/70 backdrop-blur-md"
         style={{paddingTop:"max(env(safe-area-inset-top), 0.75rem)"}}>
         <button onClick={onClose}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/[0.08] bg-white/[0.03] text-foreground/85 hover:bg-white/[0.07] hover:border-white/20 transition-all flex-shrink-0">
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-border bg-muted text-foreground/85 hover:bg-muted hover:border-border transition-all flex-shrink-0">
           <ArrowLeft size={14}/>
-          <span className="text-[12px] font-medium" style={{fontFamily:"'DM Sans',sans-serif"}}>Back</span>
+          <span className="text-[12px] font-medium" style={{fontFamily:"var(--font-sans)"}}>Back</span>
         </button>
         {isOther ? (
-          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-white/[0.05] border border-white/[0.08]">
+          <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 bg-muted border border-border">
             <Inbox size={13} className="text-muted-foreground/80"/>
           </div>
         ) : (
           <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0"
-            style={{background:`linear-gradient(135deg,${cardC.tile}dd,${cardC.tile}66)`,boxShadow:`0 1px 10px ${cardC.glow}`}}>
+            style={{background:`linear-gradient(135deg,${cardC.tile},${cardC.tile})`,boxShadow:`0 1px 10px ${cardC.glow}`}}>
             {Icon && <Icon size={13} style={{color:cardC.icon}}/>}
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <p className="text-[14px] font-semibold text-foreground truncate" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          <p className="text-[14px] font-semibold text-foreground truncate" style={{fontFamily:"var(--font-display)"}}>
             {isOther ? "Other" : domain!.label}
           </p>
-          <p className="text-[10px] font-mono text-muted-foreground/50">
+          <p className="text-[10px] font-mono text-muted-foreground">
             {visible.length + myManualTasks.length} {visible.length + myManualTasks.length === 1 ? "item" : "items"}
           </p>
         </div>
@@ -2296,37 +2277,37 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
         <div className="max-w-2xl mx-auto flex flex-col gap-2">
           {inboxErr && (
             <div className="rounded-2xl border border-rose-400/20 bg-rose-500/[0.04] px-4 py-3">
-              <p className="text-[11.5px] text-rose-300/80">Couldn't load inbox: {inboxErr}</p>
+              <p className="text-[11.5px] text-social/80">Couldn't load inbox: {inboxErr}</p>
             </div>
           )}
           {!inbox && !inboxErr && (
-            <div className="rounded-2xl border border-white/[0.06] px-4 py-3 text-[11.5px] text-muted-foreground/50">Loading…</div>
+            <div className="rounded-2xl border border-border px-4 py-3 text-[11.5px] text-muted-foreground">Loading…</div>
           )}
           {myManualTasks.length > 0 && (
-            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-2 flex flex-col gap-1">
+            <div className="rounded-2xl border border-border bg-muted p-2 flex flex-col gap-1">
               <div className="px-2 pt-1 pb-0.5 flex items-center justify-between">
                 <Mono className="!text-foreground/55">Your tasks</Mono>
-                <span className="text-[10px] font-mono text-muted-foreground/40">{myManualTasks.length}</span>
+                <span className="text-[10px] font-mono text-muted-foreground">{myManualTasks.length}</span>
               </div>
               {myManualTasks.map(t => (
-                <div key={t.id} className="group flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-white/[0.04] transition-colors">
+                <div key={t.id} className="group flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-muted transition-colors">
                   <button
                     onClick={() => toggleManualDone(t.id)}
-                    className="w-4 h-4 rounded-md border border-white/20 flex items-center justify-center flex-shrink-0 hover:border-white/40 transition-colors"
+                    className="w-4 h-4 rounded-md border border-border flex items-center justify-center flex-shrink-0 hover:border-border transition-colors"
                     style={t.done ? { background: cardC.icon, borderColor: cardC.icon } : undefined}
                     aria-label={t.done ? "Mark not done" : "Mark done"}
                   >
                     {t.done && <Check size={10} className="text-background"/>}
                   </button>
-                  <span className={`flex-1 text-[12.5px] leading-snug ${t.done ? "line-through text-muted-foreground/40" : "text-foreground/85"}`} style={{fontFamily:"'DM Sans',sans-serif"}}>
+                  <span className={`flex-1 text-[12.5px] leading-snug ${t.done ? "line-through text-muted-foreground" : "text-foreground/85"}`} style={{fontFamily:"var(--font-sans)"}}>
                     {t.text}
                   </span>
                   {t.urgent && !t.done && (
-                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500/15 text-rose-300/90">urgent</span>
+                    <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-md bg-rose-500/15 text-social/90">urgent</span>
                   )}
                   <button
                     onClick={() => removeManualTask(t.id)}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-rose-300 transition-all"
+                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-social transition-all"
                     aria-label="Remove"
                   >
                     <X size={12}/>
@@ -2336,9 +2317,9 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
             </div>
           )}
           {inbox && visible.length === 0 && myManualTasks.length === 0 && (
-            <div className="rounded-2xl border border-white/[0.06] px-4 py-6 flex flex-col items-center gap-2 text-center">
-              <Check size={16} className="text-emerald-400"/>
-              <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>
+            <div className="rounded-2xl border border-border px-4 py-6 flex flex-col items-center gap-2 text-center">
+              <Check size={16} className="text-personal"/>
+              <p className="text-[12.5px] text-muted-foreground" style={{fontFamily:"var(--font-sans)"}}>
                 {isOther ? "Nothing uncategorized" : "Nothing pending here"}
               </p>
             </div>
@@ -2373,16 +2354,16 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
           {!isOther && domain?.connectionNote && (
             <div className="mt-3 rounded-xl border border-cyan-400/20 px-4 py-3"
               style={{background:"radial-gradient(ellipse at 0% 0%,rgba(6,182,212,0.08) 0%,transparent 65%)"}}>
-              <div className="flex items-center gap-1.5 mb-1"><TrendingUp size={10} className="text-cyan-400"/><Mono className="!text-cyan-400/60">Cross-domain</Mono></div>
+              <div className="flex items-center gap-1.5 mb-1"><TrendingUp size={10} className="text-professional"/><Mono className="!text-professional/60">Cross-domain</Mono></div>
               <p className="text-[11.5px] text-foreground/65 leading-snug">{domain.connectionNote}</p>
             </div>
           )}
           {!isOther && domain && (
-            <div className="mt-1 rounded-xl border border-white/[0.07] bg-white/[0.02] px-4 py-3">
+            <div className="mt-1 rounded-xl border border-border bg-muted px-4 py-3">
               <Mono className="block mb-2">Sources</Mono>
               <div className="flex flex-wrap gap-1.5">
                 {domain.sources.map(s=>(
-                  <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-white/[0.03] border border-white/[0.06]">
+                  <span key={s} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-mono text-foreground/50 bg-muted border border-border">
                     <span className="w-1 h-1 rounded-full bg-emerald-400/80"/>
                     {s}
                   </span>
@@ -2408,8 +2389,8 @@ function MindMapCanvas() {
   const [hovered, setHovered] = useState<string|null>(null);
   return (
     <div className="flex-1 relative overflow-hidden p-4">
-      <div className="absolute inset-4 rounded-2xl border border-white/[0.07] overflow-hidden"
-        style={{background:"radial-gradient(ellipse at 50% 50%,rgba(109,40,217,0.1) 0%,transparent 62%),#130f1e"}}>
+      <div className="absolute inset-4 rounded-2xl border border-border overflow-hidden"
+        style={{background:"var(--surface-elevated)"}}>
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none" style={{zIndex:1}}>
           {MIND_EDGES.map(edge=>{
             const from=MIND_NODES.find(n=>n.id===edge.from), to=MIND_NODES.find(n=>n.id===edge.to);
@@ -2431,30 +2412,30 @@ function MindMapCanvas() {
               {isSig ? (
                 <div className="px-3 py-1.5 rounded-xl border border-cyan-400/35 text-center transition-all"
                   style={{background:"rgba(6,182,212,0.08)",backdropFilter:"blur(8px)",boxShadow:isHov?"0 0 20px rgba(6,182,212,0.28)":"0 0 8px rgba(6,182,212,0.12)"}}>
-                  <p className="text-[11px] font-semibold text-cyan-300 whitespace-nowrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{node.label}</p>
-                  <p className="text-[9px] text-cyan-400/55 font-mono">{node.sub}</p>
+                  <p className="text-[11px] font-semibold text-professional whitespace-nowrap" style={{fontFamily:"var(--font-sans)"}}>{node.label}</p>
+                  <p className="text-[9px] text-professional/55 font-mono">{node.sub}</p>
                 </div>
               ) : (
                 <div className={`px-2.5 py-1.5 rounded-xl border transition-all max-w-[130px] ${c.border}`}
-                  style={{background:isHov?`${c.glow.replace(/[\d.]+\)$/,"0.15)")}`:"`rgba(30,25,52,0.85)",backdropFilter:"blur(6px)",boxShadow:isHov?`0 0 14px ${c.glow}`:undefined}}>
-                  <p className={`text-[11px] font-medium ${isHov?c.text:"text-foreground/75"} whitespace-nowrap`} style={{fontFamily:"'DM Sans',sans-serif"}}>{node.label}</p>
-                  <p className="text-[9px] text-muted-foreground/60 font-mono mt-0.5">{node.sub}</p>
+                  style={{background:isHov?c.tile:"var(--surface-elevated)",backdropFilter:"blur(6px)",boxShadow:isHov?`0 0 14px ${c.glow}`:undefined}}>
+                  <p className={`text-[11px] font-medium ${isHov?c.text:"text-foreground/75"} whitespace-nowrap`} style={{fontFamily:"var(--font-sans)"}}>{node.label}</p>
+                  <p className="text-[9px] text-muted-foreground font-mono mt-0.5">{node.sub}</p>
                 </div>
               )}
             </div>
           );
         })}
-        <div className="absolute top-3 right-3 flex flex-col gap-1.5 bg-black/20 rounded-xl px-2.5 py-2 backdrop-blur-sm">
+        <div className="absolute top-3 right-3 flex flex-col gap-1.5 bg-foreground/30 rounded-xl px-2.5 py-2 backdrop-blur-sm">
           {DOMAIN_ORDER.map(id=>(
             <div key={id} className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full" style={{background:C[id].hex}}/>
-              <span className="text-[8.5px] font-mono text-muted-foreground/45 uppercase tracking-wider">{id.slice(0,5)}</span>
+              <span className="text-[8.5px] font-mono text-muted-foreground uppercase tracking-wider">{id.slice(0,5)}</span>
             </div>
           ))}
-          <div className="border-t border-white/[0.06] pt-1 mt-0.5">
+          <div className="border-t border-border pt-1 mt-0.5">
             <div className="flex items-center gap-1.5">
               <span className="w-1.5 h-1.5 rounded-full bg-cyan-400"/>
-              <span className="text-[8.5px] font-mono text-muted-foreground/45 uppercase tracking-wider">signal</span>
+              <span className="text-[8.5px] font-mono text-muted-foreground uppercase tracking-wider">signal</span>
             </div>
           </div>
         </div>
@@ -2481,8 +2462,8 @@ function MemoryCanvas() {
           const count = cat==="all"?MEMORY_ITEMS.length:MEMORY_ITEMS.filter(m=>m.category===cat).length;
           return (
             <button key={cat} onClick={()=>setFilter(cat)}
-              className={`w-full text-left px-3 py-2 rounded-xl text-[11.5px] transition-all border flex items-center gap-2 ${filter===cat?"bg-primary/10 border-primary/25 text-primary":"border-transparent text-muted-foreground hover:text-foreground hover:bg-white/[0.04]"}`}
-              style={{fontFamily:"'DM Sans',sans-serif"}}>
+              className={`w-full text-left px-3 py-2 rounded-xl text-[11.5px] transition-all border flex items-center gap-2 ${filter===cat?"bg-primary/10 border-primary/25 text-success":"border-transparent text-muted-foreground hover:text-foreground hover:bg-muted"}`}
+              style={{fontFamily:"var(--font-sans)"}}>
               {cat!=="all" && <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${CAT_DOT[cat as MemoryCategory]}`}/>}
               <span className="flex-1 truncate">{cat==="all"?"All beliefs":cat}</span>
               <span className="text-[10px] opacity-35">{count}</span>
@@ -2501,21 +2482,21 @@ function MemoryCanvas() {
               {items.map(item=>{
                 const isWrong=wrong.includes(item.id);
                 return (
-                  <div key={item.id} className={`group rounded-xl border px-4 py-3 transition-all ${isWrong?"border-red-500/20 bg-red-500/[0.03] opacity-50":"border-border bg-white/[0.015] hover:border-white/15"}`}>
+                  <div key={item.id} className={`group rounded-xl border px-4 py-3 transition-all ${isWrong?"border-red-500/20 bg-red-500/[0.03] opacity-50":"border-border bg-muted hover:border-border"}`}>
                     <div className="flex items-start gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          {item.inferred && <span className="text-[8.5px] font-mono px-1.5 py-px rounded border text-primary/80 bg-primary/10 border-primary/20">Inferred</span>}
+                          {item.inferred && <span className="text-[8.5px] font-mono px-1.5 py-px rounded border text-success/80 bg-primary/10 border-primary/20">Inferred</span>}
                           {isWrong && <span className="text-[8.5px] font-mono px-1.5 py-px rounded border text-red-300 bg-red-500/10 border-red-500/20">Marked wrong</span>}
                         </div>
-                        <p className="text-[12.5px] text-foreground/85 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.belief}</p>
-                        <p className="text-[10px] font-mono text-muted-foreground/40 mt-1.5">{item.source} · Used {item.lastUsed}</p>
+                        <p className="text-[12.5px] text-foreground/85 leading-snug" style={{fontFamily:"var(--font-sans)"}}>{item.belief}</p>
+                        <p className="text-[10px] font-mono text-muted-foreground mt-1.5">{item.source} · Used {item.lastUsed}</p>
                       </div>
                       <span className={`flex-shrink-0 px-1.5 py-px rounded-full text-[8.5px] font-mono border ${CONF[item.confidence]}`}>{item.confidence}</span>
                     </div>
-                    <div className="flex gap-1 mt-2.5 pt-2.5 border-t border-white/[0.05] opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button className="px-2 py-1 rounded-lg text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-white/[0.05] transition-all">Edit</button>
-                      <button onClick={()=>setWrong(w=>w.includes(item.id)?w.filter(x=>x!==item.id):[...w,item.id])} className="px-2 py-1 rounded-lg text-[10px] font-mono text-muted-foreground hover:text-amber-400 hover:bg-amber-500/[0.08] transition-all">{isWrong?"Undo":"Mark wrong"}</button>
+                    <div className="flex gap-1 mt-2.5 pt-2.5 border-t border-border opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button className="px-2 py-1 rounded-lg text-[10px] font-mono text-muted-foreground hover:text-foreground hover:bg-muted transition-all">Edit</button>
+                      <button onClick={()=>setWrong(w=>w.includes(item.id)?w.filter(x=>x!==item.id):[...w,item.id])} className="px-2 py-1 rounded-lg text-[10px] font-mono text-muted-foreground hover:text-family hover:bg-amber-500/[0.08] transition-all">{isWrong?"Undo":"Mark wrong"}</button>
                       <button className="px-2 py-1 rounded-lg text-[10px] font-mono text-muted-foreground hover:text-red-400 hover:bg-red-500/[0.08] transition-all">Delete</button>
                     </div>
                   </div>
@@ -2536,27 +2517,27 @@ function SignalsCanvas() {
     <div className="flex-1 overflow-y-auto p-6 scrollbar-none">
       <div className="max-w-xl mx-auto flex flex-col gap-4">
         <div className="mb-1">
-          <p className="text-[20px] font-semibold text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Emerging signals</p>
-          <p className="text-[12.5px] text-muted-foreground mt-0.5" style={{fontFamily:"'DM Sans',sans-serif"}}>Clusters forming across your life before you notice them.</p>
+          <p className="text-[20px] font-semibold text-foreground" style={{fontFamily:"var(--font-display)"}}>Emerging signals</p>
+          <p className="text-[12.5px] text-muted-foreground mt-0.5" style={{fontFamily:"var(--font-sans)"}}>Clusters forming across your life before you notice them.</p>
         </div>
         {SIGNALS.map(signal=>{
-          const mc=signal.momentum==="rising"?"text-emerald-300 bg-emerald-500/10 border-emerald-500/20":signal.momentum==="fading"?"text-red-300 bg-red-500/10 border-red-500/20":"text-amber-300 bg-amber-500/10 border-amber-500/20";
+          const mc=signal.momentum==="rising"?"text-personal bg-emerald-500/10 border-emerald-500/20":signal.momentum==="fading"?"text-red-300 bg-red-500/10 border-red-500/20":"text-family bg-amber-500/10 border-amber-500/20";
           return (
             <div key={signal.id} className="rounded-2xl border border-border bg-card/60 p-5">
               <div className="flex items-center gap-2 mb-2 flex-wrap">
                 <span className={`px-2 py-px rounded-full text-[9px] font-mono border ${mc}`}>{signal.momentum}</span>
-                <span className="text-[10px] font-mono text-muted-foreground/50">{signal.evidenceCount} signals</span>
+                <span className="text-[10px] font-mono text-muted-foreground">{signal.evidenceCount} signals</span>
                 <div className="flex gap-1 ml-1">
                   {signal.domains.map(d=><span key={d} className="w-2 h-2 rounded-full" style={{background:C[d].hex+"cc"}} title={d}/>)}
                 </div>
               </div>
-              <p className="text-[13.5px] font-semibold text-foreground/90 mb-1.5" style={{fontFamily:"'DM Sans',sans-serif"}}>{signal.title}</p>
-              <p className="text-[12px] text-muted-foreground leading-relaxed mb-4" style={{fontFamily:"'DM Sans',sans-serif"}}>{signal.summary}</p>
-              <div className="flex items-center gap-2 pt-3 border-t border-white/[0.06]">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11.5px] font-medium bg-primary/15 border border-primary/30 text-primary hover:bg-primary/20 transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>
+              <p className="text-[13.5px] font-semibold text-foreground/90 mb-1.5" style={{fontFamily:"var(--font-sans)"}}>{signal.title}</p>
+              <p className="text-[12px] text-muted-foreground leading-relaxed mb-4" style={{fontFamily:"var(--font-sans)"}}>{signal.summary}</p>
+              <div className="flex items-center gap-2 pt-3 border-t border-border">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11.5px] font-medium bg-primary/15 border border-primary/30 text-success hover:bg-primary/20 transition-all" style={{fontFamily:"var(--font-sans)"}}>
                   <ArrowRight size={10}/> {signal.suggestedAction}
                 </button>
-                <button className="px-3 py-1.5 rounded-xl text-[11.5px] text-muted-foreground border border-white/[0.07] hover:border-white/15 hover:text-foreground transition-all ml-auto">Dismiss</button>
+                <button className="px-3 py-1.5 rounded-xl text-[11.5px] text-muted-foreground border border-border hover:border-border hover:text-foreground transition-all ml-auto">Dismiss</button>
               </div>
             </div>
           );
@@ -2569,10 +2550,10 @@ function SignalsCanvas() {
 // ─── Chat tool panel ──────────────────────────────────────────────────────────
 
 const AI_MODELS: { id: AIModel; label: string; icon: LucideIcon; color: string }[] = [
-  { id:"flash",   label:"FLASH",   icon:Zap,          color:"text-primary bg-primary/15 border-primary/30" },
-  { id:"pro",     label:"PRO",     icon:Brain,         color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
-  { id:"genius",  label:"Genius",  icon:TrendingUp,    color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
-  { id:"private", label:"PRIVATE", icon:Shield,        color:"text-foreground/70 bg-white/[0.06] border-white/[0.1]"  },
+  { id:"flash",   label:"FLASH",   icon:Zap,          color:"text-success bg-primary/15 border-primary/30" },
+  { id:"pro",     label:"PRO",     icon:Brain,         color:"text-foreground/70 bg-muted border-border"  },
+  { id:"genius",  label:"Genius",  icon:TrendingUp,    color:"text-foreground/70 bg-muted border-border"  },
+  { id:"private", label:"PRIVATE", icon:Shield,        color:"text-foreground/70 bg-muted border-border"  },
 ];
 
 type LiveChatMsg = {
@@ -3066,9 +3047,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     // inner panel's max-h-[85vh] takes over.
     <div className="fixed inset-x-0 top-0 h-[var(--chat-h,100dvh)] md:inset-0 md:h-auto z-[60] flex items-stretch md:items-center justify-center md:px-4"
       onClick={onClose}
-      style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className={`w-full md:max-w-[520px] md:max-h-[85vh] md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-white/[0.12]"}`}
-        style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
+      style={{background:"var(--scrim)",backdropFilter:"blur(16px)"}}>
+      <div className={`w-full md:max-w-[520px] md:max-h-[85vh] md:rounded-3xl border overflow-hidden shadow-2xl flex flex-col relative ${isDragging ? "border-primary/60" : "border-border"}`}
+        style={{background:"var(--surface-elevated)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}
         onDragOver={e => { e.preventDefault(); if (!isDragging) setIsDragging(true); }}
         onDragLeave={e => { e.preventDefault(); setIsDragging(false); }}
@@ -3080,7 +3061,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
         }}>
         {isDragging && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/10 border-2 border-dashed border-primary/50 rounded-3xl pointer-events-none">
-            <p className="text-[13px] font-mono text-primary">Drop images to attach</p>
+            <p className="text-[13px] font-mono text-success">Drop images to attach</p>
           </div>
         )}
 
@@ -3088,19 +3069,19 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
             md:pt-4 restores the original padding for desktop's modal. */}
         <div className="flex items-center gap-2 px-5 pt-[max(env(safe-area-inset-top),1rem)] md:pt-4 pb-4 border-b border-border flex-shrink-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
-            <MessageCircle size={11} style={{color:"#ddd6fe"}}/>
+            style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+            <MessageCircle size={11} style={{color:"var(--foreground)"}}/>
           </div>
-          <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Chat</span>
+          <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"var(--font-display)"}}>Chat</span>
           {mode === "voice" && (
             <StatusPill triple={triple} className="hidden sm:inline-flex" />
           )}
           <div className="flex items-center gap-1">
             {["Memory","Inbox","Calendar"].map(ctx=>(
-              <span key={ctx} className="px-1.5 py-px rounded-md text-[8.5px] font-mono bg-primary/10 text-primary/70 border border-primary/15">{ctx}</span>
+              <span key={ctx} className="px-1.5 py-px rounded-md text-[8.5px] font-mono bg-primary/10 text-success/70 border border-primary/15">{ctx}</span>
             ))}
           </div>
-          <button onClick={onClose} className="ml-2 text-muted-foreground/50 hover:text-foreground transition-colors"><X size={14}/></button>
+          <button onClick={onClose} className="ml-2 text-muted-foreground hover:text-foreground transition-colors"><X size={14}/></button>
         </div>
 
         {/* Messages */}
@@ -3109,10 +3090,10 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
             <div className="flex-1 flex items-center justify-center text-center px-6">
               <div className="max-w-[320px] w-full">
                 <div className="w-10 h-10 rounded-xl mx-auto mb-3 flex items-center justify-center"
-                  style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}>
-                  <Zap size={16} style={{color:"#ddd6fe"}}/>
+                  style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+                  <Zap size={16} style={{color:"var(--foreground)"}}/>
                 </div>
-                <p className="text-[12.5px] text-muted-foreground/70 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                <p className="text-[12.5px] text-muted-foreground leading-relaxed" style={{fontFamily:"var(--font-sans)"}}>
                   Ask anything, or pick an action below — Search, Add task, or Draft.
                 </p>
               </div>
@@ -3150,11 +3131,11 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                       className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
                       style={isImageBlocked
                         ? {background:"linear-gradient(135deg,#b4530933,#7c2d1233)", border:"1px solid rgba(251,146,60,0.35)"}
-                        : {background:"linear-gradient(135deg,#6d28d9cc,#4c1d9555)"}}
+                        : {background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}
                     >
                       {isImageBlocked
                         ? <ShieldAlert size={11} style={{color:"#fdba74"}} aria-hidden="true"/>
-                        : <Zap size={10} style={{color:"#ddd6fe"}}/>}
+                        : <Zap size={10} style={{color:"var(--foreground)"}}/>}
                     </div>
                     <div
                       className={isImageBlocked
@@ -3165,22 +3146,22 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     >
                       {typeof msg.loadProgressPct === "number" && msg.text.length === 0 ? (
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Loading on-device model" role="status">
-                          <p className="text-[11px] text-muted-foreground/70 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                          <p className="text-[11px] text-muted-foreground leading-snug" style={{fontFamily:"var(--font-sans)"}}>
                             Loading on-device model{msg.loadProgressPct < 100 ? ` — first run downloads ~700 MB` : ""}…
                           </p>
-                          <div className="h-1 w-40 rounded-full bg-white/[0.06] overflow-hidden">
+                          <div className="h-1 w-40 rounded-full bg-muted overflow-hidden">
                             <div
                               className="h-full bg-primary/60 transition-[width] duration-200 ease-out"
                               style={{ width: `${Math.max(2, Math.min(100, msg.loadProgressPct))}%` }}
                             />
                           </div>
-                          <p className="text-[10px] font-mono text-muted-foreground/45">{msg.loadProgressPct}%</p>
+                          <p className="text-[10px] font-mono text-muted-foreground">{msg.loadProgressPct}%</p>
                         </div>
                       ) : isStreamingPlaceholder ? (
                         <div className="flex flex-col gap-1.5 py-0.5" aria-label="Assistant is responding" role="status">
-                          <div className="h-2 w-32 rounded bg-white/[0.08] animate-pulse"/>
-                          <div className="h-2 w-24 rounded bg-white/[0.06] animate-pulse" style={{animationDelay:"120ms"}}/>
-                          <div className="h-2 w-20 rounded bg-white/[0.05] animate-pulse" style={{animationDelay:"240ms"}}/>
+                          <div className="h-2 w-32 rounded bg-muted animate-pulse"/>
+                          <div className="h-2 w-24 rounded bg-muted animate-pulse" style={{animationDelay:"120ms"}}/>
+                          <div className="h-2 w-20 rounded bg-muted animate-pulse" style={{animationDelay:"240ms"}}/>
                         </div>
                       ) : (
                         <>
@@ -3191,7 +3172,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                                   type="button"
                                   key={k}
                                   onClick={() => setLightboxSrc(src)}
-                                  className="block w-full rounded-lg overflow-hidden border border-white/10 cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+                                  className="block w-full rounded-lg overflow-hidden border border-border cursor-zoom-in focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                                   aria-label="Expand generated image"
                                 >
                                   <img src={src} alt="Generated image" className="max-h-80 object-contain w-full" />
@@ -3201,15 +3182,15 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                           )}
                           {msg.searchResults ? (
                             <div className="flex flex-col gap-2.5">
-                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-muted-foreground/55">
-                                <Search size={10} className="text-sky-400/70" />
+                              <div className="flex items-center gap-1.5 text-[10.5px] font-mono text-muted-foreground">
+                                <Search size={10} className="text-professional/70" />
                                 <span>Search results</span>
                                 {msg.searchInstance && (
                                   <span className="opacity-60">· via {(() => { try { return new URL(msg.searchInstance).host; } catch { return "searxng"; } })()}</span>
                                 )}
                               </div>
                               {msg.searchResults.length === 0 ? (
-                                <p className="text-[12.5px] text-muted-foreground/70" style={{fontFamily:"'DM Sans',sans-serif"}}>No results.</p>
+                                <p className="text-[12.5px] text-muted-foreground" style={{fontFamily:"var(--font-sans)"}}>No results.</p>
                               ) : (
                                 <ul className="flex flex-col gap-2">
                                   {msg.searchResults.map((h, k) => (
@@ -3223,12 +3204,12 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                                             data: { query: msg.searchQuery ?? "", url: h.url },
                                           }).catch(() => {});
                                         }}
-                                        className="block group rounded-lg p-2 -mx-2 hover:bg-white/[0.03] transition-colors"
+                                        className="block group rounded-lg p-2 -mx-2 hover:bg-muted transition-colors"
                                       >
-                                        <div className="text-[13px] font-medium text-foreground/95 group-hover:text-primary leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.title}</div>
-                                        <div className="text-[10.5px] font-mono text-primary/70 truncate mt-0.5">{h.url}</div>
+                                        <div className="text-[13px] font-medium text-foreground/95 group-hover:text-success leading-snug" style={{fontFamily:"var(--font-sans)"}}>{h.title}</div>
+                                        <div className="text-[10.5px] font-mono text-success/70 truncate mt-0.5">{h.url}</div>
                                         {h.snippet && (
-                                          <div className="text-[11.5px] text-muted-foreground/75 leading-snug line-clamp-2 mt-0.5" style={{fontFamily:"'DM Sans',sans-serif"}}>{h.snippet}</div>
+                                          <div className="text-[11.5px] text-muted-foreground/75 leading-snug line-clamp-2 mt-0.5" style={{fontFamily:"var(--font-sans)"}}>{h.snippet}</div>
                                         )}
                                       </a>
                                     </li>
@@ -3239,9 +3220,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                           ) : msg.text && (
                             <p
                               className={isImageBlocked
-                                ? "text-[12.5px] text-amber-200/85 leading-relaxed whitespace-pre-wrap"
+                                ? "text-[12.5px] text-family/85 leading-relaxed whitespace-pre-wrap"
                                 : "text-[12.5px] text-foreground/80 leading-relaxed whitespace-pre-wrap"}
-                              style={{fontFamily:"'DM Sans',sans-serif"}}
+                              style={{fontFamily:"var(--font-sans)"}}
                             >{msg.text}</p>
                           )}
                           {isImageBlocked && blockedPromptText && (
@@ -3259,7 +3240,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                                   try { el.setSelectionRange(len, len); } catch { /* non-text input */ }
                                 }, 0);
                               }}
-                              className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-amber-200/90 bg-amber-500/[0.12] hover:bg-amber-500/20 border border-amber-500/30 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400/60"
+                              className="mt-2 inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium text-family/90 bg-amber-500/[0.12] hover:bg-amber-500/20 border border-amber-500/30 transition-colors focus:outline-none focus-visible:ring-1 focus-visible:ring-amber-400/60"
                               aria-label={IMAGE_BLOCKED_RETRY_ACTION_LABEL}
                             >
                               <RotateCcw size={11} aria-hidden="true"/>
@@ -3272,7 +3253,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   </div>
                   {msg.meta && (msg.meta.provider || msg.meta.model) && (
                     <div className="flex gap-1 mt-1.5 ml-8 flex-wrap">
-                      <span className="text-[8.5px] font-mono text-muted-foreground/35 px-1.5 py-px rounded-md bg-white/[0.03] border border-white/[0.05]">
+                      <span className="text-[8.5px] font-mono text-muted-foreground px-1.5 py-px rounded-md bg-muted border border-border">
                         {msg.meta.provider}{msg.meta.model ? ` · ${msg.meta.model}` : ""}
                         {msg.meta.fallbackDepth && msg.meta.fallbackDepth > 0 ? ` · fallback ${msg.meta.fallbackDepth}` : ""}
                       </span>
@@ -3282,7 +3263,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     (msg.meta.provider === "onDeviceWebGpuImage"
                       || msg.meta.provider === "onDeviceAppleImage"
                       || msg.meta.provider === "onDeviceAndroidImage") && (
-                    <div className="ml-8 mt-1 flex items-center gap-1.5 text-[10px] font-mono text-emerald-300/70">
+                    <div className="ml-8 mt-1 flex items-center gap-1.5 text-[10px] font-mono text-personal/70">
                       <Shield size={9} />
                       <span>Generated on your device — no image bytes sent to any hosted provider.</span>
                     </div>
@@ -3299,12 +3280,12 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   {msg.images && msg.images.length > 0 && (
                     <div className="grid grid-cols-2 gap-1.5">
                       {msg.images.map((src, k) => (
-                        <img key={k} src={src} alt="" className="rounded-lg max-h-40 object-cover w-full border border-white/10" />
+                        <img key={k} src={src} alt="" className="rounded-lg max-h-40 object-cover w-full border border-border" />
                       ))}
                     </div>
                   )}
                   {msg.text && (
-                    <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"'DM Sans',sans-serif"}}>{msg.text}</p>
+                    <p className="text-[12.5px] text-foreground/85 whitespace-pre-wrap" style={{fontFamily:"var(--font-sans)"}}>{msg.text}</p>
                   )}
                 </div>
               )}
@@ -3314,7 +3295,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
           {error && (
             <div className="flex justify-center">
               <div className="rounded-xl px-3 py-2 bg-red-500/10 border border-red-500/30 max-w-[90%]">
-                <p className="text-[11.5px] text-red-300/90" style={{fontFamily:"'DM Sans',sans-serif"}}>{error}</p>
+                <p className="text-[11.5px] text-red-300/90" style={{fontFamily:"var(--font-sans)"}}>{error}</p>
               </div>
             </div>
           )}
@@ -3323,7 +3304,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
         {/* Mode toggle + active input + model selector */}
         <div className="px-4 pt-4 pb-[max(env(safe-area-inset-bottom),1rem)] border-t border-border flex-shrink-0 flex flex-col gap-2.5">
           {/* Text ↔ Voice segmented control */}
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-white/[0.03] border border-white/[0.06] self-start">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-muted border border-border self-start">
             {(["text","voice"] as const).map(m => (
               <button
                 key={m}
@@ -3332,8 +3313,8 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                 aria-pressed={mode === m}
                 className={`px-2.5 py-1 rounded-md text-[10px] font-mono tracking-wide transition-colors ${
                   mode === m
-                    ? "bg-primary/20 text-primary border border-primary/30"
-                    : "text-muted-foreground/55 hover:text-foreground/80"
+                    ? "bg-primary/20 text-success border border-primary/30"
+                    : "text-muted-foreground hover:text-foreground/80"
                 }`}
               >
                 {m === "text" ? "Text" : "Voice"}
@@ -3355,9 +3336,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   setMode("text");
                   setTimeout(() => inputRef.current?.focus(), 60);
                 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-border bg-muted active:bg-muted transition-colors"
               >
-                <Search size={10.5} className="text-sky-400/80" />
+                <Search size={10.5} className="text-professional/80" />
                 Search
               </button>
               <button
@@ -3367,9 +3348,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   setMode("text");
                   setTimeout(() => inputRef.current?.focus(), 60);
                 }}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-border bg-muted active:bg-muted transition-colors"
               >
-                <Plus size={10.5} className="text-emerald-400/80" />
+                <Plus size={10.5} className="text-personal/80" />
                 Task
               </button>
               {onSwitchToCompose && (
@@ -3379,16 +3360,16 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     onClose();
                     onSwitchToCompose();
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-white/[0.08] bg-white/[0.03] active:bg-white/[0.08] transition-colors"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10.5px] text-foreground/75 border border-border bg-muted active:bg-muted transition-colors"
                 >
-                  <PenLine size={10.5} className="text-rose-400/80" />
+                  <PenLine size={10.5} className="text-social/80" />
                   Draft
                 </button>
               )}
             </div>
           )}
           {mode === "text" ? (
-            <div className="flex flex-col gap-2 rounded-xl border border-white/[0.1] bg-white/[0.03] px-3 py-2.5">
+            <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted px-3 py-2.5">
               {/* Mode indicator — only shown when Search or Task mode is
                   active (set by the empty-state chips). Tapping X reverts to
                   chat. Visually a small pill with the mode's accent color. */}
@@ -3397,8 +3378,8 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   <span
                     className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10.5px] font-mono border ${
                       inputMode === "search"
-                        ? "border-sky-400/40 bg-sky-500/10 text-sky-200"
-                        : "border-emerald-400/40 bg-emerald-500/10 text-emerald-200"
+                        ? "border-sky-400/40 bg-sky-500/10 text-professional"
+                        : "border-emerald-400/40 bg-emerald-500/10 text-personal"
                     }`}
                   >
                     {inputMode === "search" ? (
@@ -3410,7 +3391,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                       type="button"
                       onClick={() => setInputMode("chat")}
                       aria-label="Cancel mode"
-                      className="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-white/15 transition-colors"
+                      className="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full hover:bg-muted transition-colors"
                     >
                       <X size={9} />
                     </button>
@@ -3421,11 +3402,11 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                 <div className="flex flex-wrap gap-1.5">
                   {attachments.map(a => (
                     <div key={a.id} className="relative group">
-                      <img src={a.previewUrl} alt="" className="h-12 w-12 rounded-md object-cover border border-white/15" />
+                      <img src={a.previewUrl} alt="" className="h-12 w-12 rounded-md object-cover border border-border" />
                       <button
                         type="button"
                         onClick={() => removeAttachment(a.id)}
-                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-white/20 text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground after:content-[''] after:absolute after:-inset-3.5 after:md:hidden"
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-background border border-border text-foreground/80 flex items-center justify-center hover:bg-destructive hover:text-destructive-foreground after:content-[''] after:absolute after:-inset-3.5 after:md:hidden"
                         aria-label="Remove image"
                       >
                         <X size={9}/>
@@ -3433,7 +3414,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     </div>
                   ))}
                   {uploadingAttachments && (
-                    <span className="text-[10px] font-mono text-muted-foreground/60 self-center">uploading…</span>
+                    <span className="text-[10px] font-mono text-muted-foreground self-center">uploading…</span>
                   )}
                 </div>
               )}
@@ -3468,7 +3449,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
                   disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
-                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   aria-label="Attach image"
                   title="Attach image"
                 >
@@ -3478,7 +3459,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                   type="button"
                   onClick={() => { void handleCameraCapture(); }}
                   disabled={sending || attachments.length >= MAX_FILES_PER_MESSAGE}
-                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground/70 hover:text-foreground hover:bg-white/5 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   aria-label="Take photo with camera"
                   title="Take photo"
                 >
@@ -3507,10 +3488,10 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                     : inputMode === "task" ? "Remind me to…"
                     : "Message your assistant…"
                   }
-                  className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/45 outline-none disabled:opacity-50"
-                  style={{fontFamily:"'DM Sans',sans-serif"}}/>
+                  className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground outline-none disabled:opacity-50"
+                  style={{fontFamily:"var(--font-sans)"}}/>
                 <button onClick={handleSend} disabled={sending || (!input.trim() && attachments.length === 0)}
-                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-primary hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
+                  className="relative w-7 h-7 rounded-lg flex items-center justify-center text-success hover:brightness-110 transition-all flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-2 after:md:hidden"
                   style={{background:"linear-gradient(135deg,rgba(109,40,217,0.35),rgba(76,29,149,0.2))"}}>
                   <Send size={11}/>
                 </button>
@@ -3521,7 +3502,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
               className={sending ? "pointer-events-none opacity-50" : ""}
               aria-busy={sending}
             >
-              <Suspense fallback={<div className="h-16 rounded-lg bg-white/[0.03] animate-pulse" />}>
+              <Suspense fallback={<div className="h-16 rounded-lg bg-muted animate-pulse" />}>
                 <ConverseInput
                   badge={voiceBadge}
                   sendVoiceMessage={sendVoiceMessage}
@@ -3552,7 +3533,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                         });
                       });
                     }}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border border-white/[0.06] bg-white/[0.02] text-muted-foreground/40 cursor-not-allowed relative"
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border border-border bg-muted text-muted-foreground cursor-not-allowed relative"
                   >
                     <Icon size={9}/>
                     {m.label}
@@ -3562,7 +3543,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
               }
               return (
                 <button key={m.id} onClick={()=>setModel(m.id)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border transition-all ${isActive?m.color:"text-muted-foreground/55 bg-transparent border-white/[0.07] hover:border-white/15 hover:text-foreground/70"}`}>
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border transition-all ${isActive?m.color:"text-muted-foreground bg-transparent border-border hover:border-border hover:text-foreground/70"}`}>
                   <Icon size={9}/>
                   {m.label}
                 </button>
@@ -3576,7 +3557,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
       {lightboxSrc && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-6 cursor-zoom-out"
-          style={{ background: "rgba(4,2,12,0.92)", backdropFilter: "blur(20px)" }}
+          style={{ background: "var(--scrim)", backdropFilter: "blur(20px)" }}
           onClick={() => setLightboxSrc(null)}
           role="dialog"
           aria-modal="true"
@@ -3585,13 +3566,13 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
           <img
             src={lightboxSrc}
             alt="Expanded generated image"
-            className="max-w-[92vw] max-h-[90vh] object-contain rounded-xl border border-white/10 shadow-2xl"
+            className="max-w-[92vw] max-h-[90vh] object-contain rounded-xl border border-border shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           />
           <button
             type="button"
             onClick={() => setLightboxSrc(null)}
-            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-foreground/80 after:content-[''] after:absolute after:-inset-1 after:md:hidden"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full flex items-center justify-center bg-muted hover:bg-muted border border-border text-foreground/80 after:content-[''] after:absolute after:-inset-1 after:md:hidden"
             aria-label="Close expanded image"
           >
             <X size={16} />
@@ -3635,33 +3616,33 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
     // Mobile: bottom sheet. Desktop (md+): centered modal.
     <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4"
       onClick={onClose}
-      style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full md:max-w-[540px] max-h-[90vh] md:max-h-[88vh] rounded-t-3xl md:rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl flex flex-col"
-        style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
+      style={{background:"var(--scrim)",backdropFilter:"blur(16px)"}}>
+      <div className="w-full md:max-w-[540px] max-h-[90vh] md:max-h-[88vh] rounded-t-3xl md:rounded-3xl border border-border overflow-hidden shadow-2xl flex flex-col"
+        style={{background:"var(--surface-elevated)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
         <div className="flex items-center gap-2 px-5 py-4 border-b border-border flex-shrink-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
-            <PenLine size={11} style={{color:"#ddd6fe"}}/>
+            style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+            <PenLine size={11} style={{color:"var(--foreground)"}}/>
           </div>
-          <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Compose</span>
-          <button onClick={onClose} className="text-muted-foreground/50 hover:text-foreground transition-colors"><X size={14}/></button>
+          <span className="text-[13px] font-semibold text-foreground flex-1" style={{fontFamily:"var(--font-display)"}}>Compose</span>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={14}/></button>
         </div>
 
         {/* Controls */}
         <div className="px-5 py-3.5 border-b border-border flex flex-col gap-2.5 flex-shrink-0">
           <input value={title} onChange={e=>setTitle(e.target.value)}
             placeholder="Title (optional)"
-            className="w-full bg-transparent text-[12.5px] text-foreground/80 placeholder:text-muted-foreground/40 outline-none rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2"
-            style={{fontFamily:"'DM Sans',sans-serif"}}/>
+            className="w-full bg-transparent text-[12.5px] text-foreground/80 placeholder:text-muted-foreground outline-none rounded-xl border border-border bg-muted px-3 py-2"
+            style={{fontFamily:"var(--font-sans)"}}/>
           <div className="flex items-center gap-1.5 flex-wrap">
             <Mono className="mr-1">Channel</Mono>
             {CHANNELS.map(ch=>(
               <button key={ch} onClick={()=>setChannel(ch)}
-                className={`px-2.5 py-1 rounded-full text-[10.5px] border transition-all font-medium ${channel===ch?"text-foreground border-white/20 bg-white/[0.1]":"text-muted-foreground border-transparent hover:border-white/[0.1] hover:text-foreground"}`}
-                style={{fontFamily:"'DM Sans',sans-serif"}}>
+                className={`px-2.5 py-1 rounded-full text-[10.5px] border transition-all font-medium ${channel===ch?"text-foreground border-border bg-muted":"text-muted-foreground border-transparent hover:border-border hover:text-foreground"}`}
+                style={{fontFamily:"var(--font-sans)"}}>
                 {ch}
               </button>
             ))}
@@ -3670,8 +3651,8 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
             <Mono className="mr-1">Tone</Mono>
             {TONES.map(t=>(
               <button key={t} onClick={()=>setTone(t)}
-                className={`px-2.5 py-1 rounded-full text-[10.5px] border transition-all font-medium ${tone===t?"text-foreground border-white/20 bg-white/[0.1]":"text-muted-foreground border-transparent hover:border-white/[0.1] hover:text-foreground"}`}
-                style={{fontFamily:"'DM Sans',sans-serif"}}>
+                className={`px-2.5 py-1 rounded-full text-[10.5px] border transition-all font-medium ${tone===t?"text-foreground border-border bg-muted":"text-muted-foreground border-transparent hover:border-border hover:text-foreground"}`}
+                style={{fontFamily:"var(--font-sans)"}}>
                 {t}
               </button>
             ))}
@@ -3682,9 +3663,9 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
               const active=ctx.includes(chip);
               return (
                 <button key={chip} onClick={()=>setCtx(c=>c.includes(chip)?c.filter(x=>x!==chip):[...c,chip])}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] border transition-all ${active?"text-primary border-primary/30 bg-primary/10":"text-muted-foreground border-transparent bg-white/[0.03] hover:border-white/[0.1]"}`}
-                  style={{fontFamily:"'DM Sans',sans-serif"}}>
-                  <Zap size={8} className={active?"text-primary":"text-muted-foreground"}/>
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] border transition-all ${active?"text-success border-primary/30 bg-primary/10":"text-muted-foreground border-transparent bg-muted hover:border-border"}`}
+                  style={{fontFamily:"var(--font-sans)"}}>
+                  <Zap size={8} className={active?"text-success":"text-muted-foreground"}/>
                   {chip}
                 </button>
               );
@@ -3695,28 +3676,28 @@ function ComposePanel({ open, onClose }: { open:boolean; onClose:()=>void }) {
         {/* Body */}
         <div className="flex-1 px-5 py-4 flex flex-col gap-3 overflow-hidden min-h-0">
           {(channel==="Email"||channel==="WhatsApp"||channel==="Slack") && (
-            <div className="flex items-center gap-2 pb-2 border-b border-white/[0.06]">
+            <div className="flex items-center gap-2 pb-2 border-b border-border">
               <Mono className="w-6 flex-shrink-0">To</Mono>
               <input placeholder={channel==="Email"?"sarah@a16z.com":channel==="WhatsApp"?"Maya":"@priya"}
-                className="flex-1 bg-transparent text-[12px] text-foreground/75 placeholder:text-muted-foreground/35 outline-none"
-                style={{fontFamily:"'DM Sans',sans-serif"}}/>
+                className="flex-1 bg-transparent text-[12px] text-foreground/75 placeholder:text-muted-foreground outline-none"
+                style={{fontFamily:"var(--font-sans)"}}/>
             </div>
           )}
           <textarea value={body} onChange={e=>setBody(e.target.value)}
             placeholder={placeholder[channel]}
             rows={5}
-            className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground/30 outline-none resize-none leading-relaxed scrollbar-none"
-            style={{fontFamily:"'DM Sans',sans-serif"}}/>
+            className="flex-1 bg-transparent text-[12.5px] text-foreground/75 placeholder:text-muted-foreground outline-none resize-none leading-relaxed scrollbar-none"
+            style={{fontFamily:"var(--font-sans)"}}/>
         </div>
 
         {/* Footer */}
         <div className="px-5 py-4 border-t border-border flex-shrink-0 flex items-center gap-2">
           <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[12.5px] font-semibold transition-all"
-            style={{background:"linear-gradient(135deg,rgba(109,40,217,0.55),rgba(76,29,149,0.35))",border:"1px solid rgba(155,109,250,0.3)",color:"#ede9fe",fontFamily:"'DM Sans',sans-serif"}}>
+            style={{background:"linear-gradient(135deg,rgba(109,40,217,0.55),rgba(76,29,149,0.35))",border:"1px solid rgba(155,109,250,0.3)",color:"#ede9fe",fontFamily:"var(--font-sans)"}}>
             <Send size={12}/> Send
           </button>
-          <button className="px-3.5 py-2.5 rounded-xl border border-white/[0.08] text-muted-foreground text-[11.5px] hover:text-foreground hover:border-white/15 transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>Draft</button>
-          <button onClick={onClose} className="px-3.5 py-2.5 rounded-xl text-muted-foreground text-[11.5px] hover:text-foreground transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>Discard</button>
+          <button className="px-3.5 py-2.5 rounded-xl border border-border text-muted-foreground text-[11.5px] hover:text-foreground hover:border-border transition-all" style={{fontFamily:"var(--font-sans)"}}>Draft</button>
+          <button onClick={onClose} className="px-3.5 py-2.5 rounded-xl text-muted-foreground text-[11.5px] hover:text-foreground transition-all" style={{fontFamily:"var(--font-sans)"}}>Discard</button>
         </div>
       </div>
     </div>
@@ -3773,9 +3754,9 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
   return (
     <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center px-4 pb-8 sm:pb-0"
       onClick={()=>{ if(phase==="idle"||phase==="response") onClose(); }}
-      style={{background:"rgba(8,4,20,0.82)",backdropFilter:"blur(16px)"}}>
-      <div className="w-full max-w-[500px] rounded-3xl border border-white/[0.12] overflow-hidden shadow-2xl"
-        style={{background:"rgba(20,16,36,0.98)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
+      style={{background:"var(--scrim)",backdropFilter:"blur(16px)"}}>
+      <div className="w-full max-w-[500px] rounded-3xl border border-border overflow-hidden shadow-2xl"
+        style={{background:"var(--surface-elevated)",boxShadow:"0 32px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(155,109,250,0.12)"}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Mode toggle */}
@@ -3784,12 +3765,12 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
             <button key={v} onClick={()=>{ setMode(v); setPhase("idle"); setTranscript(""); setResponse(""); }}
               disabled={phase==="listening"||phase==="thinking"}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[11px] font-mono border transition-all ${mode===v
-                ? v==="quick"?"text-cyan-300 bg-cyan-400/10 border-cyan-400/25":"text-primary bg-primary/12 border-primary/30"
-                : "text-muted-foreground/50 border-transparent hover:border-white/[0.08] hover:text-muted-foreground"}`}>
+                ? v==="quick"?"text-professional bg-cyan-400/10 border-cyan-400/25":"text-success bg-primary/12 border-primary/30"
+                : "text-muted-foreground border-transparent hover:border-border hover:text-muted-foreground"}`}>
               {v==="quick"?<Volume2 size={10}/>:<Moon size={10}/>}{label}
             </button>
           ))}
-          <button onClick={onClose} className="ml-auto text-muted-foreground/40 hover:text-foreground transition-colors"><X size={13}/></button>
+          <button onClick={onClose} className="ml-auto text-muted-foreground hover:text-foreground transition-colors"><X size={13}/></button>
         </div>
 
         {/* Main area */}
@@ -3797,7 +3778,7 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
           {/* Waveform */}
           <div className="flex items-center gap-[3px] h-12">
             {bars.map((h,i)=>(
-              <div key={i} className={`w-[3px] rounded-full transition-all ${phase==="listening"?"bg-primary":phase==="thinking"?"bg-primary/40":"bg-white/[0.08]"}`}
+              <div key={i} className={`w-[3px] rounded-full transition-all ${phase==="listening"?"bg-primary":phase==="thinking"?"bg-primary/40":"bg-muted"}`}
                 style={{
                   height: phase==="listening" ? `${Math.max(4, h * (0.6 + Math.sin(Date.now()/200+i)*0.4))}px` : phase==="thinking" ? `${4+Math.sin(i*0.8)*4}px` : "4px",
                   background: phase==="listening"
@@ -3814,17 +3795,17 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
           {/* Transcript */}
           <div className="w-full min-h-[40px] text-center">
             {transcript && (
-              <p className="text-[13.5px] text-foreground/85 leading-relaxed" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              <p className="text-[13.5px] text-foreground/85 leading-relaxed" style={{fontFamily:"var(--font-display)"}}>
                 "{transcript}{phase==="listening"?<span className="inline-block w-0.5 h-4 bg-primary ml-0.5 animate-pulse align-middle"/>:""}"
               </p>
             )}
             {phase==="idle" && !transcript && (
-              <p className="text-[12px] text-muted-foreground/40 font-mono">
+              <p className="text-[12px] text-muted-foreground font-mono">
                 {mode==="quick" ? "Ask anything — get an instant answer" : "Describe a task — NC researches overnight"}
               </p>
             )}
             {phase==="thinking" && (
-              <p className="text-[11.5px] text-primary/60 font-mono animate-pulse">
+              <p className="text-[11.5px] text-success/60 font-mono animate-pulse">
                 {mode==="quick" ? "Thinking…" : "Queuing overnight research…"}
               </p>
             )}
@@ -3835,12 +3816,12 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
             <div className="w-full rounded-2xl border border-primary/20 px-4 py-3.5"
               style={{background:"radial-gradient(ellipse at 0% 0%,rgba(155,109,250,0.08),transparent 60%)"}}>
               <div className="flex items-center gap-2 mb-2">
-                <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
-                  <Zap size={9} style={{color:"#ddd6fe"}}/>
+                <div className="w-5 h-5 rounded-md flex items-center justify-center" style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+                  <Zap size={9} style={{color:"var(--foreground)"}}/>
                 </div>
-                <Mono className="!text-primary/60">NC · Quick answer</Mono>
+                <Mono className="!text-success/60">NC · Quick answer</Mono>
               </div>
-              <p className="text-[12.5px] text-foreground/80 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>{response}</p>
+              <p className="text-[12.5px] text-foreground/80 leading-relaxed" style={{fontFamily:"var(--font-sans)"}}>{response}</p>
             </div>
           )}
 
@@ -3855,25 +3836,25 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
             style={{background: phase==="listening" ? undefined : "linear-gradient(135deg,rgba(109,40,217,0.3),rgba(76,29,149,0.15))"}}>
             {phase==="listening"
               ? <MicOff size={22} className="text-red-400"/>
-              : <Mic size={22} className="text-primary"/>}
+              : <Mic size={22} className="text-success"/>}
           </button>
 
-          <p className="text-[10px] text-muted-foreground/30 font-mono">
+          <p className="text-[10px] text-muted-foreground font-mono">
             {phase==="idle" ? "tap to speak" : phase==="listening" ? "listening… tap to stop" : phase==="thinking" ? "processing" : "tap to ask again"}
           </p>
         </div>
 
         {/* Footer hint */}
         {mode==="deep" && phase==="idle" && (
-          <div className="flex items-center gap-2 px-5 py-3 border-t border-white/[0.05]" style={{background:"rgba(155,109,250,0.03)"}}>
-            <Moon size={10} className="text-primary/40 flex-shrink-0"/>
-            <p className="text-[10.5px] text-muted-foreground/40 font-mono">NC will run the research while you sleep · results by morning</p>
+          <div className="flex items-center gap-2 px-5 py-3 border-t border-border" style={{background:"rgba(155,109,250,0.03)"}}>
+            <Moon size={10} className="text-success/40 flex-shrink-0"/>
+            <p className="text-[10.5px] text-muted-foreground font-mono">NC will run the research while you sleep · results by morning</p>
           </div>
         )}
         {mode==="quick" && phase==="idle" && (
-          <div className="flex items-center gap-2 px-5 py-3 border-t border-white/[0.05]" style={{background:"rgba(6,182,212,0.02)"}}>
-            <Volume2 size={10} className="text-cyan-400/40 flex-shrink-0"/>
-            <p className="text-[10.5px] text-muted-foreground/40 font-mono">Grounded in your Memory, calendar, and live signals</p>
+          <div className="flex items-center gap-2 px-5 py-3 border-t border-border" style={{background:"rgba(6,182,212,0.02)"}}>
+            <Volume2 size={10} className="text-professional/40 flex-shrink-0"/>
+            <p className="text-[10.5px] text-muted-foreground font-mono">Grounded in your Memory, calendar, and live signals</p>
           </div>
         )}
       </div>
@@ -3885,8 +3866,8 @@ function VoiceBar({ open, onClose, onSubmitTask }: {
 
 const URGENCY_ICON: Record<string, React.ReactNode> = {
   high:   <CalendarDays size={11} className="text-red-400 flex-shrink-0"/>,
-  medium: <TrendingUp   size={11} className="text-amber-400 flex-shrink-0"/>,
-  low:    <Package      size={11} className="text-emerald-400/70 flex-shrink-0"/>,
+  medium: <TrendingUp   size={11} className="text-family flex-shrink-0"/>,
+  low:    <Package      size={11} className="text-personal/70 flex-shrink-0"/>,
 };
 
 function ProactiveSuggestions({ onRunOvernight, onCompose }: {
@@ -3900,7 +3881,7 @@ function ProactiveSuggestions({ onRunOvernight, onCompose }: {
   return (
     <div className="flex-shrink-0 flex flex-col gap-1.5 px-3 lg:px-4">
       <div className="flex items-center gap-2">
-        <Lightbulb size={10} className="text-primary/60"/>
+        <Lightbulb size={10} className="text-success/60"/>
         <Mono>NC noticed · {visible.length} suggestion{visible.length>1?"s":""}</Mono>
       </div>
       {visible.map(s=>{
@@ -3908,31 +3889,31 @@ function ProactiveSuggestions({ onRunOvernight, onCompose }: {
         const isOpen = expanded===s.id;
         return (
           <div key={s.id} className="rounded-2xl border overflow-hidden transition-all"
-            style={{borderColor:`${c.hex}22`,background:`radial-gradient(ellipse at 0% 0%,${c.glow},transparent 55%),rgba(22,18,36,0.7)`}}>
+            style={{borderColor:`${c.hex}`,background:`radial-gradient(ellipse at 0% 0%,${c.glow},transparent 55%),var(--surface-elevated)`}}>
             <button className="w-full flex items-center gap-3 px-4 py-3 text-left hover:brightness-110 transition-all"
               onClick={()=>setExpanded(isOpen?null:s.id)}>
               <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-                style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`}}>
+                style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`}}>
                 <Lightbulb size={11} style={{color:c.icon}}/>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-[12px] font-semibold text-foreground/88 leading-snug truncate" style={{fontFamily:"'DM Sans',sans-serif"}}>{s.title}</p>
+                <p className="text-[12px] font-semibold text-foreground/88 leading-snug truncate" style={{fontFamily:"var(--font-sans)"}}>{s.title}</p>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   {s.reasoning.map((r,i)=>(
-                    <span key={i} className="text-[9px] font-mono text-muted-foreground/40">{i>0?"·":""} {r.source}</span>
+                    <span key={i} className="text-[9px] font-mono text-muted-foreground">{i>0?"·":""} {r.source}</span>
                   ))}
                 </div>
               </div>
-              <ChevronUp size={11} className={`text-muted-foreground/30 flex-shrink-0 transition-transform ${isOpen?"":"rotate-180"}`}/>
+              <ChevronUp size={11} className={`text-muted-foreground flex-shrink-0 transition-transform ${isOpen?"":"rotate-180"}`}/>
               <button onClick={e=>{ e.stopPropagation(); setDismissed(d=>[...d,s.id]); }}
-                className="text-muted-foreground/25 hover:text-muted-foreground/60 transition-colors flex-shrink-0 ml-1">
+                className="text-muted-foreground hover:text-muted-foreground transition-colors flex-shrink-0 ml-1">
                 <X size={11}/>
               </button>
             </button>
 
             {isOpen && (
-              <div className="border-t px-4 py-3.5 flex flex-col gap-3" style={{borderColor:`${c.hex}15`}}>
-                <p className="text-[11.5px] text-foreground/65 leading-relaxed" style={{fontFamily:"'DM Sans',sans-serif"}}>{s.body}</p>
+              <div className="border-t px-4 py-3.5 flex flex-col gap-3" style={{borderColor:`${c.hex}`}}>
+                <p className="text-[11.5px] text-foreground/65 leading-relaxed" style={{fontFamily:"var(--font-sans)"}}>{s.body}</p>
                 {/* Reasoning chain */}
                 <div className="flex flex-col gap-1.5">
                   <Mono className="block mb-0.5">How NC connected this</Mono>
@@ -3940,15 +3921,15 @@ function ProactiveSuggestions({ onRunOvernight, onCompose }: {
                     <div key={i} className="flex items-start gap-2.5">
                       <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-[5px]" style={{background:C[r.domain].hex}}/>
                       <div className="flex-1 min-w-0">
-                        <span className="text-[9.5px] font-mono text-muted-foreground/40 mr-2">{r.source}</span>
-                        <span className="text-[11px] text-foreground/65" style={{fontFamily:"'DM Sans',sans-serif"}}>{r.fact}</span>
+                        <span className="text-[9.5px] font-mono text-muted-foreground mr-2">{r.source}</span>
+                        <span className="text-[11px] text-foreground/65" style={{fontFamily:"var(--font-sans)"}}>{r.fact}</span>
                       </div>
                     </div>
                   ))}
                   {s.reasoning.length>1 && (
                     <div className="flex items-center gap-1.5 pl-4 pt-0.5">
-                      <div className="h-px flex-1" style={{background:`linear-gradient(90deg,${c.hex}40,transparent)`}}/>
-                      <span className="text-[9px] font-mono" style={{color:`${c.hex}80`}}>cross-domain signal</span>
+                      <div className="h-px flex-1" style={{background:`linear-gradient(90deg,${c.hex},transparent)`}}/>
+                      <span className="text-[9px] font-mono" style={{color:`${c.hex}`}}>cross-domain signal</span>
                     </div>
                   )}
                 </div>
@@ -3957,19 +3938,19 @@ function ProactiveSuggestions({ onRunOvernight, onCompose }: {
                   {s.actionType==="overnight" && (
                     <button onClick={()=>{ onRunOvernight(s.action); setDismissed(d=>[...d,s.id]); }}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11.5px] font-medium transition-all"
-                      style={{background:`linear-gradient(135deg,${c.tile}88,${c.tile}44)`,border:`1px solid ${c.hex}35`,color:c.icon,fontFamily:"'DM Sans',sans-serif"}}>
+                      style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,border:`1px solid ${c.hex}`,color:c.icon,fontFamily:"var(--font-sans)"}}>
                       <Moon size={11}/> {s.action}
                     </button>
                   )}
                   {s.actionType==="compose" && (
                     <button onClick={()=>{ onCompose(); setDismissed(d=>[...d,s.id]); }}
                       className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11.5px] font-medium transition-all"
-                      style={{background:`linear-gradient(135deg,${c.tile}88,${c.tile}44)`,border:`1px solid ${c.hex}35`,color:c.icon,fontFamily:"'DM Sans',sans-serif"}}>
+                      style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,border:`1px solid ${c.hex}`,color:c.icon,fontFamily:"var(--font-sans)"}}>
                       <PenLine size={11}/> {s.action}
                     </button>
                   )}
                   <button onClick={()=>setDismissed(d=>[...d,s.id])}
-                    className="px-3 py-2 rounded-xl text-[11px] text-muted-foreground border border-white/[0.06] hover:border-white/15 hover:text-foreground transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                    className="px-3 py-2 rounded-xl text-[11px] text-muted-foreground border border-border hover:border-border hover:text-foreground transition-all" style={{fontFamily:"var(--font-sans)"}}>
                     Not now
                   </button>
                 </div>
@@ -3998,18 +3979,18 @@ function YouDrawer({ open, activeView, onClose, onNavigate }: {
     <div className={`absolute inset-0 z-20 flex items-stretch justify-end transition-opacity duration-200 ${open?"opacity-100 pointer-events-auto":"opacity-0 pointer-events-none"}`}>
       <div className="flex-1" onClick={onClose}/>
       <div className={`w-full max-w-[320px] h-full flex flex-col border-l border-border transition-transform duration-200 ease-out ${open?"translate-x-0":"translate-x-full"}`}
-        style={{background:"rgba(15,12,26,0.98)",backdropFilter:"blur(20px)"}}>
+        style={{background:"var(--surface-elevated)",backdropFilter:"blur(20px)"}}>
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-border flex-shrink-0">
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
-            <User size={11} style={{color:"#ddd6fe"}}/>
+            style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+            <User size={11} style={{color:"var(--foreground)"}}/>
           </div>
           <div className="flex-1">
-            <p className="text-[13.5px] font-semibold text-foreground/90" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>You</p>
-            <p className="text-[10px] text-muted-foreground/45 font-mono mt-px">How NC understands your life</p>
+            <p className="text-[13.5px] font-semibold text-foreground/90" style={{fontFamily:"var(--font-display)"}}>You</p>
+            <p className="text-[10px] text-muted-foreground font-mono mt-px">How NC understands your life</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground/50 hover:text-foreground transition-colors"><X size={14}/></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={14}/></button>
         </div>
 
         {/* Items */}
@@ -4023,17 +4004,17 @@ function YouDrawer({ open, activeView, onClose, onNavigate }: {
                 className={`flex items-start gap-3 px-4 py-3.5 rounded-2xl border text-left transition-all group ${
                   isActive
                     ? "border-primary/25 bg-primary/[0.07]"
-                    : "border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04]"
+                    : "border-border bg-muted hover:border-border hover:bg-muted"
                 }`}>
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-px transition-colors ${isActive?"bg-primary/20":"bg-white/[0.05] group-hover:bg-white/[0.08]"}`}>
-                  <Icon size={14} className={isActive?"text-primary":"text-muted-foreground/60"}/>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-px transition-colors ${isActive?"bg-primary/20":"bg-muted group-hover:bg-muted"}`}>
+                  <Icon size={14} className={isActive?"text-success":"text-muted-foreground"}/>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className={`text-[13px] font-semibold ${isActive?"text-primary":"text-foreground/80 group-hover:text-foreground"} transition-colors`} style={{fontFamily:"'DM Sans',sans-serif"}}>{item.label}</p>
+                    <p className={`text-[13px] font-semibold ${isActive?"text-success":"text-foreground/80 group-hover:text-foreground"} transition-colors`} style={{fontFamily:"var(--font-sans)"}}>{item.label}</p>
                     {isActive && <div className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0"/>}
                   </div>
-                  <p className="text-[11px] text-muted-foreground/45 mt-1 leading-snug">{item.description}</p>
+                  <p className="text-[11px] text-muted-foreground mt-1 leading-snug">{item.description}</p>
                 </div>
               </button>
             );
@@ -4042,7 +4023,7 @@ function YouDrawer({ open, activeView, onClose, onNavigate }: {
 
         {/* Footer hint */}
         <div className="px-5 py-4 border-t border-border">
-          <p className="text-[10px] text-muted-foreground/30 font-mono leading-relaxed">NC builds this picture from your Gmail, Calendar, and connected sources. You can correct anything in Memory.</p>
+          <p className="text-[10px] text-muted-foreground font-mono leading-relaxed">NC builds this picture from your Gmail, Calendar, and connected sources. You can correct anything in Memory.</p>
         </div>
       </div>
     </div>
@@ -4068,23 +4049,23 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
   return (
     // Mobile: bottom sheet. Desktop (md+): centered modal.
     <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center md:px-4" onClick={onClose}
-      style={{background:"rgba(10,5,24,0.75)",backdropFilter:"blur(12px)"}}>
+      style={{background:"var(--scrim)",backdropFilter:"blur(12px)"}}>
       <div className="w-full md:max-w-[620px] max-h-[90vh] md:max-h-none flex flex-col gap-0 rounded-t-2xl md:rounded-2xl border border-primary/25 overflow-hidden shadow-2xl"
-        style={{background:"rgba(22,18,38,0.98)",boxShadow:"0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,109,250,0.18)"}}
+        style={{background:"var(--surface-elevated)",boxShadow:"0 24px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(155,109,250,0.18)"}}
         onClick={e=>e.stopPropagation()}>
 
         {/* Header */}
-        <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.07]"
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-border"
           style={{background:"linear-gradient(90deg,rgba(109,40,217,0.1),transparent)"}}>
           <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{background:"linear-gradient(135deg,#6d28d9cc,#4c1d9566)"}}>
-            <Moon size={11} style={{color:"#ddd6fe"}}/>
+            style={{background:"linear-gradient(135deg,var(--primary),var(--primary-glow))"}}>
+            <Moon size={11} style={{color:"var(--foreground)"}}/>
           </div>
           <div className="flex-1">
-            <p className="text-[13px] font-semibold text-foreground/90" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Ask NC to work on something overnight</p>
-            <p className="text-[10.5px] text-muted-foreground/60 font-mono mt-px">Results delivered by morning · powered by deep research agents</p>
+            <p className="text-[13px] font-semibold text-foreground/90" style={{fontFamily:"var(--font-display)"}}>Ask NC to work on something overnight</p>
+            <p className="text-[10.5px] text-muted-foreground font-mono mt-px">Results delivered by morning · powered by deep research agents</p>
           </div>
-          <button onClick={onClose} className="text-muted-foreground/50 hover:text-foreground transition-colors"><X size={13}/></button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground transition-colors"><X size={13}/></button>
         </div>
 
         {/* Input */}
@@ -4093,11 +4074,11 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
             onKeyDown={e=>{ if(e.key==="Enter" && (e.metaKey||e.ctrlKey)) submit(); }}
             placeholder="e.g. Find me a dress for Maya's wedding — mid-June, budget £200, not too formal…"
             rows={3}
-            className="w-full bg-white/[0.04] border border-white/[0.1] rounded-xl px-4 py-3 text-[13px] text-foreground/80 placeholder:text-muted-foreground/35 outline-none resize-none leading-relaxed scrollbar-none focus:border-primary/40 transition-colors"
-            style={{fontFamily:"'DM Sans',sans-serif"}}/>
+            className="w-full bg-muted border border-border rounded-xl px-4 py-3 text-[13px] text-foreground/80 placeholder:text-muted-foreground outline-none resize-none leading-relaxed scrollbar-none focus:border-primary/40 transition-colors"
+            style={{fontFamily:"var(--font-sans)"}}/>
           <div className="flex items-center justify-between mt-2">
-            <p className="text-[10px] text-muted-foreground/35 font-mono">⌘↵ to submit · Esc to close</p>
-            <p className="text-[10px] text-muted-foreground/35 font-mono">{input.length > 0 ? `${input.length} chars` : ""}</p>
+            <p className="text-[10px] text-muted-foreground font-mono">⌘↵ to submit · Esc to close</p>
+            <p className="text-[10px] text-muted-foreground font-mono">{input.length > 0 ? `${input.length} chars` : ""}</p>
           </div>
         </div>
 
@@ -4107,16 +4088,16 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
             {SUGGESTED_TASKS.map(({icon:Icon,text},i)=>(
               <button key={i} onClick={()=>setInput(text)}
-                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-white/[0.07] bg-white/[0.02] hover:border-primary/25 hover:bg-primary/[0.05] transition-all text-left group">
-                <Icon size={11} className="text-muted-foreground/50 group-hover:text-primary/60 flex-shrink-0 transition-colors"/>
-                <span className="text-[11.5px] text-muted-foreground/70 group-hover:text-foreground/80 leading-snug transition-colors" style={{fontFamily:"'DM Sans',sans-serif"}}>{text}</span>
+                className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-border bg-muted hover:border-primary/25 hover:bg-primary/[0.05] transition-all text-left group">
+                <Icon size={11} className="text-muted-foreground group-hover:text-success/60 flex-shrink-0 transition-colors"/>
+                <span className="text-[11.5px] text-muted-foreground group-hover:text-foreground/80 leading-snug transition-colors" style={{fontFamily:"var(--font-sans)"}}>{text}</span>
               </button>
             ))}
           </div>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-2 px-5 py-3.5 border-t border-white/[0.06]"
+        <div className="flex items-center gap-2 px-5 py-3.5 border-t border-border"
           style={{background:"rgba(255,255,255,0.01)"}}>
           <div className="flex items-center gap-1.5 flex-1">
             {(["Learning","Personal","Professional"] as const).map(d=>{
@@ -4124,16 +4105,16 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
               const c = C[id];
               return (
                 <span key={d} className="flex items-center gap-1 px-2 py-px rounded-full text-[9.5px] font-mono border"
-                  style={{color:c.hex,borderColor:`${c.hex}30`,background:`${c.hex}10`}}>
+                  style={{color:c.hex,borderColor:`${c.hex}`,background:`${c.hex}`}}>
                   <span className="w-1 h-1 rounded-full" style={{background:c.hex}}/>{d}
                 </span>
               );
             })}
-            <span className="text-[9.5px] text-muted-foreground/30 font-mono">NC will route to the right domain</span>
+            <span className="text-[9.5px] text-muted-foreground font-mono">NC will route to the right domain</span>
           </div>
           <button onClick={submit} disabled={!input.trim()}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12.5px] font-semibold transition-all disabled:opacity-35 disabled:cursor-not-allowed"
-            style={{background:"linear-gradient(135deg,rgba(109,40,217,0.6),rgba(76,29,149,0.4))",border:"1px solid rgba(155,109,250,0.35)",color:"#ede9fe",fontFamily:"'DM Sans',sans-serif"}}>
+            style={{background:"linear-gradient(135deg,rgba(109,40,217,0.6),rgba(76,29,149,0.4))",border:"1px solid rgba(155,109,250,0.35)",color:"#ede9fe",fontFamily:"var(--font-sans)"}}>
             <Moon size={12}/> Run overnight
           </button>
         </div>
@@ -4147,15 +4128,15 @@ function AskNCBar({ open, onClose, onSubmit }: { open:boolean; onClose:()=>void;
 function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>void }) {
   const [expanded, setExpanded] = useState<string|null>("a1");
   const statusIcon = (s:TaskStatus) => s==="done"
-    ? <Check size={11} className="text-emerald-400"/>
+    ? <Check size={11} className="text-personal"/>
     : s==="running"
-      ? <Loader size={11} className="text-primary animate-spin"/>
-      : <Clock size={11} className="text-muted-foreground/50"/>;
+      ? <Loader size={11} className="text-success animate-spin"/>
+      : <Clock size={11} className="text-muted-foreground"/>;
   const statusLabel: Record<TaskStatus,string> = { done:"Completed", running:"Running now", queued:"Queued" };
   const statusColor: Record<TaskStatus,string> = {
-    done:"text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
-    running:"text-primary bg-primary/10 border-primary/25",
-    queued:"text-muted-foreground bg-white/[0.04] border-white/[0.1]",
+    done:"text-personal bg-emerald-500/10 border-emerald-500/20",
+    running:"text-success bg-primary/10 border-primary/25",
+    queued:"text-muted-foreground bg-muted border-border",
   };
 
   return (
@@ -4163,12 +4144,12 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
       {/* Header */}
       <div className="flex-shrink-0 flex items-center justify-between px-6 py-4 border-b border-border">
         <div>
-          <p className="text-[18px] font-semibold text-foreground" style={{fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Scout</p>
-          <p className="text-[12px] text-muted-foreground mt-0.5" style={{fontFamily:"'DM Sans',sans-serif"}}>NC researches while you sleep. Results waiting in the morning.</p>
+          <p className="text-[18px] font-semibold text-foreground" style={{fontFamily:"var(--font-display)"}}>Scout</p>
+          <p className="text-[12px] text-muted-foreground mt-0.5" style={{fontFamily:"var(--font-sans)"}}>NC researches while you sleep. Results waiting in the morning.</p>
         </div>
         <button onClick={onNewTask}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12.5px] font-semibold border border-primary/30 text-primary bg-primary/10 hover:bg-primary/15 transition-all"
-          style={{fontFamily:"'DM Sans',sans-serif"}}>
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[12.5px] font-semibold border border-primary/30 text-success bg-primary/10 hover:bg-primary/15 transition-all"
+          style={{fontFamily:"var(--font-sans)"}}>
           <Plus size={13}/> New Scout
         </button>
       </div>
@@ -4181,7 +4162,7 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
             <div className="rounded-xl border border-primary/20 px-4 py-3 flex items-center gap-3"
               style={{background:"radial-gradient(ellipse at 0% 50%,rgba(155,109,250,0.07),transparent 60%)"}}>
               <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse flex-shrink-0" style={{boxShadow:"0 0 8px rgba(155,109,250,0.8)"}}/>
-              <p className="text-[12px] text-foreground/70 flex-1" style={{fontFamily:"'DM Sans',sans-serif"}}>
+              <p className="text-[12px] text-foreground/70 flex-1" style={{fontFamily:"var(--font-sans)"}}>
                 1 agent running now · research in progress · results by morning
               </p>
               <Mono>11:58 PM</Mono>
@@ -4192,48 +4173,48 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
             const c = C[task.domain];
             const isOpen = expanded===task.id;
             return (
-              <div key={task.id} className={`rounded-2xl border transition-all overflow-hidden ${task.status==="done"?"border-border hover:border-white/15":"border-border"}`}
-                style={{background:"rgba(30,25,52,0.5)"}}>
+              <div key={task.id} className={`rounded-2xl border transition-all overflow-hidden ${task.status==="done"?"border-border hover:border-border":"border-border"}`}
+                style={{background:"var(--surface-elevated)"}}>
 
                 {/* Task header */}
                 <button className="w-full flex items-start gap-3 px-5 py-4 text-left"
                   onClick={()=>setExpanded(isOpen?null:task.id)}>
                   <div className="w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 mt-px"
-                    style={{background:`linear-gradient(135deg,${c.tile}cc,${c.tile}44)`,boxShadow:`0 1px 8px ${c.glow}`}}>
+                    style={{background:`linear-gradient(135deg,${c.tile},${c.tile})`,boxShadow:`0 1px 8px ${c.glow}`}}>
                     {statusIcon(task.status)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="text-[13px] font-semibold text-foreground/90" style={{fontFamily:"'DM Sans',sans-serif"}}>{task.title}</p>
+                      <p className="text-[13px] font-semibold text-foreground/90" style={{fontFamily:"var(--font-sans)"}}>{task.title}</p>
                       <span className={`px-1.5 py-px rounded-full text-[8.5px] font-mono border ${statusColor[task.status]}`}>{statusLabel[task.status]}</span>
                     </div>
-                    <p className="text-[11px] text-muted-foreground/60 line-clamp-1">{task.input}</p>
+                    <p className="text-[11px] text-muted-foreground line-clamp-1">{task.input}</p>
                     <div className="flex items-center gap-3 mt-1.5">
                       <Mono>{task.createdAt}</Mono>
-                      {task.completedAt && <Mono className="!text-emerald-400/50">Done {task.completedAt} · {task.duration}</Mono>}
+                      {task.completedAt && <Mono className="!text-personal/50">Done {task.completedAt} · {task.duration}</Mono>}
                     </div>
                   </div>
-                  <ChevronRight size={13} className={`text-muted-foreground/30 flex-shrink-0 mt-1 transition-transform ${isOpen?"rotate-90":""}`}/>
+                  <ChevronRight size={13} className={`text-muted-foreground flex-shrink-0 mt-1 transition-transform ${isOpen?"rotate-90":""}`}/>
                 </button>
 
                 {/* Expanded: agent steps + results */}
                 {isOpen && (
-                  <div className="border-t border-white/[0.06]">
+                  <div className="border-t border-border">
                     {/* Agent steps */}
                     {task.agentSteps && (
-                      <div className="px-5 py-4 border-b border-white/[0.05]">
+                      <div className="px-5 py-4 border-b border-border">
                         <Mono className="block mb-3">Agent steps</Mono>
                         <div className="flex flex-col gap-2">
                           {task.agentSteps.map((step,i)=>(
                             <div key={i} className="flex items-start gap-3">
                               <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 mt-px border ${task.status==="done"?"border-emerald-500/30 bg-emerald-500/10":"border-primary/25 bg-primary/8"}`}>
                                 {task.status==="done"
-                                  ? <Check size={8} className="text-emerald-400"/>
+                                  ? <Check size={8} className="text-personal"/>
                                   : i===0
-                                    ? <Loader size={8} className="text-primary animate-spin"/>
+                                    ? <Loader size={8} className="text-success animate-spin"/>
                                     : <span className="w-1 h-1 rounded-full bg-muted-foreground/30"/>}
                               </div>
-                              <p className="text-[11.5px] text-foreground/65 leading-snug" style={{fontFamily:"'DM Sans',sans-serif"}}>{step}</p>
+                              <p className="text-[11.5px] text-foreground/65 leading-snug" style={{fontFamily:"var(--font-sans)"}}>{step}</p>
                             </div>
                           ))}
                         </div>
@@ -4243,8 +4224,8 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
                     {/* Running — progress state */}
                     {task.status==="running" && !task.result && (
                       <div className="px-5 py-4 flex items-center gap-3">
-                        <Loader size={12} className="text-primary animate-spin flex-shrink-0"/>
-                        <p className="text-[12px] text-muted-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>Researching across sources — checking back at 6am…</p>
+                        <Loader size={12} className="text-success animate-spin flex-shrink-0"/>
+                        <p className="text-[12px] text-muted-foreground" style={{fontFamily:"var(--font-sans)"}}>Researching across sources — checking back at 6am…</p>
                       </div>
                     )}
 
@@ -4252,37 +4233,37 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
                     {task.result && (
                       <div className="px-5 py-4">
                         <div className="flex items-center gap-2 mb-3">
-                          <Sparkles size={11} className="text-primary/70"/>
+                          <Sparkles size={11} className="text-success/70"/>
                           <Mono>Results</Mono>
                         </div>
-                        <p className="text-[12px] text-foreground/70 leading-relaxed mb-4" style={{fontFamily:"'DM Sans',sans-serif"}}>{task.result.summary}</p>
+                        <p className="text-[12px] text-foreground/70 leading-relaxed mb-4" style={{fontFamily:"var(--font-sans)"}}>{task.result.summary}</p>
                         <div className="flex flex-col gap-2">
                           {task.result.items.map((item,i)=>(
-                            <div key={i} className={`rounded-xl border px-4 py-3 flex items-start gap-3 transition-all hover:border-white/15 ${i===0?"border-primary/20 bg-primary/[0.04]":"border-white/[0.06] bg-white/[0.01]"}`}>
+                            <div key={i} className={`rounded-xl border px-4 py-3 flex items-start gap-3 transition-all hover:border-border ${i===0?"border-primary/20 bg-primary/[0.04]":"border-border bg-muted"}`}>
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                  <p className="text-[12.5px] font-semibold text-foreground/90" style={{fontFamily:"'DM Sans',sans-serif"}}>{item.name}</p>
-                                  {i===0 && <span className="text-[8px] font-mono px-1.5 py-px rounded-full bg-primary/15 text-primary border border-primary/25">Top pick</span>}
-                                  <span className="text-[9px] font-mono text-emerald-400/70 ml-auto">{item.match}% match</span>
+                                  <p className="text-[12.5px] font-semibold text-foreground/90" style={{fontFamily:"var(--font-sans)"}}>{item.name}</p>
+                                  {i===0 && <span className="text-[8px] font-mono px-1.5 py-px rounded-full bg-primary/15 text-success border border-primary/25">Top pick</span>}
+                                  <span className="text-[9px] font-mono text-personal/70 ml-auto">{item.match}% match</span>
                                 </div>
-                                <p className="text-[11px] text-muted-foreground/60 leading-snug mb-1.5">{item.note}</p>
+                                <p className="text-[11px] text-muted-foreground leading-snug mb-1.5">{item.note}</p>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-mono text-muted-foreground/40">{item.source}</span>
+                                  <span className="text-[10px] font-mono text-muted-foreground">{item.source}</span>
                                   <span className="text-[12px] font-semibold" style={{color:C[task.domain].hex}}>{item.price}</span>
                                 </div>
                               </div>
-                              <button className="flex-shrink-0 text-muted-foreground/30 hover:text-foreground/60 transition-colors mt-px">
+                              <button className="flex-shrink-0 text-muted-foreground hover:text-foreground/60 transition-colors mt-px">
                                 <ExternalLink size={11}/>
                               </button>
                             </div>
                           ))}
                         </div>
-                        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-white/[0.05]">
-                          <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11.5px] font-medium bg-primary/15 border border-primary/25 text-primary hover:bg-primary/20 transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>
+                        <div className="flex items-center gap-2 mt-4 pt-4 border-t border-border">
+                          <button className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[11.5px] font-medium bg-primary/15 border border-primary/25 text-success hover:bg-primary/20 transition-all" style={{fontFamily:"var(--font-sans)"}}>
                             <Check size={11}/> Save to {task.domain}
                           </button>
-                          <button className="px-3.5 py-2 rounded-xl border border-white/[0.07] text-muted-foreground text-[11.5px] hover:text-foreground hover:border-white/15 transition-all" style={{fontFamily:"'DM Sans',sans-serif"}}>Refine search</button>
-                          <button className="px-3.5 py-2 rounded-xl text-muted-foreground text-[11.5px] hover:text-foreground transition-all ml-auto" style={{fontFamily:"'DM Sans',sans-serif"}}>Dismiss</button>
+                          <button className="px-3.5 py-2 rounded-xl border border-border text-muted-foreground text-[11.5px] hover:text-foreground hover:border-border transition-all" style={{fontFamily:"var(--font-sans)"}}>Refine search</button>
+                          <button className="px-3.5 py-2 rounded-xl text-muted-foreground text-[11.5px] hover:text-foreground transition-all ml-auto" style={{fontFamily:"var(--font-sans)"}}>Dismiss</button>
                         </div>
                       </div>
                     )}
@@ -4293,14 +4274,14 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
           })}
 
           {/* Empty queue callout */}
-          <div className="rounded-2xl border border-dashed border-white/[0.07] px-6 py-8 flex flex-col items-center gap-3 text-center cursor-pointer hover:border-primary/20 transition-colors group" onClick={onNewTask}>
-            <div className="w-10 h-10 rounded-xl bg-white/[0.03] group-hover:bg-primary/[0.06] border border-white/[0.06] group-hover:border-primary/20 flex items-center justify-center transition-all">
-              <Moon size={16} className="text-muted-foreground/30 group-hover:text-primary/50 transition-colors"/>
+          <div className="rounded-2xl border border-dashed border-border px-6 py-8 flex flex-col items-center gap-3 text-center cursor-pointer hover:border-primary/20 transition-colors group" onClick={onNewTask}>
+            <div className="w-10 h-10 rounded-xl bg-muted group-hover:bg-primary/[0.06] border border-border group-hover:border-primary/20 flex items-center justify-center transition-all">
+              <Moon size={16} className="text-muted-foreground group-hover:text-success/50 transition-colors"/>
             </div>
-            <p className="text-[12.5px] text-muted-foreground/50 group-hover:text-muted-foreground/70 transition-colors" style={{fontFamily:"'DM Sans',sans-serif"}}>
+            <p className="text-[12.5px] text-muted-foreground group-hover:text-muted-foreground transition-colors" style={{fontFamily:"var(--font-sans)"}}>
               Delegate something to NC before you sleep
             </p>
-            <span className="text-[10.5px] text-primary/50 font-mono group-hover:text-primary/70 transition-colors">+ New Scout</span>
+            <span className="text-[10.5px] text-success/50 font-mono group-hover:text-success/70 transition-colors">+ New Scout</span>
           </div>
         </div>
       </div>
@@ -4346,14 +4327,7 @@ export function MainApp() {
     // can grow taller, the container doesn't actually scroll internally —
     // the page does — so sticky never engages). `clip` doesn't create a
     // scroll context, so sticky elements correctly resolve to the window.
-    <div className="min-h-[100dvh] w-full overflow-x-clip text-foreground" style={{fontFamily:"'DM Sans',sans-serif"}}>
-      {/* Ambient — matches homepage violet/cyan/magenta radial glow */}
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute top-[-10%] left-[10%] w-[60rem] h-[40rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.55 0.22 290 / 0.18), transparent 60%)"}}/>
-        <div className="absolute top-[10%] right-[-10%] w-[50rem] h-[35rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.6 0.2 220 / 0.16), transparent 60%)"}}/>
-        <div className="absolute bottom-[-10%] left-[30%] w-[45rem] h-[30rem] rounded-full" style={{background:"radial-gradient(ellipse, oklch(0.6 0.18 320 / 0.12), transparent 60%)"}}/>
-      </div>
-
+    <div className="min-h-[100dvh] w-full overflow-x-clip text-foreground" style={{fontFamily:"var(--font-sans)"}}>
       <div className="relative z-10 flex flex-col min-h-[100dvh]">
         {/* TopBar — desktop only. On mobile the logo + nav pills aren't doing
             functional work (pills hidden, logo isn't a back button anywhere
@@ -4621,42 +4595,36 @@ function AddTaskButton() {
     setOpen(false);
   };
 
-  const domainColor: Record<ManualTask["domain"], string> = {
-    learning: "#8b5cf6",
-    professional: "#38bdf8",
-    social: "#fb7185",
-    family: "#fbbf24",
-    personal: "#34d399",
-  };
+  const domainColor = Object.fromEntries(DOMAIN_ORDER.map(id => [id, C[id].hex])) as Record<DomainId, string>;
 
   return (
     <>
       <ActionPill
         icon={<ListTodo size={14}/>}
         label="Add tasks"
-        accent="#fbbf24"
+        accent="var(--family)"
         title="Add tasks (type or dictate)"
         onClick={() => setOpen(true)}
       />
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-start justify-center pt-24 px-4 bg-foreground/30 backdrop-blur-sm"
           onClick={() => setOpen(false)}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-lg rounded-2xl border border-white/10 p-5 shadow-2xl"
-            style={{ background: "radial-gradient(ellipse at 0% 0%,rgba(139,92,246,0.10) 0%,transparent 60%),rgba(20,18,38,0.96)" }}
+            className="w-full max-w-lg rounded-2xl border border-border p-5 shadow-2xl"
+            style={{ background: "radial-gradient(ellipse at 0% 0%,rgba(139,92,246,0.10) 0%,transparent 60%),var(--surface-elevated)" }}
           >
             <div className="flex items-center gap-2 mb-3">
-              <ListTodo size={14} className="text-primary" />
+              <ListTodo size={14} className="text-success" />
               <h2 className="text-[13px] font-semibold text-foreground/90 font-display">Add tasks</h2>
-              <span className="text-[10.5px] font-mono text-muted-foreground/60">type or dictate · one per line</span>
+              <span className="text-[10.5px] font-mono text-muted-foreground">type or dictate · one per line</span>
               <button
                 onClick={() => setOpen(false)}
                 aria-label="Close"
-                className="ml-auto text-muted-foreground/60 hover:text-foreground"
+                className="ml-auto text-muted-foreground hover:text-foreground"
               >
                 <X size={14} />
               </button>
@@ -4675,7 +4643,7 @@ function AddTaskButton() {
                 }}
                 rows={5}
                 placeholder={"Type or tap the mic to dictate…\nReply to Sarah about partnership terms\nPick up kids from ballet at 5"}
-                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2.5 pr-12 text-[13px] outline-none placeholder:text-muted-foreground/40 focus:border-primary/40 focus:bg-white/[0.06] resize-none font-mono leading-relaxed"
+                className="w-full bg-muted border border-border rounded-xl px-3 py-2.5 pr-12 text-[13px] outline-none placeholder:text-muted-foreground focus:border-primary/40 focus:bg-muted resize-none font-mono leading-relaxed"
               />
 
               {/* Mic button — toggles dictation. Pulses red while listening so
@@ -4688,8 +4656,8 @@ function AddTaskButton() {
                 disabled={!speechSupported}
                 className={`absolute top-2 right-2 w-8 h-8 rounded-lg flex items-center justify-center border transition-all disabled:opacity-30 disabled:cursor-not-allowed after:content-[''] after:absolute after:-inset-1.5 after:md:hidden ${
                   listening
-                    ? "border-rose-400/50 bg-rose-500/15 text-rose-300 animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
-                    : "border-white/10 bg-white/[0.04] text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/10"
+                    ? "border-rose-400/50 bg-rose-500/15 text-social animate-pulse shadow-[0_0_14px_rgba(248,113,113,0.5)]"
+                    : "border-border bg-muted text-muted-foreground hover:text-success hover:border-primary/40 hover:bg-primary/10"
                 }`}
               >
                 <Mic size={14}/>
@@ -4697,20 +4665,20 @@ function AddTaskButton() {
             </div>
 
             {voiceError && (
-              <div className="mt-2 text-[11px] text-rose-300/90 font-mono">{voiceError}</div>
+              <div className="mt-2 text-[11px] text-social/90 font-mono">{voiceError}</div>
             )}
 
             {/* Voice language picker — accent/locale hint dramatically improves
                 recognition for non-native English speakers. Persisted locally. */}
             {speechSupported && (
-              <div className="mt-2 flex items-center gap-2 text-[11px] font-mono text-muted-foreground/70">
+              <div className="mt-2 flex items-center gap-2 text-[11px] font-mono text-muted-foreground">
                 <Mic size={11} className="opacity-60"/>
                 <span>Voice language</span>
                 <select
                   value={voiceLang}
                   onChange={(e) => setVoiceLang(e.target.value)}
                   disabled={listening}
-                  className="bg-white/[0.04] border border-white/10 rounded-md px-1.5 py-0.5 text-foreground/80 text-[11px] outline-none focus:border-primary/40 disabled:opacity-50"
+                  className="bg-muted border border-border rounded-md px-1.5 py-0.5 text-foreground/80 text-[11px] outline-none focus:border-primary/40 disabled:opacity-50"
                 >
                   <optgroup label="English">
                     <option value="en-US">English (US)</option>
@@ -4754,12 +4722,12 @@ function AddTaskButton() {
                     <option value="fil-PH">Filipino</option>
                   </optgroup>
                 </select>
-                <span className="text-muted-foreground/50">tip: pick your accent for better accuracy</span>
+                <span className="text-muted-foreground">tip: pick your accent for better accuracy</span>
               </div>
             )}
 
             {listening && !voiceError && (
-              <div className="mt-2 text-[11px] text-rose-300/90 font-mono flex items-center gap-1.5">
+              <div className="mt-2 text-[11px] text-social/90 font-mono flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-pulse"/>
                 Listening — pause between tasks; each phrase becomes a new line.
               </div>
@@ -4775,14 +4743,14 @@ function AddTaskButton() {
                     />
                     <span className="capitalize text-foreground/80 w-20 flex-shrink-0">{p.domain}</span>
                     <span className="truncate text-foreground/60">{p.line}</span>
-                    {p.urgent && <span className="text-rose-300 flex-shrink-0">urgent</span>}
+                    {p.urgent && <span className="text-social flex-shrink-0">urgent</span>}
                   </div>
                 ))}
               </div>
             )}
 
             <div className="mt-3 flex items-center justify-between">
-              <div className="text-[11px] text-muted-foreground/70 font-mono">
+              <div className="text-[11px] text-muted-foreground font-mono">
                 {previews.length === 0
                   ? "Auto-categorised into the right bento box"
                   : `${previews.length} task${previews.length === 1 ? "" : "s"} · ⌘/Ctrl+Enter to add`}
@@ -4790,7 +4758,7 @@ function AddTaskButton() {
               <button
                 onClick={submit}
                 disabled={previews.length === 0}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-medium border border-primary/40 bg-primary/15 text-primary hover:bg-primary/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-medium border border-primary/40 bg-primary/15 text-success hover:bg-primary/25 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 style={{ fontFamily: "'DM Sans',sans-serif" }}
               >
                 <Plus size={12} />
