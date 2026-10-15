@@ -32,6 +32,10 @@ export const Route = createFileRoute("/workspace/agents/$agentId")({
         name: "description",
         content: `Persistent home page for one of your watching agents.`,
       },
+      { property: "og:title", content: `Agent — NeuralConnexions` },
+      { property: "og:description", content: `Persistent home page for one of your watching agents.` },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });

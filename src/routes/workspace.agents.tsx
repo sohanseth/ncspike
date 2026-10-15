@@ -23,6 +23,10 @@ export const Route = createFileRoute("/workspace/agents")({
         content:
           "Create and manage research-digest agents that pull articles on your topics on a daily cadence.",
       },
+      { property: "og:title", content: "Agents — NeuralConnexions" },
+      { property: "og:description", content: "Create and manage research-digest agents that pull articles on your topics on a daily cadence." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });

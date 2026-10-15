@@ -8,6 +8,10 @@ export const Route = createFileRoute("/reset-password")({
     meta: [
       { title: "Set new password — NeuralConnexions" },
       { name: "description", content: "Set a new password for your NeuralConnexions account." },
+      { property: "og:title", content: "Set new password — NeuralConnexions" },
+      { property: "og:description", content: "Set a new password for your NeuralConnexions account." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: ResetPasswordPage,

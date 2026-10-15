@@ -36,6 +36,8 @@ export const Route = createFileRoute("/")({
         content:
           "Triage, memory, overnight research, and drafts in your voice. Email bodies never leave your device by default.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Landing,
@@ -198,7 +200,7 @@ function Landing() {
               <div key={c.title} className="glass-elevated rounded-2xl p-6 md:p-7 group hover:ring-1 hover:ring-primary/30 transition-all">
                 <div className="flex items-start gap-4">
                   <div className="size-11 rounded-xl bg-gradient-to-br from-primary/20 to-primary-glow/20 ring-1 ring-primary/30 inline-flex items-center justify-center shrink-0">
-                    <c.icon className="size-5 text-primary-glow" />
+                    <c.icon className="size-5 text-success" />
                   </div>
                   <div>
                     <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
@@ -270,7 +272,7 @@ function Landing() {
                   {l.tier}
                 </p>
                 <div className="mt-3 flex items-center gap-3">
-                  <l.icon className={`size-5 ${l.tone === "success" ? "text-success" : l.tone === "primary" ? "text-primary-glow" : "text-muted-foreground"}`} />
+                  <l.icon className={`size-5 ${l.tone === "success" ? "text-success" : l.tone === "primary" ? "text-success" : "text-muted-foreground"}`} />
                   <h3 className="font-display text-lg font-semibold">{l.title}</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mt-3 text-pretty">{l.body}</p>
@@ -318,7 +320,7 @@ function Landing() {
               { icon: User, title: "Personal", body: "Health appointments, renewals, the quiet maintenance of a life.", span: "" },
             ].map((d) => (
               <div key={d.title} className={`glass rounded-2xl p-6 ${d.span}`}>
-                <d.icon className="size-5 text-primary-glow" />
+                <d.icon className="size-5 text-success" />
                 <h3 className="mt-4 font-display text-lg font-semibold">{d.title}</h3>
                 <p className="text-sm text-muted-foreground mt-2 text-pretty">{d.body}</p>
               </div>
@@ -493,7 +495,7 @@ function Landing() {
       {/* CTA + footer */}
       <section className="px-6 py-24 border-t border-border">
         <div className="mx-auto max-w-4xl text-center">
-          <Brain className="size-8 text-primary-glow mx-auto" />
+          <Brain className="size-8 text-success mx-auto" />
           <h2 className="mt-6 font-display text-3xl md:text-5xl font-semibold tracking-tight text-balance">
             Less in your head. <span className="text-gradient">More in your life.</span>
           </h2>

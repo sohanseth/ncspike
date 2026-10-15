@@ -9,35 +9,30 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as AuthRouteImport } from './routes/auth'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
-import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
-import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
-import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy'
-import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
-import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
-import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
-import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
-import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
-import { Route as WorkspaceAgentsAgentIdRouteImport } from './routes/workspace.agents.$agentId'
-import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
-import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
-import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
+import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
+import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
+import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
+import { Route as WorkspacePersonalizationRouteImport } from './routes/workspace.personalization'
+import { Route as WorkspacePrivacyRouteImport } from './routes/workspace.privacy'
+import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
+import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
 import { Route as ApiChatStreamRouteImport } from './routes/api.chat.stream'
+import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
+import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
+import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
+import { Route as WorkspaceAgentsAgentIdRouteImport } from './routes/workspace.agents.$agentId'
+import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
 
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -45,9 +40,14 @@ const AuthRoute = AuthRouteImport.update({
   path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
@@ -55,19 +55,24 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
   path: '/workspace/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceVoiceSettingsRoute = WorkspaceVoiceSettingsRouteImport.update({
-  id: '/workspace/voice-settings',
-  path: '/workspace/voice-settings',
+const WorkspaceAgentsRoute = WorkspaceAgentsRouteImport.update({
+  id: '/workspace/agents',
+  path: '/workspace/agents',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
-  id: '/workspace/usage',
-  path: '/workspace/usage',
+const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
+  id: '/workspace/connections',
+  path: '/workspace/connections',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspacePrivacyRoute = WorkspacePrivacyRouteImport.update({
-  id: '/workspace/privacy',
-  path: '/workspace/privacy',
+const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
+  id: '/workspace/drafts',
+  path: '/workspace/drafts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceInboxRoute = WorkspaceInboxRouteImport.update({
+  id: '/workspace/inbox',
+  path: '/workspace/inbox',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspacePersonalizationRoute =
@@ -76,44 +81,24 @@ const WorkspacePersonalizationRoute =
     path: '/workspace/personalization',
     getParentRoute: () => rootRouteImport,
   } as any)
-const WorkspaceInboxRoute = WorkspaceInboxRouteImport.update({
-  id: '/workspace/inbox',
-  path: '/workspace/inbox',
+const WorkspacePrivacyRoute = WorkspacePrivacyRouteImport.update({
+  id: '/workspace/privacy',
+  path: '/workspace/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceDraftsRoute = WorkspaceDraftsRouteImport.update({
-  id: '/workspace/drafts',
-  path: '/workspace/drafts',
+const WorkspaceUsageRoute = WorkspaceUsageRouteImport.update({
+  id: '/workspace/usage',
+  path: '/workspace/usage',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
-  id: '/workspace/connections',
-  path: '/workspace/connections',
+const WorkspaceVoiceSettingsRoute = WorkspaceVoiceSettingsRouteImport.update({
+  id: '/workspace/voice-settings',
+  path: '/workspace/voice-settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const WorkspaceAgentsRoute = WorkspaceAgentsRouteImport.update({
-  id: '/workspace/agents',
-  path: '/workspace/agents',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WorkspaceInternalCpaudRoute = WorkspaceInternalCpaudRouteImport.update({
-  id: '/workspace/internal/cpaud',
-  path: '/workspace/internal/cpaud',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const WorkspaceAgentsAgentIdRoute = WorkspaceAgentsAgentIdRouteImport.update({
-  id: '/$agentId',
-  path: '/$agentId',
-  getParentRoute: () => WorkspaceAgentsRoute,
-} as any)
-const ApiTtsElevenlabsRoute = ApiTtsElevenlabsRouteImport.update({
-  id: '/api/tts/elevenlabs',
-  path: '/api/tts/elevenlabs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiSttGroqRoute = ApiSttGroqRouteImport.update({
-  id: '/api/stt/groq',
-  path: '/api/stt/groq',
+const ApiChatStreamRoute = ApiChatStreamRouteImport.update({
+  id: '/api/chat/stream',
+  path: '/api/chat/stream',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
@@ -121,9 +106,24 @@ const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
   path: '/api/public/whatsapp',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiChatStreamRoute = ApiChatStreamRouteImport.update({
-  id: '/api/chat/stream',
-  path: '/api/chat/stream',
+const ApiSttGroqRoute = ApiSttGroqRouteImport.update({
+  id: '/api/stt/groq',
+  path: '/api/stt/groq',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTtsElevenlabsRoute = ApiTtsElevenlabsRouteImport.update({
+  id: '/api/tts/elevenlabs',
+  path: '/api/tts/elevenlabs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceAgentsAgentIdRoute = WorkspaceAgentsAgentIdRouteImport.update({
+  id: '/$agentId',
+  path: '/$agentId',
+  getParentRoute: () => WorkspaceAgentsRoute,
+} as any)
+const WorkspaceInternalCpaudRoute = WorkspaceInternalCpaudRouteImport.update({
+  id: '/workspace/internal/cpaud',
+  path: '/workspace/internal/cpaud',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicGoogleCallbackRoute = ApiPublicGoogleCallbackRouteImport.update({
@@ -292,18 +292,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -313,11 +306,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspace/': {
@@ -327,46 +327,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/voice-settings': {
-      id: '/workspace/voice-settings'
-      path: '/workspace/voice-settings'
-      fullPath: '/workspace/voice-settings'
-      preLoaderRoute: typeof WorkspaceVoiceSettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workspace/usage': {
-      id: '/workspace/usage'
-      path: '/workspace/usage'
-      fullPath: '/workspace/usage'
-      preLoaderRoute: typeof WorkspaceUsageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workspace/privacy': {
-      id: '/workspace/privacy'
-      path: '/workspace/privacy'
-      fullPath: '/workspace/privacy'
-      preLoaderRoute: typeof WorkspacePrivacyRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workspace/personalization': {
-      id: '/workspace/personalization'
-      path: '/workspace/personalization'
-      fullPath: '/workspace/personalization'
-      preLoaderRoute: typeof WorkspacePersonalizationRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workspace/inbox': {
-      id: '/workspace/inbox'
-      path: '/workspace/inbox'
-      fullPath: '/workspace/inbox'
-      preLoaderRoute: typeof WorkspaceInboxRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/workspace/drafts': {
-      id: '/workspace/drafts'
-      path: '/workspace/drafts'
-      fullPath: '/workspace/drafts'
-      preLoaderRoute: typeof WorkspaceDraftsRouteImport
+    '/workspace/agents': {
+      id: '/workspace/agents'
+      path: '/workspace/agents'
+      fullPath: '/workspace/agents'
+      preLoaderRoute: typeof WorkspaceAgentsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspace/connections': {
@@ -376,39 +341,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WorkspaceConnectionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/agents': {
-      id: '/workspace/agents'
-      path: '/workspace/agents'
-      fullPath: '/workspace/agents'
-      preLoaderRoute: typeof WorkspaceAgentsRouteImport
+    '/workspace/drafts': {
+      id: '/workspace/drafts'
+      path: '/workspace/drafts'
+      fullPath: '/workspace/drafts'
+      preLoaderRoute: typeof WorkspaceDraftsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/internal/cpaud': {
-      id: '/workspace/internal/cpaud'
-      path: '/workspace/internal/cpaud'
-      fullPath: '/workspace/internal/cpaud'
-      preLoaderRoute: typeof WorkspaceInternalCpaudRouteImport
+    '/workspace/inbox': {
+      id: '/workspace/inbox'
+      path: '/workspace/inbox'
+      fullPath: '/workspace/inbox'
+      preLoaderRoute: typeof WorkspaceInboxRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/workspace/agents/$agentId': {
-      id: '/workspace/agents/$agentId'
-      path: '/$agentId'
-      fullPath: '/workspace/agents/$agentId'
-      preLoaderRoute: typeof WorkspaceAgentsAgentIdRouteImport
-      parentRoute: typeof WorkspaceAgentsRoute
-    }
-    '/api/tts/elevenlabs': {
-      id: '/api/tts/elevenlabs'
-      path: '/api/tts/elevenlabs'
-      fullPath: '/api/tts/elevenlabs'
-      preLoaderRoute: typeof ApiTtsElevenlabsRouteImport
+    '/workspace/personalization': {
+      id: '/workspace/personalization'
+      path: '/workspace/personalization'
+      fullPath: '/workspace/personalization'
+      preLoaderRoute: typeof WorkspacePersonalizationRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/stt/groq': {
-      id: '/api/stt/groq'
-      path: '/api/stt/groq'
-      fullPath: '/api/stt/groq'
-      preLoaderRoute: typeof ApiSttGroqRouteImport
+    '/workspace/privacy': {
+      id: '/workspace/privacy'
+      path: '/workspace/privacy'
+      fullPath: '/workspace/privacy'
+      preLoaderRoute: typeof WorkspacePrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/usage': {
+      id: '/workspace/usage'
+      path: '/workspace/usage'
+      fullPath: '/workspace/usage'
+      preLoaderRoute: typeof WorkspaceUsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/voice-settings': {
+      id: '/workspace/voice-settings'
+      path: '/workspace/voice-settings'
+      fullPath: '/workspace/voice-settings'
+      preLoaderRoute: typeof WorkspaceVoiceSettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/chat/stream': {
+      id: '/api/chat/stream'
+      path: '/api/chat/stream'
+      fullPath: '/api/chat/stream'
+      preLoaderRoute: typeof ApiChatStreamRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/whatsapp': {
@@ -418,11 +397,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/chat/stream': {
-      id: '/api/chat/stream'
-      path: '/api/chat/stream'
-      fullPath: '/api/chat/stream'
-      preLoaderRoute: typeof ApiChatStreamRouteImport
+    '/api/stt/groq': {
+      id: '/api/stt/groq'
+      path: '/api/stt/groq'
+      fullPath: '/api/stt/groq'
+      preLoaderRoute: typeof ApiSttGroqRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/tts/elevenlabs': {
+      id: '/api/tts/elevenlabs'
+      path: '/api/tts/elevenlabs'
+      fullPath: '/api/tts/elevenlabs'
+      preLoaderRoute: typeof ApiTtsElevenlabsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/agents/$agentId': {
+      id: '/workspace/agents/$agentId'
+      path: '/$agentId'
+      fullPath: '/workspace/agents/$agentId'
+      preLoaderRoute: typeof WorkspaceAgentsAgentIdRouteImport
+      parentRoute: typeof WorkspaceAgentsRoute
+    }
+    '/workspace/internal/cpaud': {
+      id: '/workspace/internal/cpaud'
+      path: '/workspace/internal/cpaud'
+      fullPath: '/workspace/internal/cpaud'
+      preLoaderRoute: typeof WorkspaceInternalCpaudRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/google/callback': {
@@ -471,3 +471,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

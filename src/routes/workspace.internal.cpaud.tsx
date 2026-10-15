@@ -27,7 +27,12 @@ export const Route = createFileRoute("/workspace/internal/cpaud")({
   component: CpaudPage,
   head: () => ({
     meta: [
-      { title: "CPAUD — Internal" },
+      { title: "Internal usage costs — NeuralConnexions" },
+      { name: "description", content: "Internal NeuralConnexions inference cost and usage reporting." },
+      { property: "og:title", content: "Internal usage costs — NeuralConnexions" },
+      { property: "og:description", content: "Internal NeuralConnexions inference cost and usage reporting." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
       { name: "robots", content: "noindex, nofollow" },
     ],
   }),

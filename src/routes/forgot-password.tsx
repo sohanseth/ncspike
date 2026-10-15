@@ -8,6 +8,10 @@ export const Route = createFileRoute("/forgot-password")({
     meta: [
       { title: "Reset password — NeuralConnexions" },
       { name: "description", content: "Reset your NeuralConnexions password." },
+      { property: "og:title", content: "Reset password — NeuralConnexions" },
+      { property: "og:description", content: "Reset your NeuralConnexions password." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: ForgotPasswordPage,

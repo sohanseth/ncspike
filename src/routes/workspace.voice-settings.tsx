@@ -23,6 +23,10 @@ export const Route = createFileRoute("/workspace/voice-settings")({
         content:
           "Choose how voice transcription and speech synthesis run — on-device when possible, or cloud for premium quality.",
       },
+      { property: "og:title", content: "Voice — Settings" },
+      { property: "og:description", content: "Choose how voice transcription and speech synthesis run — on-device when possible, or cloud for premium quality." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });
