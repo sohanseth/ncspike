@@ -10,6 +10,14 @@ import {
 import { Inbox, Send, Trash2, Check } from "lucide-react";
 
 export const Route = createFileRoute("/workspace/drafts")({
+  head: () => ({ meta: [
+    { title: "Drafts — NeuralConnexions" },
+    { name: "description", content: "Review and manage replies drafted in your voice in NeuralConnexions." },
+    { property: "og:title", content: "Drafts — NeuralConnexions" },
+    { property: "og:description", content: "Review and manage replies drafted in your voice in NeuralConnexions." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary_large_image" },
+  ] }),
   component: DraftsPage,
 });
 

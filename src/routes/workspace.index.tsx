@@ -5,6 +5,14 @@ import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/workspace/")({
+  head: () => ({ meta: [
+    { title: "Your workspace — NeuralConnexions" },
+    { name: "description", content: "Your personal NeuralConnexions workspace for tasks, communication, and daily priorities." },
+    { property: "og:title", content: "Your workspace — NeuralConnexions" },
+    { property: "og:description", content: "Your personal NeuralConnexions workspace for tasks, communication, and daily priorities." },
+    { property: "og:type", content: "website" },
+    { name: "twitter:card", content: "summary_large_image" },
+  ] }),
   component: WorkspaceLayout,
 });
 

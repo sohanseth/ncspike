@@ -34,7 +34,14 @@ export const Route = createFileRoute("/workspace/connections")({
     return out;
   },
   head: () => ({
-    meta: [{ title: "Connections — NeuralConnexions" }],
+    meta: [
+      { title: "Connections — NeuralConnexions" },
+      { name: "description", content: "Manage your communication and calendar connections in NeuralConnexions." },
+      { property: "og:title", content: "Connections — NeuralConnexions" },
+      { property: "og:description", content: "Manage your communication and calendar connections in NeuralConnexions." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
+    ],
   }),
   component: ConnectionsPage,
 });
