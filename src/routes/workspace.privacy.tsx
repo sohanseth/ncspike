@@ -15,6 +15,10 @@ export const Route = createFileRoute("/workspace/privacy")({
         content:
           "Privacy invariants for NeuralConnexions personalization, plus full data export and account deletion controls.",
       },
+      { property: "og:title", content: "Privacy — NeuralConnexions" },
+      { property: "og:description", content: "Privacy invariants for NeuralConnexions personalization, plus full data export and account deletion controls." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });

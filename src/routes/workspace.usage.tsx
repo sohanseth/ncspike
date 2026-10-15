@@ -10,6 +10,10 @@ export const Route = createFileRoute("/workspace/usage")({
     meta: [
       { title: "Usage — Settings" },
       { name: "description", content: "Monthly inference and audio usage with soft cap." },
+      { property: "og:title", content: "Usage — Settings" },
+      { property: "og:description", content: "Monthly inference and audio usage with soft cap." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });

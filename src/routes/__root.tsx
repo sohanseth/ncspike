@@ -59,8 +59,6 @@ export const Route = createRootRoute({
       { name: "description", content: "Daily Command is a personal AI workspace that coordinates your apps to help you communicate, plan, and get tasks done." },
       { property: "og:description", content: "Daily Command is a personal AI workspace that coordinates your apps to help you communicate, plan, and get tasks done." },
       { name: "twitter:description", content: "Daily Command is a personal AI workspace that coordinates your apps to help you communicate, plan, and get tasks done." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f0148592-7352-4d83-92c1-f3dcf65b1f00/id-preview-c8653412--4ff68958-cede-4509-ac04-b30dd5a3c407.lovable.app-1777988579747.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/f0148592-7352-4d83-92c1-f3dcf65b1f00/id-preview-c8653412--4ff68958-cede-4509-ac04-b30dd5a3c407.lovable.app-1777988579747.png" },
       { name: "theme-color", content: "#0b0b0f" },
       { name: "apple-mobile-web-app-capable", content: "yes" },
       { name: "apple-mobile-web-app-status-bar-style", content: "black-translucent" },

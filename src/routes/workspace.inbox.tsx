@@ -31,6 +31,10 @@ export const Route = createFileRoute("/workspace/inbox")({
         content:
           "Your watching agents at a glance — open one to see its latest briefing and activity.",
       },
+      { property: "og:title", content: "Inbox — NeuralConnexions" },
+      { property: "og:description", content: "Your watching agents at a glance — open one to see its latest briefing and activity." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });

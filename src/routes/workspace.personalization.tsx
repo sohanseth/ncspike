@@ -28,6 +28,10 @@ export const Route = createFileRoute("/workspace/personalization")({
         content:
           "Control how NeuralConnexions personalizes responses across providers. Pick a preset or fine-tune which trait categories each privacy tier can see.",
       },
+      { property: "og:title", content: "Personalization — Settings" },
+      { property: "og:description", content: "Control how NeuralConnexions personalizes responses across providers. Pick a preset or fine-tune which trait categories each privacy tier can see." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
 });
