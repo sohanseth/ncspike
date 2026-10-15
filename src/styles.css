@@ -1,5 +1,6 @@
 @import "tailwindcss" source(none);
 @source "../src";
+@source inline("text-learning text-professional text-social text-family text-personal border-learning/20 border-professional/20 border-social/20 border-family/20 border-personal/20 bg-learning/60 bg-professional/60 bg-social/60 bg-family/60 bg-personal/60 bg-learning bg-professional bg-social bg-family bg-personal");
 @import "tw-animate-css";
 @import "@xyflow/react/dist/style.css";
 
