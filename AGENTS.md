@@ -8,3 +8,4 @@
 - No page may load third-party scripts; Mac card keys live in browser IndexedDB and any page script could read them.
 - Mac research endpoints delegate to a server-only mission handler; owner-scoped mission mappings identify Mac agents and block web lifecycle mutations so control remains on the originating Mac.
 - The mission migration restores absent research runtime prerequisites with plain owner UUIDs and auth lifecycle cleanup so the linked backend can run existing research agents without new auth foreign keys.
+- The agents parent route renders its nested detail through Outlet so agent links display their own page rather than the list.

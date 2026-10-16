@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link, Outlet, useRouterState } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Loader, Pause, Play, Plus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -14,7 +14,7 @@ import {
 } from "@/lib/agents.functions";
 
 export const Route = createFileRoute("/workspace/agents")({
-  component: AgentsPage,
+  component: AgentsRoute,
   head: () => ({
     meta: [
       { title: "Agents — NeuralConnexions" },
@@ -32,6 +32,10 @@ export const Route = createFileRoute("/workspace/agents")({
 });
 
 const MAX_TOPICS = 5;
+function AgentsRoute() {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  return pathname.replace(/\/$/, "") === "/workspace/agents" ? <AgentsPage /> : <Outlet />;
+}
 const MAX_NAME_LEN = 80;
 const MAX_TOPIC_LEN = 120;
 
