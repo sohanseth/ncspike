@@ -16,6 +16,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
+import { Route as WorkspaceBriefRouteImport } from './routes/workspace.brief'
 import { Route as WorkspaceConnectionsRouteImport } from './routes/workspace.connections'
 import { Route as WorkspaceDraftsRouteImport } from './routes/workspace.drafts'
 import { Route as WorkspaceInboxRouteImport } from './routes/workspace.inbox'
@@ -64,6 +65,11 @@ const WorkspaceIndexRoute = WorkspaceIndexRouteImport.update({
 const WorkspaceAgentsRoute = WorkspaceAgentsRouteImport.update({
   id: '/workspace/agents',
   path: '/workspace/agents',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkspaceBriefRoute = WorkspaceBriefRouteImport.update({
+  id: '/workspace/brief',
+  path: '/workspace/brief',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WorkspaceConnectionsRoute = WorkspaceConnectionsRouteImport.update({
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
+  '/workspace/brief': typeof WorkspaceBriefRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
+  '/workspace/brief': typeof WorkspaceBriefRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/forgot-password': typeof ForgotPasswordRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
+  '/workspace/brief': typeof WorkspaceBriefRoute
   '/workspace/connections': typeof WorkspaceConnectionsRoute
   '/workspace/drafts': typeof WorkspaceDraftsRoute
   '/workspace/inbox': typeof WorkspaceInboxRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace/agents'
+    | '/workspace/brief'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/inbox'
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace/agents'
+    | '/workspace/brief'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/inbox'
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/forgot-password'
     | '/reset-password'
     | '/workspace/agents'
+    | '/workspace/brief'
     | '/workspace/connections'
     | '/workspace/drafts'
     | '/workspace/inbox'
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   WorkspaceAgentsRoute: typeof WorkspaceAgentsRouteWithChildren
+  WorkspaceBriefRoute: typeof WorkspaceBriefRoute
   WorkspaceConnectionsRoute: typeof WorkspaceConnectionsRoute
   WorkspaceDraftsRoute: typeof WorkspaceDraftsRoute
   WorkspaceInboxRoute: typeof WorkspaceInboxRoute
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       path: '/workspace/agents'
       fullPath: '/workspace/agents'
       preLoaderRoute: typeof WorkspaceAgentsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/workspace/brief': {
+      id: '/workspace/brief'
+      path: '/workspace/brief'
+      fullPath: '/workspace/brief'
+      preLoaderRoute: typeof WorkspaceBriefRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/workspace/connections': {
@@ -474,6 +494,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   WorkspaceAgentsRoute: WorkspaceAgentsRouteWithChildren,
+  WorkspaceBriefRoute: WorkspaceBriefRoute,
   WorkspaceConnectionsRoute: WorkspaceConnectionsRoute,
   WorkspaceDraftsRoute: WorkspaceDraftsRoute,
   WorkspaceInboxRoute: WorkspaceInboxRoute,
