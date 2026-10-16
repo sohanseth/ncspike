@@ -25,3 +25,5 @@ The existing retention sweep calls `cleanup_relay()` and logs aggregate counts o
 ## Tests
 
 `bunx vitest run tests/relay` runs schema tests. For real SQL locking, permission, handler, and lifecycle checks against an **isolated** database with the auth shim and relay migration applied, set `RELAY_TEST_DB_URL` and run `bunx vitest run tests/relay`. The suite truncates relay tables and must never target production. Existing GDPR seeds include the new tables.
+
+Verified: 13 relay tests passed against isolated PostgreSQL; signed-in live pairing → upload → owner read-back → revoke passed, with further uploads rejected (401). Full existing suite: 390 passed, 32 skipped without their database settings, one pre-existing PRIVATE image-editing test failed (`phase29c-img2img-no-egress.test.ts`). UI and image handling were not changed for this relay task.
