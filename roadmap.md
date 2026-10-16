@@ -8,6 +8,8 @@
 
 # Mac cards in browser
 
+- [ ] Compare the re-uploaded browser brief with the existing Mac cards and security checks.
+
 - [x] Add strict shared card contract, isolated key-link page, and browser-only decryption.
 - [x] Add Mac pairing settings and signed-in Worth knowing cards using the shared demo card view.
 - [x] Verify encryption vectors, key storage, page isolation, and full suite (396 passed; 32 real-database tests skipped without their test settings).
