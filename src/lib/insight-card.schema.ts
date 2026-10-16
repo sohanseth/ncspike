@@ -12,7 +12,7 @@ const isoDateOrDateTime = /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)
 
 const actionSchema = z
   .object({
-    label: noLineBreaks(40),
+    label: z.string().min(1).max(40),
     kind: z.enum(["draft_reply", "block_time", "add_to_calendar", "remind", "open", "done"]),
     ref: z.string().max(200).optional(),
   })

@@ -8,6 +8,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { InsightCard } from "@/lib/insight-card";
+import { Button } from "@/components/ui/button";
 
 export const KIND_ICON: Record<InsightCard["kind"], LucideIcon> = {
   clash: AlertTriangle,
@@ -58,21 +59,24 @@ export function InsightCardView({
       </div>
       <div className="mt-auto flex items-center gap-3">
         {action && onAction && (
-          <button
+          <Button
+            size="sm"
             onClick={() => onAction(card)}
             className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
               first ? "bg-foreground text-background hover:bg-foreground/90" : "bg-primary text-primary-foreground hover:bg-primary/90"
             }`}
           >
             {action.label}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
+          variant="ghost"
+          size="sm"
           onClick={() => onNotNow(card)}
           className={`text-xs font-medium hover:underline ${first && !isPrivate ? "opacity-80" : "text-muted-foreground"}`}
         >
           Not now
-        </button>
+        </Button>
       </div>
     </li>
   );
