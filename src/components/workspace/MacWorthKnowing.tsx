@@ -39,7 +39,7 @@ export function MacWorthKnowing() {
   const cards = state.cards.filter((c) => !hidden.includes(c.id)).slice(0, 3);
 
   return (
-    <section aria-labelledby="mac-worth-knowing" className="mx-4 mt-4 rounded-2xl border bg-card/60 p-4">
+    <section aria-labelledby="mac-worth-knowing" className="mx-4 mt-4 py-4">
       <h2 id="mac-worth-knowing" className="mb-3 flex items-center gap-2 font-display text-sm font-semibold">
         <Lightbulb className="size-4 text-primary" /> Worth knowing
       </h2>

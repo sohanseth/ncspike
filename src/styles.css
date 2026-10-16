@@ -34,6 +34,8 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-private-card: var(--private-card);
+  --color-private-card-foreground: var(--private-card-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-success: var(--success);
@@ -91,6 +93,8 @@
 
   --muted: oklch(0.95 0.016 155);
   --muted-foreground: oklch(0.48 0.025 160);
+  --private-card: oklch(0.95 0 0);
+  --private-card-foreground: oklch(0.48 0 0);
 
   --accent: oklch(0.92 0.055 225);
   --accent-foreground: var(--foreground);

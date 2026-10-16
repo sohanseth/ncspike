@@ -41,7 +41,7 @@ export function InsightCardView({
     <li
       className={`min-w-0 rounded-xl border p-4 flex flex-col gap-3 ${
         isPrivate
-          ? "bg-muted text-muted-foreground border-border"
+          ? "bg-private-card text-private-card-foreground border-border"
           : first
             ? "bg-primary text-primary-foreground border-primary"
             : "bg-card border-border"
@@ -51,7 +51,7 @@ export function InsightCardView({
         <Icon className="size-5 shrink-0 mt-0.5" />
         <div className="min-w-0">
           <p className="text-sm font-medium">{isPrivate ? "Something private needs your attention." : card.text}</p>
-          <p className={`mt-1 text-xs ${first && !isPrivate ? "opacity-75" : "text-muted-foreground"}`}>
+          <p className={`mt-1 text-xs ${isPrivate ? "text-private-card-foreground" : first ? "opacity-75" : "text-muted-foreground"}`}>
             {isPrivate ? "The details stay on your Mac." : card.why}
           </p>
           {footnote && !isPrivate && <p className="mt-1 text-[11px] text-muted-foreground">{footnote}</p>}

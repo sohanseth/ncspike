@@ -8,5 +8,5 @@
 
 - [x] Add strict shared card contract, isolated key-link page, and browser-only decryption.
 - [x] Add Mac pairing settings and signed-in Worth knowing cards using the shared demo card view.
-- [ ] Verify encryption vectors, key storage, page isolation, and full suite.
-- [ ] Verify signed-in pairing, card read-back and dismissal in the browser.
+- [x] Verify encryption vectors, key storage, page isolation, and full suite (396 passed; 32 real-database tests skipped without their test settings).
+- [x] Verify signed-in pairing, card read-back, persistent dismissal, and disconnection in the browser.
