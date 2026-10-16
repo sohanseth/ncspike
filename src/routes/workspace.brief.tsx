@@ -33,6 +33,8 @@ function BriefPage() {
   const [childDraft, setChildDraft] = useState("");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [remind, setRemind] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   useEffect(() => {
     if (!user) return;
@@ -59,6 +61,7 @@ function BriefPage() {
   }, [remind]);
 
   const items: Obligation[] = useMemo(() => {
+    if (!mounted) return [];
     const out: Obligation[] = [];
     for (const e of emails ?? []) {
       const o = extractObligation({ id: `e-${e.id}`, text: `${e.subject} — ${e.snippet}`, source: "email", sourceLabel: e.from }, children);
@@ -71,7 +74,7 @@ function BriefPage() {
     return out
       .filter((o) => !hidden.has(o.id))
       .sort((a, b) => (a.due ?? "9999").localeCompare(b.due ?? "9999"));
-  }, [emails, tasks, children, hidden]);
+  }, [mounted, emails, tasks, children, hidden]);
 
   const tonight = items.filter((o) => o.kind === "tonight");
   const ahead = items.filter((o) => o.kind === "ahead");
