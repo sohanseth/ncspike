@@ -73,6 +73,13 @@ async function sweepRetention(): Promise<void> {
     const { data: cleaned, error } = await (supabaseAdmin as any).rpc(
       "cleanup_phase2_retention",
     );
+    // Independent best-effort relay sweep; never log rows or credentials.
+    try {
+      const { data: relay, error: relayError } = await supabaseAdmin.rpc("cleanup_relay");
+      if (!relayError && relay && typeof relay === "object" && !Array.isArray(relay)) {
+        console.log(`[research-cron] relay swept: cards=${Number(relay.cards) || 0} codes=${Number(relay.codes) || 0} attempts=${Number(relay.attempts) || 0} devices=${Number(relay.devices) || 0}`);
+      }
+    } catch { /* Telemetry failures must not interrupt retention. */ }
     if (error) {
       console.warn("[research-cron] retention sweep failed:", scrubErrorMessage(error.message ?? String(error)));
       return;
