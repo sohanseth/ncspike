@@ -6,6 +6,7 @@ import {
   ArrowRight,
   Briefcase,
   CalendarDays,
+  Clock,
   Check,
   Eye,
   GraduationCap,
