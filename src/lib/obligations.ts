@@ -53,8 +53,7 @@ export function findDate(text: string, now = new Date()): string | null {
     const wm = t.match(re);
     if (wm) {
       let diff = (i - base.getDay() + 7) % 7;
-      if (diff === 0 && wm[1] !== "this ") diff = 7;
-      if (wm[1] === "next " && diff < 7) diff += diff === 0 ? 7 : 0;
+      if (diff === 0 && wm[1] === "next ") diff = 7;
       return iso(new Date(base.getTime() + diff * 864e5));
     }
   }
