@@ -43,14 +43,17 @@ type Row = {
 };
 
 let rows: Row[] = [];
+let missions: Array<{ user_id: string; agent_id: string }> = [];
 let nextError: { message: string } | null = null;
 
 beforeEach(() => {
   rows = [];
+  missions = [];
   nextError = null;
 });
 
 function makeBuilder(table: string) {
+  if (table === "relay_missions") return { select: () => ({ eq: (_col: string, userId: string) => Promise.resolve({ data: missions.filter((m) => m.user_id === userId), error: null }) }) };
   if (table !== "agents") throw new Error(`unexpected table: ${table}`);
 
   type Filter =
@@ -152,8 +155,8 @@ function makeBuilder(table: string) {
     let out = apply();
     if (orderCol) {
       out = [...out].sort((a, b) => {
-        const av = (a as unknown as Record<string, string>)[orderCol!];
-        const bv = (b as unknown as Record<string, string>)[orderCol!];
+        const av = (a as unknown as Record<string, string>)[orderCol ?? ""];
+        const bv = (b as unknown as Record<string, string>)[orderCol ?? ""];
         if (av === bv) return 0;
         return (av < bv ? -1 : 1) * (orderAsc ? 1 : -1);
       });
@@ -493,6 +496,19 @@ describe("round-trip: pause → resume yields the original state", () => {
     await pauseAgentFor(USER_A, { agentId: AGENT_1 });
     expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("paused");
     await resumeAgentFor(USER_A, { agentId: AGENT_1 });
+    expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("active");
+  });
+});
+
+describe("Mac management remains on the originating device", () => {
+  beforeEach(seedDefaultRows);
+  it("marks only the signed-in user's Mac mappings", async () => {
+    missions = [{ user_id: USER_A, agent_id: AGENT_1 }, { user_id: USER_B, agent_id: AGENT_2 }];
+    expect((await listAgentsFor(USER_A)).map((a) => [a.id, a.from_mac])).toEqual([[AGENT_1, true], [AGENT_2, false]]);
+  });
+  it.each([pauseAgentFor, resumeAgentFor, archiveAgentFor])("blocks web lifecycle mutation %s for Mac agents", async (mutate) => {
+    missions = [{ user_id: USER_A, agent_id: AGENT_1 }];
+    expect(await mutate(USER_A, { agentId: AGENT_1 })).toEqual({ affected: false });
     expect(rows.find((r) => r.id === AGENT_1)?.state).toBe("active");
   });
 });
