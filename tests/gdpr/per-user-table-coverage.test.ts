@@ -48,6 +48,10 @@ async function loadMigrations(): Promise<Array<{ path: string; sql: string }>> {
 }
 
 describe("GDPR per-user table coverage", () => {
+  it("detects owner UUIDs in compact mission table declarations", () => {
+    const { tables } = findUserIdTablesInSql([{ path: "missions.sql", sql: "CREATE TABLE IF NOT EXISTS public.relay_missions (\n id uuid PRIMARY KEY, user_id uuid NOT NULL, device_id uuid NOT NULL\n);" }]);
+    expect([...tables]).toEqual(["relay_missions"]);
+  });
   it("every public table with a user_id column is in EXPORT_TABLES, the delete RPC body, or the ignore list", async () => {
     const migrations = await loadMigrations();
     const { tables, occurrences } = findUserIdTablesInSql(migrations);

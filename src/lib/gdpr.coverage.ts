@@ -139,7 +139,7 @@ export function findUserIdTablesInSql(sources: ReadonlyArray<{ path: string; sql
   // optional whitespace) followed by `user_id` and at least one space and a
   // type token. This avoids matching `(user_id)` inside an index expression
   // or `auth.uid() = user_id` inside an RLS policy that might appear elsewhere.
-  const colRe = /^\s*user_id\s+[a-z]/im;
+  const colRe = /(?:^|,)\s*user_id\s+[a-z]/im;
 
   // Also catch later-added user_id columns:
   //   alter table public.<name> add [column] user_id ...
