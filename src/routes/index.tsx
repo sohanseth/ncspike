@@ -111,6 +111,13 @@ function Landing() {
               <ArrowRight className="size-4" />
             </Link>
             <Link
+              to="/demo"
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-md text-sm font-medium glass hover:bg-secondary transition-colors"
+            >
+              <Eye className="size-4 text-primary" />
+              Try the demo — no sign-in
+            </Link>
+            <Link
               to="/workspace/privacy"
               className="inline-flex items-center gap-2 px-5 py-3 rounded-md text-sm font-medium glass hover:bg-secondary transition-colors"
             >

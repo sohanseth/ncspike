@@ -179,6 +179,14 @@ function AuthPage() {
           </button>
         </p>
 
+        <p className="mt-4 text-xs text-center text-muted-foreground">
+          Just looking?{" "}
+          <Link to="/demo" className="text-primary font-medium hover:underline">
+            Try the demo workspace
+          </Link>{" "}
+          — no sign-in needed.
+        </p>
+
         <p className="mt-8 text-[11px] text-center text-muted-foreground">
           By continuing you agree to our terms. We never sell your data.
         </p>
