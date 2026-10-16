@@ -26,11 +26,17 @@ import { Route as WorkspaceUsageRouteImport } from './routes/workspace.usage'
 import { Route as WorkspaceVoiceSettingsRouteImport } from './routes/workspace.voice-settings'
 import { Route as ApiChatStreamRouteImport } from './routes/api.chat.stream'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
+import { Route as ApiRelayClaimRouteImport } from './routes/api.relay.claim'
+import { Route as ApiRelayPublishRouteImport } from './routes/api.relay.publish'
+import { Route as ApiRelayRevokeRouteImport } from './routes/api.relay.revoke'
 import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
 import { Route as ApiTtsElevenlabsRouteImport } from './routes/api.tts.elevenlabs'
 import { Route as WorkspaceAgentsAgentIdRouteImport } from './routes/workspace.agents.$agentId'
 import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.internal.cpaud'
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
+import { Route as ApiPublicRelayClaimRouteImport } from './routes/api.public.relay.claim'
+import { Route as ApiPublicRelayPublishRouteImport } from './routes/api.public.relay.publish'
+import { Route as ApiPublicRelayRevokeRouteImport } from './routes/api.public.relay.revoke'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -118,6 +124,21 @@ const ApiPublicWhatsappRoute = ApiPublicWhatsappRouteImport.update({
   path: '/api/public/whatsapp',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRelayClaimRoute = ApiRelayClaimRouteImport.update({
+  id: '/api/relay/claim',
+  path: '/api/relay/claim',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayPublishRoute = ApiRelayPublishRouteImport.update({
+  id: '/api/relay/publish',
+  path: '/api/relay/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayRevokeRoute = ApiRelayRevokeRouteImport.update({
+  id: '/api/relay/revoke',
+  path: '/api/relay/revoke',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSttGroqRoute = ApiSttGroqRouteImport.update({
   id: '/api/stt/groq',
   path: '/api/stt/groq',
@@ -143,6 +164,21 @@ const ApiPublicGoogleCallbackRoute = ApiPublicGoogleCallbackRouteImport.update({
   path: '/api/public/google/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRelayClaimRoute = ApiPublicRelayClaimRouteImport.update({
+  id: '/api/public/relay/claim',
+  path: '/api/public/relay/claim',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRelayPublishRoute = ApiPublicRelayPublishRouteImport.update({
+  id: '/api/public/relay/publish',
+  path: '/api/public/relay/publish',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRelayRevokeRoute = ApiPublicRelayRevokeRouteImport.update({
+  id: '/api/public/relay/revoke',
+  path: '/api/public/relay/revoke',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -162,11 +198,17 @@ export interface FileRoutesByFullPath {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/publish': typeof ApiRelayPublishRoute
+  '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
+  '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
+  '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -186,11 +228,17 @@ export interface FileRoutesByTo {
   '/workspace': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/publish': typeof ApiRelayPublishRoute
+  '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
+  '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
+  '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -211,11 +259,17 @@ export interface FileRoutesById {
   '/workspace/': typeof WorkspaceIndexRoute
   '/api/chat/stream': typeof ApiChatStreamRoute
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
+  '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/publish': typeof ApiRelayPublishRoute
+  '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
   '/api/tts/elevenlabs': typeof ApiTtsElevenlabsRoute
   '/workspace/agents/$agentId': typeof WorkspaceAgentsAgentIdRoute
   '/workspace/internal/cpaud': typeof WorkspaceInternalCpaudRoute
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
+  '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
+  '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -237,11 +291,17 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/relay/claim'
+    | '/api/relay/publish'
+    | '/api/relay/revoke'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
     | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
+    | '/api/public/relay/claim'
+    | '/api/public/relay/publish'
+    | '/api/public/relay/revoke'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -261,11 +321,17 @@ export interface FileRouteTypes {
     | '/workspace'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/relay/claim'
+    | '/api/relay/publish'
+    | '/api/relay/revoke'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
     | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
+    | '/api/public/relay/claim'
+    | '/api/public/relay/publish'
+    | '/api/public/relay/revoke'
   id:
     | '__root__'
     | '/'
@@ -285,11 +351,17 @@ export interface FileRouteTypes {
     | '/workspace/'
     | '/api/chat/stream'
     | '/api/public/whatsapp'
+    | '/api/relay/claim'
+    | '/api/relay/publish'
+    | '/api/relay/revoke'
     | '/api/stt/groq'
     | '/api/tts/elevenlabs'
     | '/workspace/agents/$agentId'
     | '/workspace/internal/cpaud'
     | '/api/public/google/callback'
+    | '/api/public/relay/claim'
+    | '/api/public/relay/publish'
+    | '/api/public/relay/revoke'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -310,10 +382,16 @@ export interface RootRouteChildren {
   WorkspaceIndexRoute: typeof WorkspaceIndexRoute
   ApiChatStreamRoute: typeof ApiChatStreamRoute
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
+  ApiRelayClaimRoute: typeof ApiRelayClaimRoute
+  ApiRelayPublishRoute: typeof ApiRelayPublishRoute
+  ApiRelayRevokeRoute: typeof ApiRelayRevokeRoute
   ApiSttGroqRoute: typeof ApiSttGroqRoute
   ApiTtsElevenlabsRoute: typeof ApiTtsElevenlabsRoute
   WorkspaceInternalCpaudRoute: typeof WorkspaceInternalCpaudRoute
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
+  ApiPublicRelayClaimRoute: typeof ApiPublicRelayClaimRoute
+  ApiPublicRelayPublishRoute: typeof ApiPublicRelayPublishRoute
+  ApiPublicRelayRevokeRoute: typeof ApiPublicRelayRevokeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -437,6 +515,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWhatsappRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/relay/claim': {
+      id: '/api/relay/claim'
+      path: '/api/relay/claim'
+      fullPath: '/api/relay/claim'
+      preLoaderRoute: typeof ApiRelayClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay/publish': {
+      id: '/api/relay/publish'
+      path: '/api/relay/publish'
+      fullPath: '/api/relay/publish'
+      preLoaderRoute: typeof ApiRelayPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay/revoke': {
+      id: '/api/relay/revoke'
+      path: '/api/relay/revoke'
+      fullPath: '/api/relay/revoke'
+      preLoaderRoute: typeof ApiRelayRevokeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/stt/groq': {
       id: '/api/stt/groq'
       path: '/api/stt/groq'
@@ -472,6 +571,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicGoogleCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/relay/claim': {
+      id: '/api/public/relay/claim'
+      path: '/api/public/relay/claim'
+      fullPath: '/api/public/relay/claim'
+      preLoaderRoute: typeof ApiPublicRelayClaimRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/publish': {
+      id: '/api/public/relay/publish'
+      path: '/api/public/relay/publish'
+      fullPath: '/api/public/relay/publish'
+      preLoaderRoute: typeof ApiPublicRelayPublishRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/revoke': {
+      id: '/api/public/relay/revoke'
+      path: '/api/public/relay/revoke'
+      fullPath: '/api/public/relay/revoke'
+      preLoaderRoute: typeof ApiPublicRelayRevokeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -505,10 +625,16 @@ const rootRouteChildren: RootRouteChildren = {
   WorkspaceIndexRoute: WorkspaceIndexRoute,
   ApiChatStreamRoute: ApiChatStreamRoute,
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
+  ApiRelayClaimRoute: ApiRelayClaimRoute,
+  ApiRelayPublishRoute: ApiRelayPublishRoute,
+  ApiRelayRevokeRoute: ApiRelayRevokeRoute,
   ApiSttGroqRoute: ApiSttGroqRoute,
   ApiTtsElevenlabsRoute: ApiTtsElevenlabsRoute,
   WorkspaceInternalCpaudRoute: WorkspaceInternalCpaudRoute,
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
+  ApiPublicRelayClaimRoute: ApiPublicRelayClaimRoute,
+  ApiPublicRelayPublishRoute: ApiPublicRelayPublishRoute,
+  ApiPublicRelayRevokeRoute: ApiPublicRelayRevokeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

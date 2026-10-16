@@ -547,6 +547,134 @@ export type Database = {
         }
         Relationships: []
       }
+      relay_cards: {
+        Row: {
+          ciphertext: string
+          device_id: string
+          expires_at: string
+          id: string
+          key_id: string
+          nonce: string
+          ord: number
+          ref: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ciphertext: string
+          device_id: string
+          expires_at: string
+          id?: string
+          key_id: string
+          nonce: string
+          ord?: number
+          ref: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ciphertext?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          key_id?: string
+          nonce?: string
+          ord?: number
+          ref?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relay_cards_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "relay_devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      relay_claim_attempts: {
+        Row: {
+          created_at: string
+          id: number
+          ip_hash: string
+          ok: boolean
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          ip_hash: string
+          ok: boolean
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          ip_hash?: string
+          ok?: boolean
+        }
+        Relationships: []
+      }
+      relay_devices: {
+        Row: {
+          created_at: string
+          id: string
+          last_seen_at: string | null
+          last_seq: number
+          name: string
+          revoked_at: string | null
+          token_hash: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          last_seq?: number
+          name: string
+          revoked_at?: string | null
+          token_hash: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          last_seq?: number
+          name?: string
+          revoked_at?: string | null
+          token_hash?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      relay_pairing_codes: {
+        Row: {
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       research_tasks: {
         Row: {
           completed_at: string | null
@@ -892,9 +1020,14 @@ export type Database = {
           tool_invocations_deleted: number
         }[]
       }
+      cleanup_relay: { Args: never; Returns: Json }
       delete_user_data: {
         Args: { target_user_id: string }
         Returns: {
+          agent_findings_deleted: number
+          agent_runs_deleted: number
+          agent_state_deleted: number
+          agents_deleted: number
           chat_context_log_deleted: number
           chat_message_attachments_deleted: number
           chat_messages_deleted: number
@@ -905,6 +1038,10 @@ export type Database = {
           memory_edges_deleted: number
           memory_nodes_deleted: number
           pii_scrub_events_deleted: number
+          relay_cards_deleted: number
+          relay_devices_deleted: number
+          relay_pairing_codes_deleted: number
+          search_queries_deleted: number
           user_known_names_deleted: number
           user_provider_category_blocks_del: number
           user_settings_deleted: number
@@ -923,6 +1060,20 @@ export type Database = {
         Args: { p_action: string; p_node_id: string; p_user_id: string }
         Returns: undefined
       }
+      relay_claim: {
+        Args: { p_code_hash: string; p_ip_hash: string }
+        Returns: Json
+      }
+      relay_publish: {
+        Args: {
+          p_device: string
+          p_key_id: string
+          p_rows: Json
+          p_seq: number
+        }
+        Returns: Json
+      }
+      relay_revoke: { Args: { p_device: string }; Returns: boolean }
     }
     Enums: {
       ai_mode: "hosted_proprietary" | "hosted_oss" | "byo"

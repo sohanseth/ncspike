@@ -29,6 +29,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { RELAY_GDPR_TABLES } from "@/lib/gdpr.coverage";
 
 // ─── Export ─────────────────────────────────────────────────────────────────
 
@@ -42,6 +43,7 @@ export type AccountExport = {
 };
 
 export const EXPORT_TABLES = [
+  ...RELAY_GDPR_TABLES,
   "user_traits",
   "user_trait_blocks",
   "user_provider_category_blocks",
@@ -119,6 +121,9 @@ export type AccountDeleteResult = {
 
 /** Map RPC return columns → human-readable table names for the UI. */
 export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
+  relay_pairing_codes_deleted: "relay_pairing_codes",
+  relay_devices_deleted: "relay_devices",
+  relay_cards_deleted: "relay_cards",
   chat_messages_deleted: "chat_messages",
   chat_message_attachments_deleted: "chat_message_attachments",
   chat_threads_deleted: "chat_threads",

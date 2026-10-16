@@ -69,7 +69,7 @@ echo "[gdpr-real-db] verifying delete_user_data() exists with the latest signatu
 # code expects in RPC_COLUMN_TO_TABLE is actually in the function's return
 # table. If a future migration drops a column, this trips before the test
 # even seeds anything.
-EXPECTED_COLS="chat_messages_deleted chat_threads_deleted chat_context_log_deleted pii_scrub_events_deleted extraction_failures_deleted user_trait_blocks_deleted user_provider_category_blocks_del user_known_names_deleted user_traits_deleted memory_edges_deleted memory_nodes_deleted inference_usage_deleted inference_usage_daily_deleted user_settings_deleted"
+EXPECTED_COLS="chat_messages_deleted chat_threads_deleted chat_context_log_deleted pii_scrub_events_deleted extraction_failures_deleted user_trait_blocks_deleted user_provider_category_blocks_del user_known_names_deleted user_traits_deleted memory_edges_deleted memory_nodes_deleted inference_usage_deleted inference_usage_daily_deleted user_settings_deleted relay_cards_deleted relay_devices_deleted relay_pairing_codes_deleted"
 ACTUAL_COLS="$("${PSQL[@]}" -tAc "
   select string_agg(p.proargnames[i], ' ' order by i)
   from pg_proc p
