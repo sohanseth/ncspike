@@ -8,6 +8,8 @@
 
 # Mac cards in browser
 
+- [x] Compare the re-uploaded browser brief: identical and already implemented; five browser security tests pass; live unsigned /link opens without redirect and clears its fragment.
+
 - [x] Add strict shared card contract, isolated key-link page, and browser-only decryption.
 - [x] Add Mac pairing settings and signed-in Worth knowing cards using the shared demo card view.
 - [x] Verify encryption vectors, key storage, page isolation, and full suite (396 passed; 32 real-database tests skipped without their test settings).
