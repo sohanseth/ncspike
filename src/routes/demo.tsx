@@ -5,18 +5,13 @@ import type { InsightCard } from "@/lib/insight-card";
 import {
   ArrowRight,
   Briefcase,
-  AlertTriangle,
-  CalendarClock,
   CalendarDays,
-  CalendarPlus,
-  Clock,
-  FileClock,
-  Lightbulb,
   Check,
   Eye,
   GraduationCap,
   Heart,
   Inbox,
+  Lightbulb,
   PenLine,
   Sparkles,
   User,
@@ -24,6 +19,7 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react";
+import { InsightCardView } from "@/components/InsightCardView";
 
 export const Route = createFileRoute("/demo")({
   head: () => ({
@@ -178,15 +174,6 @@ const CARDS: InsightCard[] = [
   },
 ];
 
-const KIND_ICON: Record<InsightCard["kind"], LucideIcon> = {
-  clash: AlertTriangle,
-  free_slot: Clock,
-  overdue: FileClock,
-  missing_from_calendar: CalendarPlus,
-  prep: Lightbulb,
-  reminder: CalendarClock,
-};
-
 const tile = (id: DomainId) => ({ background: `var(--${id}-surface)`, color: `var(--${id})` });
 
 function gaps(events: Ev[]) {
@@ -322,45 +309,15 @@ function DemoWorkspace() {
               <Lightbulb className="size-4 text-primary" /> Worth knowing
             </h2>
             <ul className="mt-3 grid gap-3 md:grid-cols-3">
-              {cards.map((c, i) => {
-                const Icon = KIND_ICON[c.kind];
-                const first = i === 0;
-                const action = c.actions[0];
-                return (
-                  <li
-                    key={c.id}
-                    className={`min-w-0 rounded-xl border p-4 flex flex-col gap-3 ${
-                      first ? "bg-primary text-primary-foreground border-primary" : "bg-card border-border"
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <Icon className="size-5 shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium">{c.text}</p>
-                        <p className={`mt-1 text-xs ${first ? "opacity-75" : "text-muted-foreground"}`}>{c.why}</p>
-                      </div>
-                    </div>
-                    <div className="mt-auto flex items-center gap-3">
-                      {action && (
-                        <button
-                          onClick={() => runAction(c)}
-                          className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
-                            first ? "bg-foreground text-background hover:bg-foreground/90" : "bg-primary text-primary-foreground hover:bg-primary/90"
-                          }`}
-                        >
-                          {action.label}
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setHidden((h) => new Set(h).add(c.id))}
-                        className={`text-xs font-medium hover:underline ${first ? "opacity-80" : "text-muted-foreground"}`}
-                      >
-                        Not now
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
+              {cards.map((c, i) => (
+                <InsightCardView
+                  key={c.id}
+                  card={c}
+                  first={i === 0}
+                  onAction={runAction}
+                  onNotNow={(card) => setHidden((h) => new Set(h).add(card.id))}
+                />
+              ))}
             </ul>
           </section>
         )}
