@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import MainApp from "@/components/workspace/MainApp";
 import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
+import { MacWorthKnowing } from "@/components/workspace/MacWorthKnowing";
 import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/workspace/")({
@@ -41,6 +42,7 @@ function WorkspaceLayout() {
       <div className="px-4 pt-4">
         <WorkspaceLocalNav />
       </div>
+      <MacWorthKnowing />
       <MainApp />
     </>
   );

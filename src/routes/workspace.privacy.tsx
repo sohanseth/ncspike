@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth-context";
 import { exportAccountData, deleteAccount } from "@/lib/gdpr.functions";
 import { Loader, Download, Trash2, ShieldCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { PersonalizationDisclosure } from "@/components/workspace/PersonalizationDisclosure";
+import { ConnectMacSection } from "@/components/workspace/ConnectMacSection";
 
 export const Route = createFileRoute("/workspace/privacy")({
   component: PrivacyPage,
@@ -166,6 +167,8 @@ function PrivacyPage() {
           ))}
         </ol>
       </section>
+
+      <ConnectMacSection />
 
       <section className="mb-8 rounded-xl border bg-card/40 p-6">
         <h2 className="mb-2 text-xl font-semibold">Export your data</h2>
