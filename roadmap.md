@@ -1,5 +1,12 @@
 # Encrypted Mac relay
 
+# Mac overnight research
+
+- [ ] Apply mission mapping and atomic mission functions with owner-only server access.
+- [ ] Add validated mission endpoints and digest result conversion.
+- [ ] Identify Mac agents in list/detail; keep lifecycle management on the Mac.
+- [ ] Run mission security/lifecycle tests, full suite, and signed-in verification.
+
 - [x] Check the re-uploaded server brief: server functionality already present; 396 tests pass, 32 database-dependent tests skipped.
 
 - [x] Add and apply private relay schema and atomic functions; include export/deletion and retention.
