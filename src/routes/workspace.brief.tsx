@@ -117,8 +117,8 @@ function BriefPage() {
           <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader className="size-4 animate-spin" /> Reading your inbox…</p>
         ) : null}
 
-        <Section icon={<Moon className="size-4" />} title="Tonight, get ready" tone="bg-family-surface" items={tonight} empty="Nothing to prepare for tomorrow." onHide={(id) => setHidden(new Set(hidden).add(id))} />
-        <Section icon={<CalendarClock className="size-4" />} title="Plan ahead" tone="bg-professional-surface" items={ahead} empty="Nothing to book, buy or reply to yet." onHide={(id) => setHidden(new Set(hidden).add(id))} />
+        <Section icon={<Moon className="size-4" />} title="Tonight, get ready" tone="bg-family/10" items={tonight} empty="Nothing to prepare for tomorrow." onHide={(id) => setHidden(new Set(hidden).add(id))} />
+        <Section icon={<CalendarClock className="size-4" />} title="Plan ahead" tone="bg-professional/10" items={ahead} empty="Nothing to book, buy or reply to yet." onHide={(id) => setHidden(new Set(hidden).add(id))} />
 
         <section className="mt-8 rounded-xl border border-border bg-card p-5">
           <h2 className="flex items-center gap-2 font-display text-lg font-semibold text-foreground"><Users className="size-4" /> Your children</h2>
