@@ -26,6 +26,7 @@
 import { researchDigest, ResearchDigestConfigSchema } from "@/server/agents/templates/research-digest";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { macAgentIdsFor } from "./mac-agent-owner.server";
 
 import {
   CreateResearchDigestAgentInputSchema,
@@ -86,7 +87,8 @@ export async function listAgentsFor(userId: string): Promise<AgentListItem[]> {
       `Agent list failed: ${scrubErrorMessage(error.message ?? String(error))}`,
     );
   }
-  return (data ?? []) as AgentListItem[];
+  const macIds = await macAgentIdsFor(userId);
+  return (data ?? []).map((row: AgentListItem) => ({ ...row, from_mac: macIds.has(row.id) }));
 }
 
 // ─── State transitions (pause / resume / archive) ─────────────────────────
@@ -100,6 +102,7 @@ async function transitionAgentState(
   options: { requireNoActiveLease?: boolean } = {},
 ): Promise<MutationResult> {
   const { agentId } = AgentIdSchema.parse(raw);
+  if ((await macAgentIdsFor(userId)).has(agentId)) return { affected: false };
 
   let q = (supabaseAdmin as any)
     .from("agents")

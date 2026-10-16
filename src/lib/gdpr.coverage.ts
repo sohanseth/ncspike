@@ -48,6 +48,10 @@ export const RELAY_GDPR_TABLES = ["relay_pairing_codes", "relay_devices", "relay
  */
 export const GDPR_IGNORE_TABLES: readonly GdprIgnoreEntry[] = [
   {
+    table: "relay_missions",
+    reason: "Maps a Mac's mission numbers to agents; each row is deleted with its agent, which delete_user_data() deletes, and with its device.",
+  },
+  {
     table: "user_endpoints",
     reason:
       "Per-user provider endpoint config — cascades from auth.users; not user-generated content the export surfaces.",

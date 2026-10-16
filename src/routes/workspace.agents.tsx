@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Loader, Pause, Play, Plus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -277,7 +277,7 @@ function AgentsPage() {
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium">{a.display_name}</span>
+                      <Link to="/workspace/agents/$agentId" params={{ agentId: a.id }} className="font-medium hover:underline">{a.display_name}</Link>
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${stateBadgeClass(a.state)}`}
                       >
@@ -289,8 +289,9 @@ function AgentsPage() {
                       {formatTs(a.last_completed_at)} · created{" "}
                       {formatTs(a.created_at)}
                     </p>
+                    {a.from_mac && <p className="text-xs text-muted-foreground">Started from your Mac</p>}
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  {a.from_mac ? <p className="text-xs text-muted-foreground sm:max-w-56">Manage this on your Mac: Settings → Overnight research.</p> : <div className="flex flex-wrap gap-2">
                     {canPause && (
                       <button
                         type="button"
@@ -324,7 +325,7 @@ function AgentsPage() {
                         Archive
                       </button>
                     )}
-                  </div>
+                  </div>}
                 </li>
               );
             })}

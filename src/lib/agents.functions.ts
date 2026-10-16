@@ -60,6 +60,7 @@ export type CreatedAgentSummary = {
 };
 
 export type AgentListItem = {
+  from_mac: boolean;
   id: string;
   display_name: string;
   template_id: string;

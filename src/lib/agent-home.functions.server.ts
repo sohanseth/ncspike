@@ -16,6 +16,7 @@
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { macAgentIdsFor } from "./mac-agent-owner.server";
 
 import {
   type AgentHome,
@@ -150,6 +151,7 @@ export async function getAgentHomeFor(
       }
     | undefined;
   if (!agent) return null;
+  const fromMac = (await macAgentIdsFor(userId)).has(agentId);
 
   // 2. Fetch recent runs (newest first). Same query supplies the
   // activity timeline AND lets us derive latest_run + latest_briefing_run.
@@ -190,6 +192,7 @@ export async function getAgentHomeFor(
 
   return {
     agent: {
+      from_mac: fromMac,
       id: agent.id,
       display_name: agent.display_name,
       template_id: agent.template_id,
