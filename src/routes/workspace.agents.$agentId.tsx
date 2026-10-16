@@ -209,6 +209,7 @@ function AgentHomeView({
         <h1 className="text-2xl font-semibold tracking-tight">
           {agent.display_name}
         </h1>
+        {agent.from_mac && <div className="space-y-1 text-xs text-muted-foreground"><p>Started from your Mac</p><p>Manage this on your Mac: Settings → Overnight research.</p></div>}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           {agent.topics_label && <span>{agent.topics_label}</span>}
           {agent.topics_label && <span aria-hidden="true">·</span>}
@@ -253,7 +254,7 @@ function AgentHomeView({
           return (
             <AgentHomeEmptyState
               reason="Latest briefing is in the legacy format."
-              detail={`Briefing produced ${formatRelative(latest_briefing_run!.started_at)} uses an older shape; expand the run below to see its details. New runs will use the current format.`}
+              detail={`Briefing produced ${formatRelative(latest_briefing_run?.started_at)} uses an older shape; expand the run below to see its details. New runs will use the current format.`}
               iconHint="no-briefing"
             />
           );

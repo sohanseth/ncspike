@@ -54,6 +54,7 @@ export type AgentRow = {
  *  (agents, agent_runs, agent_findings) — no new tables. */
 export type AgentHome = {
   agent: {
+    from_mac: boolean;
     id: string;
     display_name: string;
     template_id: string;

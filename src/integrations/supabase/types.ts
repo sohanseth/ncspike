@@ -14,6 +14,220 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_findings: {
+        Row: {
+          acted_at: string | null
+          agent_id: string
+          created_at: string
+          dedupe_key: string
+          id: string
+          payload: Json
+          run_id: string
+          score: number
+          source_url: string | null
+          state: Database["public"]["Enums"]["agent_finding_state_enum"]
+          summary: string | null
+          title: string
+          urgency: string
+          user_feedback: string | null
+          user_id: string
+        }
+        Insert: {
+          acted_at?: string | null
+          agent_id: string
+          created_at?: string
+          dedupe_key: string
+          id?: string
+          payload?: Json
+          run_id: string
+          score: number
+          source_url?: string | null
+          state?: Database["public"]["Enums"]["agent_finding_state_enum"]
+          summary?: string | null
+          title: string
+          urgency?: string
+          user_feedback?: string | null
+          user_id: string
+        }
+        Update: {
+          acted_at?: string | null
+          agent_id?: string
+          created_at?: string
+          dedupe_key?: string
+          id?: string
+          payload?: Json
+          run_id?: string
+          score?: number
+          source_url?: string | null
+          state?: Database["public"]["Enums"]["agent_finding_state_enum"]
+          summary?: string | null
+          title?: string
+          urgency?: string
+          user_feedback?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_findings_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_findings_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_runs: {
+        Row: {
+          agent_id: string
+          briefing: Json | null
+          cost_usd: number
+          error: string | null
+          finished_at: string | null
+          id: string
+          items_fetched: number
+          items_kept: number
+          llm_hops: number
+          started_at: string
+          status: Database["public"]["Enums"]["agent_run_status_enum"]
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          briefing?: Json | null
+          cost_usd?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          items_fetched?: number
+          items_kept?: number
+          llm_hops?: number
+          started_at?: string
+          status?: Database["public"]["Enums"]["agent_run_status_enum"]
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          briefing?: Json | null
+          cost_usd?: number
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          items_fetched?: number
+          items_kept?: number
+          llm_hops?: number
+          started_at?: string
+          status?: Database["public"]["Enums"]["agent_run_status_enum"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_runs_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_state: {
+        Row: {
+          agent_id: string
+          key: string
+          updated_at: string
+          user_id: string
+          value: Json
+        }
+        Insert: {
+          agent_id: string
+          key: string
+          updated_at?: string
+          user_id: string
+          value: Json
+        }
+        Update: {
+          agent_id?: string
+          key?: string
+          updated_at?: string
+          user_id?: string
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_state_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agents: {
+        Row: {
+          badge: string
+          budget: Json
+          cadence_hours: number
+          claim_expires_at: string | null
+          config: Json
+          consecutive_failures: number
+          created_at: string
+          display_name: string
+          id: string
+          last_claimed_at: string | null
+          last_completed_at: string | null
+          last_useful_at: string | null
+          notify: Json
+          state: Database["public"]["Enums"]["agent_state_enum"]
+          template_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          badge: string
+          budget: Json
+          cadence_hours?: number
+          claim_expires_at?: string | null
+          config?: Json
+          consecutive_failures?: number
+          created_at?: string
+          display_name: string
+          id?: string
+          last_claimed_at?: string | null
+          last_completed_at?: string | null
+          last_useful_at?: string | null
+          notify?: Json
+          state?: Database["public"]["Enums"]["agent_state_enum"]
+          template_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          badge?: string
+          budget?: Json
+          cadence_hours?: number
+          claim_expires_at?: string | null
+          config?: Json
+          consecutive_failures?: number
+          created_at?: string
+          display_name?: string
+          id?: string
+          last_claimed_at?: string | null
+          last_completed_at?: string | null
+          last_useful_at?: string | null
+          notify?: Json
+          state?: Database["public"]["Enums"]["agent_state_enum"]
+          template_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       chat_context_log: {
         Row: {
           badge: string
@@ -648,6 +862,51 @@ export type Database = {
         }
         Relationships: []
       }
+      relay_missions: {
+        Row: {
+          agent_id: string
+          created_at: string
+          device_id: string
+          id: string
+          mission_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          device_id: string
+          id?: string
+          mission_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          device_id?: string
+          id?: string
+          mission_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relay_missions_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: true
+            referencedRelation: "agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "relay_missions_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "relay_devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       relay_pairing_codes: {
         Row: {
           code_hash: string
@@ -1004,6 +1263,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      claim_due_agents: {
+        Args: { p_limit: number }
+        Returns: {
+          badge: string
+          budget: Json
+          cadence_hours: number
+          claim_expires_at: string | null
+          config: Json
+          consecutive_failures: number
+          created_at: string
+          display_name: string
+          id: string
+          last_claimed_at: string | null
+          last_completed_at: string | null
+          last_useful_at: string | null
+          notify: Json
+          state: Database["public"]["Enums"]["agent_state_enum"]
+          template_id: string
+          updated_at: string
+          user_id: string
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "agents"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
       cleanup_phase2_retention: {
         Args: never
         Returns: {
@@ -1064,6 +1351,27 @@ export type Database = {
         Args: { p_code_hash: string; p_ip_hash: string }
         Returns: Json
       }
+      relay_mission_delete: {
+        Args: { p_device: string; p_mission_id: string }
+        Returns: boolean
+      }
+      relay_mission_runs: {
+        Args: { p_device: string; p_since: string }
+        Returns: Json
+      }
+      relay_mission_upsert: {
+        Args: {
+          p_badge: string
+          p_budget: Json
+          p_config: Json
+          p_device: string
+          p_hours: number
+          p_mission_id: string
+          p_name: string
+          p_paused: boolean
+        }
+        Returns: Json
+      }
       relay_publish: {
         Args: {
           p_device: string
@@ -1074,8 +1382,41 @@ export type Database = {
         Returns: Json
       }
       relay_revoke: { Args: { p_device: string }; Returns: boolean }
+      release_agent_lease: {
+        Args: { p_agent_id: string; p_items_kept?: number }
+        Returns: undefined
+      }
+      update_agent_lifecycle_state: {
+        Args: { p_agent_id: string; p_items_kept?: number; p_status: string }
+        Returns: undefined
+      }
     }
     Enums: {
+      agent_finding_state_enum:
+        | "new"
+        | "seen"
+        | "accepted"
+        | "dismissed"
+        | "snoozed"
+        | "archived"
+      agent_run_status_enum:
+        | "running"
+        | "ok"
+        | "failed"
+        | "partial_success"
+        | "skipped_budget_exceeded"
+        | "skipped_disabled"
+        | "timeout"
+        | "cancelled"
+      agent_state_enum:
+        | "draft"
+        | "active"
+        | "paused"
+        | "degraded"
+        | "inactive"
+        | "error"
+        | "needs_user_attention"
+        | "archived"
       ai_mode: "hosted_proprietary" | "hosted_oss" | "byo"
       connection_provider:
         | "gmail"
@@ -1224,6 +1565,34 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      agent_finding_state_enum: [
+        "new",
+        "seen",
+        "accepted",
+        "dismissed",
+        "snoozed",
+        "archived",
+      ],
+      agent_run_status_enum: [
+        "running",
+        "ok",
+        "failed",
+        "partial_success",
+        "skipped_budget_exceeded",
+        "skipped_disabled",
+        "timeout",
+        "cancelled",
+      ],
+      agent_state_enum: [
+        "draft",
+        "active",
+        "paused",
+        "degraded",
+        "inactive",
+        "error",
+        "needs_user_attention",
+        "archived",
+      ],
       ai_mode: ["hosted_proprietary", "hosted_oss", "byo"],
       connection_provider: [
         "gmail",

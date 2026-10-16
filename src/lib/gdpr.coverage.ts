@@ -48,6 +48,10 @@ export const RELAY_GDPR_TABLES = ["relay_pairing_codes", "relay_devices", "relay
  */
 export const GDPR_IGNORE_TABLES: readonly GdprIgnoreEntry[] = [
   {
+    table: "relay_missions",
+    reason: "Maps a Mac's mission numbers to agents; each row is deleted with its agent, which delete_user_data() deletes, and with its device.",
+  },
+  {
     table: "user_endpoints",
     reason:
       "Per-user provider endpoint config — cascades from auth.users; not user-generated content the export surfaces.",
@@ -135,7 +139,7 @@ export function findUserIdTablesInSql(sources: ReadonlyArray<{ path: string; sql
   // optional whitespace) followed by `user_id` and at least one space and a
   // type token. This avoids matching `(user_id)` inside an index expression
   // or `auth.uid() = user_id` inside an RLS policy that might appear elsewhere.
-  const colRe = /^\s*user_id\s+[a-z]/im;
+  const colRe = /(?:^|,)\s*user_id\s+[a-z]/im;
 
   // Also catch later-added user_id columns:
   //   alter table public.<name> add [column] user_id ...

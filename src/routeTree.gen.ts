@@ -38,6 +38,12 @@ import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public
 import { Route as ApiPublicRelayClaimRouteImport } from './routes/api.public.relay.claim'
 import { Route as ApiPublicRelayPublishRouteImport } from './routes/api.public.relay.publish'
 import { Route as ApiPublicRelayRevokeRouteImport } from './routes/api.public.relay.revoke'
+import { Route as ApiRelayMissionsDeleteRouteImport } from './routes/api.relay.missions.delete'
+import { Route as ApiRelayMissionsResultsRouteImport } from './routes/api.relay.missions.results'
+import { Route as ApiRelayMissionsUpsertRouteImport } from './routes/api.relay.missions.upsert'
+import { Route as ApiPublicRelayMissionsDeleteRouteImport } from './routes/api.public.relay.missions.delete'
+import { Route as ApiPublicRelayMissionsResultsRouteImport } from './routes/api.public.relay.missions.results'
+import { Route as ApiPublicRelayMissionsUpsertRouteImport } from './routes/api.public.relay.missions.upsert'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -185,6 +191,39 @@ const ApiPublicRelayRevokeRoute = ApiPublicRelayRevokeRouteImport.update({
   path: '/api/public/relay/revoke',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRelayMissionsDeleteRoute = ApiRelayMissionsDeleteRouteImport.update({
+  id: '/api/relay/missions/delete',
+  path: '/api/relay/missions/delete',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayMissionsResultsRoute = ApiRelayMissionsResultsRouteImport.update({
+  id: '/api/relay/missions/results',
+  path: '/api/relay/missions/results',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayMissionsUpsertRoute = ApiRelayMissionsUpsertRouteImport.update({
+  id: '/api/relay/missions/upsert',
+  path: '/api/relay/missions/upsert',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicRelayMissionsDeleteRoute =
+  ApiPublicRelayMissionsDeleteRouteImport.update({
+    id: '/api/public/relay/missions/delete',
+    path: '/api/public/relay/missions/delete',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicRelayMissionsResultsRoute =
+  ApiPublicRelayMissionsResultsRouteImport.update({
+    id: '/api/public/relay/missions/results',
+    path: '/api/public/relay/missions/results',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicRelayMissionsUpsertRoute =
+  ApiPublicRelayMissionsUpsertRouteImport.update({
+    id: '/api/public/relay/missions/upsert',
+    path: '/api/public/relay/missions/upsert',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -216,6 +255,12 @@ export interface FileRoutesByFullPath {
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
+  '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
+  '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
+  '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
+  '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -247,6 +292,12 @@ export interface FileRoutesByTo {
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
+  '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
+  '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
+  '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
+  '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -279,6 +330,12 @@ export interface FileRoutesById {
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
+  '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
+  '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
+  '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
+  '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -312,6 +369,12 @@ export interface FileRouteTypes {
     | '/api/public/relay/claim'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/missions/delete'
+    | '/api/relay/missions/results'
+    | '/api/relay/missions/upsert'
+    | '/api/public/relay/missions/delete'
+    | '/api/public/relay/missions/results'
+    | '/api/public/relay/missions/upsert'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -343,6 +406,12 @@ export interface FileRouteTypes {
     | '/api/public/relay/claim'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/missions/delete'
+    | '/api/relay/missions/results'
+    | '/api/relay/missions/upsert'
+    | '/api/public/relay/missions/delete'
+    | '/api/public/relay/missions/results'
+    | '/api/public/relay/missions/upsert'
   id:
     | '__root__'
     | '/'
@@ -374,6 +443,12 @@ export interface FileRouteTypes {
     | '/api/public/relay/claim'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/missions/delete'
+    | '/api/relay/missions/results'
+    | '/api/relay/missions/upsert'
+    | '/api/public/relay/missions/delete'
+    | '/api/public/relay/missions/results'
+    | '/api/public/relay/missions/upsert'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -405,6 +480,12 @@ export interface RootRouteChildren {
   ApiPublicRelayClaimRoute: typeof ApiPublicRelayClaimRoute
   ApiPublicRelayPublishRoute: typeof ApiPublicRelayPublishRoute
   ApiPublicRelayRevokeRoute: typeof ApiPublicRelayRevokeRoute
+  ApiRelayMissionsDeleteRoute: typeof ApiRelayMissionsDeleteRoute
+  ApiRelayMissionsResultsRoute: typeof ApiRelayMissionsResultsRoute
+  ApiRelayMissionsUpsertRoute: typeof ApiRelayMissionsUpsertRoute
+  ApiPublicRelayMissionsDeleteRoute: typeof ApiPublicRelayMissionsDeleteRoute
+  ApiPublicRelayMissionsResultsRoute: typeof ApiPublicRelayMissionsResultsRoute
+  ApiPublicRelayMissionsUpsertRoute: typeof ApiPublicRelayMissionsUpsertRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -612,6 +693,48 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRelayRevokeRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/relay/missions/delete': {
+      id: '/api/relay/missions/delete'
+      path: '/api/relay/missions/delete'
+      fullPath: '/api/relay/missions/delete'
+      preLoaderRoute: typeof ApiRelayMissionsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay/missions/results': {
+      id: '/api/relay/missions/results'
+      path: '/api/relay/missions/results'
+      fullPath: '/api/relay/missions/results'
+      preLoaderRoute: typeof ApiRelayMissionsResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/relay/missions/upsert': {
+      id: '/api/relay/missions/upsert'
+      path: '/api/relay/missions/upsert'
+      fullPath: '/api/relay/missions/upsert'
+      preLoaderRoute: typeof ApiRelayMissionsUpsertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/missions/delete': {
+      id: '/api/public/relay/missions/delete'
+      path: '/api/public/relay/missions/delete'
+      fullPath: '/api/public/relay/missions/delete'
+      preLoaderRoute: typeof ApiPublicRelayMissionsDeleteRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/missions/results': {
+      id: '/api/public/relay/missions/results'
+      path: '/api/public/relay/missions/results'
+      fullPath: '/api/public/relay/missions/results'
+      preLoaderRoute: typeof ApiPublicRelayMissionsResultsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/missions/upsert': {
+      id: '/api/public/relay/missions/upsert'
+      path: '/api/public/relay/missions/upsert'
+      fullPath: '/api/public/relay/missions/upsert'
+      preLoaderRoute: typeof ApiPublicRelayMissionsUpsertRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -656,6 +779,12 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicRelayClaimRoute: ApiPublicRelayClaimRoute,
   ApiPublicRelayPublishRoute: ApiPublicRelayPublishRoute,
   ApiPublicRelayRevokeRoute: ApiPublicRelayRevokeRoute,
+  ApiRelayMissionsDeleteRoute: ApiRelayMissionsDeleteRoute,
+  ApiRelayMissionsResultsRoute: ApiRelayMissionsResultsRoute,
+  ApiRelayMissionsUpsertRoute: ApiRelayMissionsUpsertRoute,
+  ApiPublicRelayMissionsDeleteRoute: ApiPublicRelayMissionsDeleteRoute,
+  ApiPublicRelayMissionsResultsRoute: ApiPublicRelayMissionsResultsRoute,
+  ApiPublicRelayMissionsUpsertRoute: ApiPublicRelayMissionsUpsertRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
