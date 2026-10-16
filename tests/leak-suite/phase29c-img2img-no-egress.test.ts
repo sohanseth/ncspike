@@ -128,6 +128,11 @@ vi.mock("@/integrations/supabase/client", () => ({
 // AND assert it actually saw the source images (otherwise the dispatcher
 // would have skipped the edit branch and silently degraded to text-to-
 // image — a fail-open per replit.md).
+// This suite isolates dispatch/egress, not image safety. Synthetic bytes
+// are not a real PNG, so stub the safety gate rather than weaken it.
+vi.mock("@/lib/imagegen-safety", () => ({
+  classifyGeneratedImage: vi.fn(async () => ({ allow: true })),
+}));
 const sawSourceImagesSpy = vi.fn();
 vi.mock("@/lib/on-device-imagegen", async () => {
   const actual =
