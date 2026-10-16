@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LinkRouteImport } from './routes/link'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as WorkspaceIndexRouteImport } from './routes/workspace.index'
 import { Route as WorkspaceAgentsRouteImport } from './routes/workspace.agents'
@@ -56,6 +57,11 @@ const DemoRoute = DemoRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LinkRoute = LinkRouteImport.update({
+  id: '/link',
+  path: '/link',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/link': typeof LinkRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/brief': typeof WorkspaceBriefRoute
@@ -215,6 +222,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/link': typeof LinkRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/brief': typeof WorkspaceBriefRoute
@@ -246,6 +254,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/link': typeof LinkRoute
   '/reset-password': typeof ResetPasswordRoute
   '/workspace/agents': typeof WorkspaceAgentsRouteWithChildren
   '/workspace/brief': typeof WorkspaceBriefRoute
@@ -278,6 +287,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/link'
     | '/reset-password'
     | '/workspace/agents'
     | '/workspace/brief'
@@ -308,6 +318,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/link'
     | '/reset-password'
     | '/workspace/agents'
     | '/workspace/brief'
@@ -338,6 +349,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/link'
     | '/reset-password'
     | '/workspace/agents'
     | '/workspace/brief'
@@ -369,6 +381,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   DemoRoute: typeof DemoRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  LinkRoute: typeof LinkRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   WorkspaceAgentsRoute: typeof WorkspaceAgentsRouteWithChildren
   WorkspaceBriefRoute: typeof WorkspaceBriefRoute
@@ -422,6 +435,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/link': {
+      id: '/link'
+      path: '/link'
+      fullPath: '/link'
+      preLoaderRoute: typeof LinkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -612,6 +632,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   DemoRoute: DemoRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  LinkRoute: LinkRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   WorkspaceAgentsRoute: WorkspaceAgentsRouteWithChildren,
   WorkspaceBriefRoute: WorkspaceBriefRoute,
