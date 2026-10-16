@@ -18,10 +18,11 @@ import { Link } from "@tanstack/react-router";
  * one is plain text so it's obvious and short.
  */
 
-const ITEMS: Array<{ to: "/workspace" | "/workspace/agents" | "/workspace/inbox"; label: string }> = [
+const ITEMS: Array<{ to: "/workspace" | "/workspace/agents" | "/workspace/inbox" | "/workspace/brief"; label: string }> = [
   { to: "/workspace", label: "Workspace" },
   { to: "/workspace/agents", label: "Agents" },
   { to: "/workspace/inbox", label: "Inbox" },
+  { to: "/workspace/brief", label: "Evening brief" },
 ];
 
 export function WorkspaceLocalNav() {

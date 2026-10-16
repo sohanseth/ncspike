@@ -10,6 +10,7 @@ import {
   LogOut,
   MessageSquare,
   Sparkles,
+  Moon,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -17,6 +18,7 @@ const nav = [
   { to: "/workspace", label: "Today", icon: LayoutDashboard },
   { to: "/workspace/inbox", label: "Inbox", icon: Inbox },
   { to: "/workspace/drafts", label: "Drafts", icon: Sparkles },
+  { to: "/workspace/brief", label: "Evening brief", icon: Moon },
 ] as const;
 
 export function Sidebar() {
