@@ -16,7 +16,7 @@ describe("mission endpoint input protections", () => {
   const db = { from: () => ({ select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: { id: A }, error: null }) }) }) }) }) } as any;
   it.each<MissionAction>(["upsert", "delete", "results"])("%s requires JSON and a valid active token", async (action) => {
     expect((await handleRelayMission(req({}, token, { "content-type": "text/plain" }), action, db)).status).toBe(415);
-    expect((await handleRelayMission(req({}, undefined), action, db)).status).toBe(401);
+    expect((await handleRelayMission(req({}, ""), action, db)).status).toBe(401);
     expect((await handleRelayMission(req({}, "bad!"), action, db)).status).toBe(401);
     const revoked = { from: () => ({ select: () => ({ eq: () => ({ is: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) }) } as any;
     const response = await handleRelayMission(req({}, token), action, revoked);
