@@ -1,4 +1,4 @@
--- Encrypted Mac relay: opaque ciphertext only; owner IDs are plain UUIDs per Cloud conventions.
+-- Applied from supabase/migrations/20261016091000_encrypted_mac_relay.sql
 create table if not exists public.relay_pairing_codes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null,
@@ -50,7 +50,6 @@ revoke all on public.relay_claim_attempts from public, anon, authenticated;
 alter table public.relay_claim_attempts enable row level security;
 grant usage, select on sequence public.relay_claim_attempts_id_seq to service_role;
 revoke all on sequence public.relay_claim_attempts_id_seq from public, anon, authenticated;
--- Re-running restores deny-all even if a policy was added externally.
 do $$ declare p record; begin
   for p in select tablename, policyname from pg_policies where schemaname = 'public'
     and tablename in ('relay_pairing_codes','relay_devices','relay_cards','relay_claim_attempts')
@@ -79,7 +78,6 @@ begin
   end if;
   return jsonb_build_object('status', 'ok', 'user_id', uid);
 end $$;
-
 create or replace function public.relay_publish(p_device uuid, p_seq bigint, p_key_id text, p_rows jsonb) returns jsonb language plpgsql security definer set search_path = public as $$
 declare dev relay_devices%rowtype;
 begin
@@ -100,7 +98,6 @@ begin
   update relay_devices set last_seen_at = now(), last_seq = p_seq where id = p_device;
   return jsonb_build_object('status', 'ok', 'stored', jsonb_array_length(p_rows));
 end $$;
-
 create or replace function public.relay_revoke(p_device uuid) returns boolean language plpgsql security definer set search_path = public as $$
 begin
   update relay_devices set revoked_at = now() where id = p_device and revoked_at is null;
@@ -110,7 +107,6 @@ begin
   delete from relay_cards where device_id = p_device;
   return true;
 end $$;
-
 create or replace function public.cleanup_relay() returns jsonb language plpgsql security definer set search_path = public as $$
 declare c int; p int; a int; d int;
 begin
@@ -120,7 +116,6 @@ begin
   delete from relay_devices where revoked_at < now() - interval '30 days'; get diagnostics d = row_count;
   return jsonb_build_object('cards', c, 'codes', p, 'attempts', a, 'devices', d);
 end $$;
-
 revoke execute on function public.relay_claim(text, text) from public, anon, authenticated;
 grant execute on function public.relay_claim(text, text) to service_role;
 revoke execute on function public.relay_publish(uuid, bigint, text, jsonb) from public, anon, authenticated;
@@ -129,7 +124,6 @@ revoke execute on function public.relay_revoke(uuid) from public, anon, authenti
 grant execute on function public.relay_revoke(uuid) to service_role;
 revoke execute on function public.cleanup_relay() from public, anon, authenticated;
 grant execute on function public.cleanup_relay() to service_role;
-
 create or replace function public.delete_relay_for_removed_user() returns trigger
 language plpgsql security definer set search_path = public as $$
 begin
@@ -143,176 +137,37 @@ grant execute on function public.delete_relay_for_removed_user() to service_role
 drop trigger if exists delete_relay_for_removed_user on auth.users;
 create trigger delete_relay_for_removed_user after delete on auth.users
 for each row execute function public.delete_relay_for_removed_user();
-
 drop function if exists public.delete_user_data(uuid);
-
 create or replace function public.delete_user_data(target_user_id uuid)
-returns table (
-  chat_messages_deleted              int,
-  chat_threads_deleted               int,
-  chat_context_log_deleted           int,
-  pii_scrub_events_deleted           int,
-  extraction_failures_deleted        int,
-  user_trait_blocks_deleted          int,
-  user_provider_category_blocks_del  int,
-  user_known_names_deleted           int,
-  user_traits_deleted                int,
-  memory_edges_deleted               int,
-  memory_nodes_deleted               int,
-  inference_usage_deleted            int,
-  inference_usage_daily_deleted      int,
-  user_settings_deleted              int,
-  chat_message_attachments_deleted   int,
-  search_queries_deleted             int,
-  agent_findings_deleted             int,
-  agent_state_deleted                int,
-  agent_runs_deleted                 int,
-  agents_deleted                     int,
-  relay_cards_deleted int,
-  relay_devices_deleted int,
-  relay_pairing_codes_deleted int
-)
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  cm_count   int := 0;
-  ct_count   int := 0;
-  ccl_count  int := 0;
-  pse_count  int := 0;
-  ef_count   int := 0;
-  utb_count  int := 0;
-  upcb_count int := 0;
-  ukn_count  int := 0;
-  ut_count   int := 0;
-  me_count   int := 0;
-  mn_count   int := 0;
-  iu_count   int := 0;
-  iud_count  int := 0;
-  us_count   int := 0;
-  cma_count  int := 0;
-  sq_count   int := 0;
-  af_count   int := 0;
-  ast_count  int := 0;
-  ar_count   int := 0;
-  ag_count   int := 0;
-  rc_count int := 0;
-  rd_count int := 0;
-  rp_count int := 0;
+returns table (chat_messages_deleted int, chat_threads_deleted int, chat_context_log_deleted int, pii_scrub_events_deleted int, extraction_failures_deleted int, user_trait_blocks_deleted int, user_provider_category_blocks_del int, user_known_names_deleted int, user_traits_deleted int, memory_edges_deleted int, memory_nodes_deleted int, inference_usage_deleted int, inference_usage_daily_deleted int, user_settings_deleted int, chat_message_attachments_deleted int, search_queries_deleted int, agent_findings_deleted int, agent_state_deleted int, agent_runs_deleted int, agents_deleted int, relay_cards_deleted int, relay_devices_deleted int, relay_pairing_codes_deleted int)
+language plpgsql security definer set search_path = public as $$
+declare cm_count int := 0; ct_count int := 0; ccl_count int := 0; pse_count int := 0; ef_count int := 0; utb_count int := 0; upcb_count int := 0; ukn_count int := 0; ut_count int := 0; me_count int := 0; mn_count int := 0; iu_count int := 0; iud_count int := 0; us_count int := 0; cma_count int := 0; sq_count int := 0; af_count int := 0; ast_count int := 0; ar_count int := 0; ag_count int := 0; rc_count int := 0; rd_count int := 0; rp_count int := 0;
 begin
-  if auth.uid() is not null and auth.uid() <> target_user_id then
-    raise exception 'forbidden: caller cannot delete another user''s data';
-  end if;
-
-  -- Children-first. Attachment rows go before chat_messages so the
-  -- explicit count is meaningful even if the FK cascade is later relaxed.
-  if to_regclass('public.chat_message_attachments') is not null then
-    delete from public.chat_message_attachments where user_id = target_user_id;
-    get diagnostics cma_count = row_count;
-  end if;
-
-  if to_regclass('public.chat_messages') is not null then
-    delete from public.chat_messages where user_id = target_user_id;
-    get diagnostics cm_count = row_count;
-  end if;
-
-  if to_regclass('public.chat_threads') is not null then
-    delete from public.chat_threads where user_id = target_user_id;
-    get diagnostics ct_count = row_count;
-  end if;
-
-  delete from public.chat_context_log where user_id = target_user_id;
-  get diagnostics ccl_count = row_count;
-
-  delete from public.pii_scrub_events where user_id = target_user_id;
-  get diagnostics pse_count = row_count;
-
-  delete from public.extraction_failures where user_id = target_user_id;
-  get diagnostics ef_count = row_count;
-
-  delete from public.user_trait_blocks where user_id = target_user_id;
-  get diagnostics utb_count = row_count;
-
-  delete from public.user_provider_category_blocks where user_id = target_user_id;
-  get diagnostics upcb_count = row_count;
-
-  delete from public.user_known_names where user_id = target_user_id;
-  get diagnostics ukn_count = row_count;
-
-  delete from public.user_traits where user_id = target_user_id;
-  get diagnostics ut_count = row_count;
-
-  if to_regclass('public.memory_edges') is not null then
-    delete from public.memory_edges where user_id = target_user_id;
-    get diagnostics me_count = row_count;
-  end if;
-
-  if to_regclass('public.memory_nodes') is not null then
-    delete from public.memory_nodes where user_id = target_user_id;
-    get diagnostics mn_count = row_count;
-  end if;
-
-  if to_regclass('public.inference_usage') is not null then
-    delete from public.inference_usage where user_id = target_user_id;
-    get diagnostics iu_count = row_count;
-  end if;
-
-  if to_regclass('public.inference_usage_daily') is not null then
-    delete from public.inference_usage_daily where user_id = target_user_id;
-    get diagnostics iud_count = row_count;
-  end if;
-
-  if to_regclass('public.user_settings') is not null then
-    delete from public.user_settings where user_id = target_user_id;
-    get diagnostics us_count = row_count;
-  end if;
-
-  if to_regclass('public.search_queries') is not null then
-    delete from public.search_queries where user_id = target_user_id;
-    get diagnostics sq_count = row_count;
-  end if;
-
-  -- Phase 3.0 agent runtime tables. FK-safe order:
-  --   agent_findings (→ agent_runs + agents)
-  --   agent_state    (→ agents)
-  --   agent_runs     (→ agents)
-  --   agents         (→ auth.users)
-  if to_regclass('public.agent_findings') is not null then
-    delete from public.agent_findings where user_id = target_user_id;
-    get diagnostics af_count = row_count;
-  end if;
-
-  if to_regclass('public.agent_state') is not null then
-    delete from public.agent_state where user_id = target_user_id;
-    get diagnostics ast_count = row_count;
-  end if;
-
-  if to_regclass('public.agent_runs') is not null then
-    delete from public.agent_runs where user_id = target_user_id;
-    get diagnostics ar_count = row_count;
-  end if;
-
-  if to_regclass('public.agents') is not null then
-    delete from public.agents where user_id = target_user_id;
-    get diagnostics ag_count = row_count;
-  end if;
-
-  delete from public.relay_cards where user_id = target_user_id;
-  get diagnostics rc_count = row_count;
-  delete from public.relay_devices where user_id = target_user_id;
-  get diagnostics rd_count = row_count;
-  delete from public.relay_pairing_codes where user_id = target_user_id;
-  get diagnostics rp_count = row_count;
-
-  return query select
-    cm_count, ct_count, ccl_count, pse_count, ef_count,
-    utb_count, upcb_count, ukn_count, ut_count,
-    me_count, mn_count, iu_count, iud_count, us_count,
-    cma_count, sq_count,
-    af_count, ast_count, ar_count, ag_count, rc_count, rd_count, rp_count;
-end;
-$$;
-
+  if auth.uid() is not null and auth.uid() <> target_user_id then raise exception 'forbidden: caller cannot delete another user''s data'; end if;
+  if to_regclass('public.chat_message_attachments') is not null then delete from public.chat_message_attachments where user_id = target_user_id; get diagnostics cma_count = row_count; end if;
+  if to_regclass('public.chat_messages') is not null then delete from public.chat_messages where user_id = target_user_id; get diagnostics cm_count = row_count; end if;
+  if to_regclass('public.chat_threads') is not null then delete from public.chat_threads where user_id = target_user_id; get diagnostics ct_count = row_count; end if;
+  delete from public.chat_context_log where user_id = target_user_id; get diagnostics ccl_count = row_count;
+  delete from public.pii_scrub_events where user_id = target_user_id; get diagnostics pse_count = row_count;
+  delete from public.extraction_failures where user_id = target_user_id; get diagnostics ef_count = row_count;
+  delete from public.user_trait_blocks where user_id = target_user_id; get diagnostics utb_count = row_count;
+  delete from public.user_provider_category_blocks where user_id = target_user_id; get diagnostics upcb_count = row_count;
+  delete from public.user_known_names where user_id = target_user_id; get diagnostics ukn_count = row_count;
+  delete from public.user_traits where user_id = target_user_id; get diagnostics ut_count = row_count;
+  if to_regclass('public.memory_edges') is not null then delete from public.memory_edges where user_id = target_user_id; get diagnostics me_count = row_count; end if;
+  if to_regclass('public.memory_nodes') is not null then delete from public.memory_nodes where user_id = target_user_id; get diagnostics mn_count = row_count; end if;
+  if to_regclass('public.inference_usage') is not null then delete from public.inference_usage where user_id = target_user_id; get diagnostics iu_count = row_count; end if;
+  if to_regclass('public.inference_usage_daily') is not null then delete from public.inference_usage_daily where user_id = target_user_id; get diagnostics iud_count = row_count; end if;
+  if to_regclass('public.user_settings') is not null then delete from public.user_settings where user_id = target_user_id; get diagnostics us_count = row_count; end if;
+  if to_regclass('public.search_queries') is not null then delete from public.search_queries where user_id = target_user_id; get diagnostics sq_count = row_count; end if;
+  if to_regclass('public.agent_findings') is not null then delete from public.agent_findings where user_id = target_user_id; get diagnostics af_count = row_count; end if;
+  if to_regclass('public.agent_state') is not null then delete from public.agent_state where user_id = target_user_id; get diagnostics ast_count = row_count; end if;
+  if to_regclass('public.agent_runs') is not null then delete from public.agent_runs where user_id = target_user_id; get diagnostics ar_count = row_count; end if;
+  if to_regclass('public.agents') is not null then delete from public.agents where user_id = target_user_id; get diagnostics ag_count = row_count; end if;
+  delete from public.relay_cards where user_id = target_user_id; get diagnostics rc_count = row_count;
+  delete from public.relay_devices where user_id = target_user_id; get diagnostics rd_count = row_count;
+  delete from public.relay_pairing_codes where user_id = target_user_id; get diagnostics rp_count = row_count;
+  return query select cm_count, ct_count, ccl_count, pse_count, ef_count, utb_count, upcb_count, ukn_count, ut_count, me_count, mn_count, iu_count, iud_count, us_count, cma_count, sq_count, af_count, ast_count, ar_count, ag_count, rc_count, rd_count, rp_count;
+end; $$;
 revoke all on function public.delete_user_data(uuid) from public;
 grant execute on function public.delete_user_data(uuid) to authenticated, service_role;
