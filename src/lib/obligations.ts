@@ -83,7 +83,7 @@ export function extractObligation(
   const today = iso(now);
   const kind: ObligationKind = prep && (!due || due <= tomorrow) && due !== null && due >= today ? "tonight" : prep && !ahead && !due ? "tonight" : "ahead";
   const child = children.find((c) => c && new RegExp(`\\b${escapeRe(c)}\\b`, "i").test(text)) ?? null;
-  const title = text.split(/\s[—–-]\s|\n/)[0].trim().slice(0, 140);
+  const title = (text.length <= 90 ? text : text.split(/\s[—–-]\s|\n/)[0]).trim().slice(0, 140);
   return { id: input.id, title, due, kind, child, source: input.source, sourceLabel: input.sourceLabel };
 }
 
