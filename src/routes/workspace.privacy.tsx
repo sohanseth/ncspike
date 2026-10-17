@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { supabase } from "@/integrations/supabase/client";
 import { exportAccountData, deleteAccount } from "@/lib/gdpr.functions";
 import { Loader, Download, Trash2, ShieldCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { PersonalizationDisclosure } from "@/components/workspace/PersonalizationDisclosure";
@@ -113,8 +114,15 @@ function PrivacyPage() {
         .filter(([, n]) => n > 0)
         .map(([t, n]) => `${t}=${n}`)
         .join(", ");
-      setStatus(`Account data deleted. Wiped: ${wiped || "no rows present"}.`);
+      const revokeNote = result.googleRevokeFailed
+        ? " We couldn't cancel Google access from here — please remove NeuralConnexions at https://myaccount.google.com/permissions."
+        : "";
+      setStatus(
+        `Your account, everything stored with it and every stored photo have been deleted. Wiped: ${wiped || "no rows present"}.${revokeNote} Signing you out…`,
+      );
       setConfirmText("");
+      // The sign-in no longer exists — end this browser's session too.
+      await supabase.auth.signOut();
     } catch (e) {
       setStatus(`Delete failed: ${(e as Error).message}`);
     } finally {
@@ -190,12 +198,22 @@ function PrivacyPage() {
       <section className="rounded-xl border border-destructive/40 bg-destructive/5 p-6">
         <div className="mb-2 flex items-center gap-2">
           <AlertTriangle className="h-5 w-5 text-destructive" />
-          <h2 className="text-xl font-semibold">Delete account data</h2>
+          <h2 className="text-xl font-semibold">Delete your account</h2>
         </div>
         <p className="mb-4 text-sm text-muted-foreground">
-          Wipes your trait sheet, memory graph, chat history, all blocks, scrub events, and
-          inference usage. This cannot be undone. Your authentication record itself stays — to
-          fully close your account, contact support after deletion.
+          This deletes your account and everything stored with it: your sign-in, trait sheet,
+          memory graph, chat history, drafts, connections, voice profile, research, settings,
+          and every stored photo and file. Where possible we also cancel NeuralConnexions'
+          access to your Google account; if that can't be completed from here, remove it at{" "}
+          <a
+            href="https://myaccount.google.com/permissions"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-4"
+          >
+            myaccount.google.com/permissions
+          </a>
+          . Nothing can be recovered afterwards.
         </p>
         <label className="mb-3 block text-sm font-medium">
           Type <span className="font-mono">DELETE</span> to confirm:
