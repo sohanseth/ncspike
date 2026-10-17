@@ -214,6 +214,12 @@ function ConnectionsPage() {
             Connection failed{search.msg ? `: ${search.msg}` : ""}.
           </div>
         )}
+        {notice && (
+          <div className="glass rounded-xl px-4 py-3 flex items-center gap-2 text-sm">
+            <AlertCircle className="size-4 text-amber-400" />
+            {notice}
+          </div>
+        )}
 
         <section className="space-y-3">
           {(["gmail", "google_calendar"] as const).map((p) => {
