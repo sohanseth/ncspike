@@ -210,6 +210,9 @@ export const getVoiceProfile = createServerFn({ method: "POST" })
 export const buildVoiceProfile = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
+    // Building the profile reads the sent folder, so it needs the same
+    // informed consent as drafting.
+    await assertCanDraft(context.userId);
     const { token } = await getValidGmailAccessToken(context.userId);
 
     // Fetch sent messages — these are held in memory only and never persisted.

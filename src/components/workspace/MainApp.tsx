@@ -885,9 +885,9 @@ function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: (
           Before NeuralConnexions writes replies in your voice, please read what this involves:
         </p>
         <ul className="text-[12px] text-foreground/75 leading-relaxed space-y-2 mb-4 list-disc pl-4">
-          <li>The incoming email's <strong>subject, sender and snippet</strong> are sent to <strong>Cloudflare Workers AI</strong> together with a small style summary of your writing.</li>
-          <li>Your <strong>full sent folder is never sent</strong> — only a derived voice profile (sign-off, openers, average sentence length).</li>
-          <li>Drafts are saved <strong>encrypted</strong> in your account. <strong>Nothing is sent automatically</strong> — every reply needs your click.</li>
+          <li>The email's <strong>sender, subject and full text</strong> (up to 4,000 characters), your answers to the check-in questions and, when the email is about meeting up, your free times go to <strong>Google's Gemini model through Lovable's AI gateway</strong>: once to understand the email and once to write the draft.</li>
+          <li>To learn your style, our server reads up to <strong>200 of your sent emails</strong> and keeps a short profile (sign-off, openers, sentence length, formality and up to 20 typical phrases) for <strong>7 days</strong>. Up to 8 of those phrases and 3 openers go with each draft request; the emails themselves aren't sent to any AI service.</li>
+          <li>Drafts are saved <strong>encrypted</strong> in your account. <strong>Nothing is sent automatically</strong>: every reply needs your click.</li>
         </ul>
         {err && <p className="text-[11px] text-social/80 mb-2">{err}</p>}
         <div className="flex justify-end gap-2">
