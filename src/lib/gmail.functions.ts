@@ -4,6 +4,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "@/server/crypto.server";
 import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
@@ -69,7 +70,8 @@ async function categorizeEmails(
       }),
     });
     if (!res.ok) {
-      console.error("AI categorize failed:", res.status, await res.text());
+      // Status only — the response body can echo the emails we sent up.
+      console.error("AI categorize failed: http", res.status);
       return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
     }
     const json = await res.json();
@@ -80,7 +82,7 @@ async function categorizeEmails(
     while (out.length < emails.length) out.push({ category: "ignore", domain: "personal", reason: "" });
     return out.slice(0, emails.length);
   } catch (e) {
-    console.error("AI categorize threw:", e);
+    console.error("AI categorize threw:", e instanceof Error ? e.name : "Error");
     return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
   }
 }
@@ -215,7 +217,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
       if (exErr) {
         // Fail closed: skip inserts entirely if we can't verify what's already
         // there, otherwise we'd resurface emails the user already marked done.
-        console.error("dedup lookup failed; skipping insert this pull:", exErr);
+        console.error("dedup lookup failed; skipping insert this pull:", scrubErrorMessage(exErr.message));
         return { count: summaries.length, inserted: 0, account: label, summaries };
       }
       const seen = new Set<string>(
@@ -265,56 +267,20 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
           .insert(rows)
           .select("id");
         if (insErr && insErr.code !== "23505") {
-          console.error("memory_nodes insert error:", insErr);
+          console.error("memory_nodes insert error:", scrubErrorMessage(insErr.message));
         } else {
           inserted = insData?.length ?? 0;
         }
       }
     }
 
-    // Auto-enqueue heuristic: for each NEWLY-INSERTED urgent/today email,
-    // queue an overnight `research_thread_context` so the morning briefing has
-    // sender history without the user needing to click "Scout tonight". We
-    // gate on newGmailIds so re-pulls of the same email don't keep queueing
-    // (also: enqueueResearchTask itself dedupes by sender at the queue layer).
-    // Read-only + bounded LLM cost, so safe for auto-fire.
-    if (inserted > 0 && newGmailIds.size > 0) {
-      try {
-        const { enqueueResearchTask } = await import("@/server/research-queue");
-        const overnight = nextOvernightUtc();
-        const seenSenders = new Set<string>();
-        for (let i = 0; i < summaries.length; i++) {
-          if (!newGmailIds.has(summaries[i].id)) continue;
-          const cat = ruleResults[i];
-          if (cat.category !== "urgent" && cat.category !== "today") continue;
-          const sender = summaries[i].from;
-          if (!sender || seenSenders.has(sender)) continue;
-          seenSenders.add(sender);
-          // Fire and forget; failures here must never break the pull.
-          await enqueueResearchTask(context.userId, {
-            toolId: "research_thread_context",
-            input: { sender },
-            source: "auto",
-            sourceContext: `Auto-queued from ${cat.category} email: "${summaries[i].subject || "(no subject)"}"`,
-            priority: 200,
-            scheduledFor: overnight,
-          }).catch((e) => console.warn("auto-enqueue failed:", e));
-        }
-      } catch (e) {
-        console.warn("auto-enqueue dispatch failed:", e);
-      }
-    }
+    // "Context on this sender" research runs only when the person asks for
+    // it (the button on an email row, or "Research overnight"). The pull
+    // itself never queues research tasks.
+    void newGmailIds;
 
     return { count: summaries.length, inserted, account: label, summaries };
   });
-
-/** Next 03:00 UTC. If we're already past 03:00 today, returns 03:00 tomorrow. */
-function nextOvernightUtc(): string {
-  const now = new Date();
-  const target = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 3, 0, 0, 0));
-  if (target.getTime() <= now.getTime()) target.setUTCDate(target.getUTCDate() + 1);
-  return target.toISOString();
-}
 
 export const getConnections = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
@@ -373,15 +339,89 @@ export const markInboxItemDone = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/**
+ * Disconnect a Google connection. Gmail and Calendar share ONE Google
+ * sign-in (include_granted_scopes), and revoking the token removes access
+ * to every scope — so:
+ *   - while the other Google connection is still present, we only delete
+ *     the row and tell the person the other service still has access;
+ *   - when the LAST Google connection goes, we try to revoke the token at
+ *     Google first, then delete the row. The row is always deleted, even
+ *     if revocation fails — in that case the UI shows the
+ *     myaccount.google.com/permissions link.
+ */
+export type DisconnectResult = {
+  ok: true;
+  /** True when another Google connection still shares the token. */
+  otherGoogleRemain: boolean;
+  /** True when we tried to revoke at Google and it failed. */
+  revokeFailed: boolean;
+};
+
+/**
+ * Pure handler for disconnectProvider — exported for direct testing. The
+ * server-fn wrapper only resolves the userId from auth context.
+ */
+export async function disconnectProviderFor(
+  userId: string,
+  provider: "gmail" | "google_calendar",
+): Promise<DisconnectResult> {
+  const otherProvider = provider === "gmail" ? "google_calendar" : "gmail";
+  const { data: other } = await supabaseAdmin
+    .from("connections")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("provider", otherProvider)
+    .maybeSingle();
+
+  let revokeFailed = false;
+  if (!other) {
+    // Last Google connection — try to revoke the shared token at Google.
+    const { data: conn } = await supabaseAdmin
+      .from("connections")
+      .select("access_token_encrypted, refresh_token_encrypted")
+      .eq("user_id", userId)
+      .eq("provider", provider)
+      .maybeSingle();
+    try {
+      const token = conn?.refresh_token_encrypted
+        ? decryptToken(conn.refresh_token_encrypted)
+        : conn?.access_token_encrypted
+          ? decryptToken(conn.access_token_encrypted)
+          : null;
+      if (token) {
+        const res = await fetch("https://oauth2.googleapis.com/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token }),
+        });
+        if (!res.ok) {
+          revokeFailed = true;
+          console.warn("[connections] google revoke failed: http", res.status);
+        }
+      }
+    } catch (e) {
+      revokeFailed = true;
+      console.warn(
+        "[connections] google revoke threw:",
+        e instanceof Error ? e.name : "Error",
+      );
+    }
+  }
+
+  // Always delete the row, even if revocation failed.
+  const { error } = await supabaseAdmin
+    .from("connections")
+    .delete()
+    .eq("user_id", userId)
+    .eq("provider", provider);
+  if (error) throw error;
+  return { ok: true, otherGoogleRemain: !!other, revokeFailed };
+}
+
 export const disconnectProvider = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { provider: "gmail" | "google_calendar" }) => d)
-  .handler(async ({ data, context }) => {
-    const { error } = await supabaseAdmin
-      .from("connections")
-      .delete()
-      .eq("user_id", context.userId)
-      .eq("provider", data.provider);
-    if (error) throw error;
-    return { ok: true };
-  });
+  .handler(({ data, context }): Promise<DisconnectResult> =>
+    disconnectProviderFor(context.userId, data.provider),
+  );

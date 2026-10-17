@@ -110,7 +110,9 @@ export const Route = createFileRoute("/api/public/google/callback")({
 
           return back("ok");
         } catch (e) {
-          console.error("OAuth callback error:", e);
+          // Log only the error class — the message can carry OAuth payload
+          // details. The user-facing redirect keeps a generic reason.
+          console.error("OAuth callback error:", e instanceof Error ? e.name : "Error");
           return back("error", e instanceof Error ? e.message : "Unknown error");
         }
       },

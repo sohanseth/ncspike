@@ -10,6 +10,7 @@
  * abuse, not to bill users. Tighten later when we have real usage curves.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 export type RateLimitDecision =
   | { ok: true; remaining: number }
@@ -55,7 +56,7 @@ export async function enforceToolRateLimit(
     .gte("created_at", since);
 
   if (countErr) {
-    console.warn("[rate-limit] count failed; allowing call:", countErr);
+    console.warn("[rate-limit] count failed; allowing call:", scrubErrorMessage(countErr.message));
     return { ok: true, remaining: limit.perHour };
   }
   const used = count ?? 0;
@@ -76,7 +77,7 @@ export async function enforceToolRateLimit(
   const { error: insErr } = await (supabaseAdmin as any)
     .from("tool_invocations")
     .insert({ user_id: userId, tool_id: toolId });
-  if (insErr) console.warn("[rate-limit] insert failed (non-fatal):", insErr);
+  if (insErr) console.warn("[rate-limit] insert failed (non-fatal):", scrubErrorMessage(insErr.message));
 
   return { ok: true, remaining: limit.perHour - used - 1 };
 }

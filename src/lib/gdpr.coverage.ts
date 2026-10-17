@@ -52,36 +52,6 @@ export const GDPR_IGNORE_TABLES: readonly GdprIgnoreEntry[] = [
     reason: "Maps a Mac's mission numbers to agents; each row is deleted with its agent, which delete_user_data() deletes, and with its device.",
   },
   {
-    table: "user_endpoints",
-    reason:
-      "Per-user provider endpoint config — cascades from auth.users; not user-generated content the export surfaces.",
-  },
-  {
-    table: "connections",
-    reason:
-      "OAuth/connection records — cascades from auth.users on full account removal.",
-  },
-  {
-    table: "watchers",
-    reason:
-      "Background watcher subscriptions — cascades from auth.users; operational state, not export-surface content.",
-  },
-  {
-    table: "voice_profiles",
-    reason:
-      "Per-user voice tuning — cascades from auth.users on full account deletion.",
-  },
-  {
-    table: "drafts",
-    reason:
-      "Outgoing message drafts — cascades from auth.users on full account deletion; not part of the chat/memory export.",
-  },
-  {
-    table: "research_tasks",
-    reason:
-      "Background research jobs — cascades from auth.users on full account deletion.",
-  },
-  {
     table: "tool_invocations",
     reason:
       "Tool call audit log — cascades from auth.users on full account deletion.",

@@ -47,18 +47,15 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
     // iosScheme defaults to "capacitor"; leave it.
-    allowNavigation: ["app.neuralconnexions.com", "neuralconnexions.com"],
-    // DEV ONLY — point the WebView at the Mac's Vite dev server so the
-    // real app renders on-device. REMOVE before any TestFlight / store
-    // build (per N6 — production must bundle the reviewed JS).
-    // NOTE: this URL bakes into the native build at `cap sync` time, so
-    // when the Mac's LAN IP changes (DHCP renewal, Wi-Fi switch) you have
-    // to update here + cap sync + rebuild. To avoid that churn use the
-    // Mac's mDNS hostname instead, e.g. `http://REM-LGM7KQ4RJG-2.local:5173`
-    // (works on the same LAN regardless of DHCP). For now using the
-    // explicit IP — simpler debugging.
-    url: "http://192.168.1.101:5173",
-    cleartext: true,
+    allowNavigation: [
+      "app.neuralconnexions.com",
+      "neuralconnexions.com",
+      "ncspike.lovable.app",
+    ],
+    // The app is drawn by the server and its server functions use relative
+    // addresses, so the phone app loads the published site — always over
+    // HTTPS, never an unencrypted address on a home network.
+    url: "https://ncspike.lovable.app",
   },
 
   // Plugin-specific tuning. Each plugin we install must opt in here if it

@@ -93,6 +93,79 @@ async function sweepRetention(): Promise<void> {
   }
 }
 
+/**
+ * Storage retention. Stored files can't be deleted from SQL (Supabase
+ * blocks deletes on its storage tables), so the nightly job uses the
+ * Storage API: delete files in chat-attachments that are more than a day
+ * old and have no chat_message_attachments row. Anything the app links to
+ * — including images it shows from `<userId>/imagegen/` — is kept.
+ * Best-effort: logged, never thrown.
+ */
+async function sweepOrphanedAttachments(): Promise<void> {
+  const BUCKET = "chat-attachments";
+  const KEEP_PREFIX = "/imagegen/";
+  const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+  try {
+    const storage = supabaseAdmin.storage as unknown as {
+      from: (b: string) => {
+        list: (path: string, opts?: { limit?: number; offset?: number }) => Promise<{
+          data: Array<{ name: string; id: string | null; created_at?: string }> | null;
+          error: unknown;
+        }>;
+        remove: (paths: string[]) => Promise<{ error: unknown }>;
+      };
+    };
+    const cutoff = Date.now() - MAX_AGE_MS;
+
+    // Root entries are per-user folders.
+    const { data: roots, error: rootErr } = await storage.from(BUCKET).list("", { limit: 1000 });
+    if (rootErr) {
+      console.warn("[research-cron] attachment sweep list failed:", scrubErrorMessage((rootErr as { message?: string }).message));
+      return;
+    }
+    const orphans: string[] = [];
+    for (const root of roots ?? []) {
+      if (root.id !== null) continue; // not a folder
+      const userDir = root.name;
+      let offset = 0;
+      for (;;) {
+        const { data: entries, error } = await storage.from(BUCKET).list(userDir, { limit: 1000, offset });
+        if (error) break;
+        const list = entries ?? [];
+        for (const e of list) {
+          if (e.id === null) continue; // subfolder (e.g. imagegen/) — kept
+          const created = e.created_at ? Date.parse(e.created_at) : 0;
+          if (created && created > cutoff) continue; // too new to sweep
+          orphans.push(`${userDir}/${e.name}`);
+        }
+        if (list.length < 1000) break;
+        offset += 1000;
+      }
+    }
+    if (!orphans.length) return;
+
+    // Keep anything still referenced by a chat_message_attachments row.
+    const { data: linked } = await (supabaseAdmin as any)
+      .from("chat_message_attachments")
+      .select("storage_path")
+      .in("storage_path", orphans);
+    const linkedSet = new Set(((linked ?? []) as Array<{ storage_path: string }>).map((r) => r.storage_path));
+    const deletable = orphans.filter((p) => !linkedSet.has(p) && !p.includes(KEEP_PREFIX));
+    for (let i = 0; i < deletable.length; i += 1000) {
+      const { error } = await storage.from(BUCKET).remove(deletable.slice(i, i + 1000));
+      if (error) {
+        console.warn("[research-cron] attachment sweep remove failed:", scrubErrorMessage((error as { message?: string }).message));
+        return;
+      }
+    }
+    if (deletable.length) {
+      console.log(`[research-cron] orphaned attachments swept: ${deletable.length}`);
+    }
+  } catch (e) {
+    console.warn("[research-cron] attachment sweep threw:", scrubErrorMessage(e));
+  }
+}
+
 export async function runResearchBatchAllUsers(
   opts: { perUserLimit?: number } = {},
 ): Promise<CronSummary> {
@@ -140,6 +213,7 @@ export async function runResearchBatchAllUsers(
   }
 
   await sweepRetention();
+  await sweepOrphanedAttachments();
 
   // Task #50 — push alert when on-device image refusals spike. Best-effort:
   // never throws here, never blocks the cron summary.

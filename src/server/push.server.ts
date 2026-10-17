@@ -64,9 +64,9 @@ export async function sendPushToUser(
   // HTTP/v1 call (OAuth2 access token from service account JSON, then POST
   // /messages:send per token) once Firebase project is provisioned.
   for (const row of rows) {
-    console.log(
-      `[push:STUB] would send to user=${userId} platform=${row.platform} title="${payload.title}" deepLink=${payload.deepLink ?? "<none>"}`,
-    );
+    // Never log push titles, deep links or user ids — they can hold
+    // personal content. Platform + count only.
+    console.log(`[push:STUB] would send platform=${row.platform}`);
     result.delivered += 1;
   }
 
