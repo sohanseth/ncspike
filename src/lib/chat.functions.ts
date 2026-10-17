@@ -14,6 +14,7 @@
  * cap enforcement, fallbacks, and telemetry. This file is the thin glue.
  */
 import { createServerFn } from "@tanstack/react-start";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
@@ -297,7 +298,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       // any throw-path failure (Supabase client throw, embed throw,
       // unexpected runtime). Surface the same typed error the scrub-block
       // path emits — the UI already handles SCRUB_BLOCKED:context.
-      console.warn(`[chat.sendChatMessage] broker threw, fail-closing:`, e);
+      console.warn("[chat.sendChatMessage] broker threw, fail-closing:", e instanceof Error ? e.name : "Error");
       throw new Error("SCRUB_BLOCKED:context");
     }
 
@@ -553,7 +554,7 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
       // never leaves the device, consistency with the hosted path matters:
       // a broker throw here masks privacy-guard state, so refuse rather
       // than silently default-prompt.
-      console.warn("[prepareOnDeviceTurn] broker threw, fail-closing:", e);
+      console.warn("[prepareOnDeviceTurn] broker threw, fail-closing:", e instanceof Error ? e.name : "Error");
       throw new Error("SCRUB_BLOCKED:context");
     }
 
@@ -1120,8 +1121,8 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
         // Telemetry is non-blocking — the placeholder is already in the
         // thread and the cap slot is correctly returned. Log and move on.
         console.warn(
-          `[finalizeOnDeviceImageGenBlockedTurn] metadata stamp failed:`,
-          metaErr.message,
+          "[finalizeOnDeviceImageGenBlockedTurn] metadata stamp failed:",
+          scrubErrorMessage(metaErr.message),
         );
       }
 

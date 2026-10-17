@@ -35,6 +35,7 @@ import {
   type VoiceProfile,
 } from "@/server/voice-profile.server";
 import { generate, InferenceError } from "@/server/inference";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 const SENT_SAMPLE_SIZE = 200;
 
@@ -191,7 +192,7 @@ async function loadProfile(userId: string): Promise<VoiceProfileSummary> {
     try {
       profile = JSON.parse(decryptToken(data.profile_encrypted)) as VoiceProfile;
     } catch (e) {
-      console.error("voice profile decrypt failed:", e);
+      console.error("voice profile decrypt failed:", e instanceof Error ? e.name : "Error");
     }
   }
   return {
@@ -350,7 +351,7 @@ async function loadVoiceProfileForUser(userId: string): Promise<VoiceProfile> {
   try {
     return JSON.parse(decryptToken(data.profile_encrypted)) as VoiceProfile;
   } catch (e) {
-    console.error("voice profile decrypt failed:", e);
+    console.error("voice profile decrypt failed:", e instanceof Error ? e.name : "Error");
     return DEFAULT_PROFILE;
   }
 }
@@ -390,7 +391,7 @@ async function loadIncomingEmail(
         if (text) body = text.trim();
       }
     } catch (e) {
-      console.warn("loadIncomingEmail: full body fetch failed, using snippet:", e);
+      console.warn("loadIncomingEmail: full body fetch failed, using snippet:", e instanceof Error ? e.name : "Error");
     }
   }
 
@@ -512,7 +513,7 @@ export const draftReply = createServerFn({ method: "POST" })
         proposedSlots = await proposeFreeSlots(context.userId, { bufferHours });
         if (proposedSlots.length > 0) email.proposedSlots = proposedSlots.map((s) => s.human);
       } catch (e) {
-        console.warn("proposeFreeSlots failed, drafting without slots:", e);
+        console.warn("proposeFreeSlots failed, drafting without slots:", e instanceof Error ? e.name : "Error");
       }
     }
 
@@ -581,7 +582,7 @@ export const regenerateDraft = createServerFn({ method: "POST" })
         proposedSlots = await proposeFreeSlots(context.userId, { bufferHours });
         if (proposedSlots.length > 0) email.proposedSlots = proposedSlots.map((s) => s.human);
       } catch (e) {
-        console.warn("proposeFreeSlots failed (regenerate), drafting without slots:", e);
+        console.warn("proposeFreeSlots failed (regenerate), drafting without slots:", e instanceof Error ? e.name : "Error");
       }
     }
 
@@ -899,7 +900,7 @@ export const sendDraftViaGmail = createServerFn({ method: "POST" })
           .eq("user_id", context.userId)
           .eq("status", "sending");
       } catch (e) {
-        console.error("[sendDraftViaGmail] revert to pending failed:", e);
+        console.error("[sendDraftViaGmail] revert to pending failed:", e instanceof Error ? e.name : "Error");
       }
     };
 
@@ -1005,9 +1006,8 @@ export const sendDraftViaGmail = createServerFn({ method: "POST" })
       .single();
     if (updErr) {
       console.error(
-        "[sendDraftViaGmail] CRITICAL: Gmail send succeeded but DB finalise failed for draft",
-        data.draftId,
-        updErr,
+        "[sendDraftViaGmail] CRITICAL: Gmail send succeeded but DB finalise failed:",
+        scrubErrorMessage(updErr.message),
       );
       throw new Error(`Email sent but draft status update failed: ${updErr.message}`);
     }
