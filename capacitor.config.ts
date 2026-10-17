@@ -54,7 +54,7 @@ const config: CapacitorConfig = {
     ],
     // The app is drawn by the server and its server functions use relative
     // addresses, so the phone app loads the published site — always over
-    // HTTPS, never a cleartext address on a home network.
+    // HTTPS, never an unencrypted address on a home network.
     url: "https://ncspike.lovable.app",
   },
 
