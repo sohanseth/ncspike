@@ -228,6 +228,31 @@ const fixture: Fixture = vi.hoisted(() => {
       }
       return { data: [counts], error: null };
     },
+    // Privacy-fixes additions: account deletion now also signs out sessions,
+    // wipes Storage and deletes the sign-in. The mock keeps an empty bucket
+    // so the storage wipe is a verified no-op.
+    auth: {
+      admin: {
+        async signOut() {
+          return { error: null };
+        },
+        async deleteUser() {
+          return { error: null };
+        },
+      },
+    },
+    storage: {
+      from() {
+        return {
+          async list() {
+            return { data: [], error: null };
+          },
+          async remove() {
+            return { error: null };
+          },
+        };
+      },
+    },
   };
 
   return { store, supabaseAdmin };
