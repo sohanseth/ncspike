@@ -4,6 +4,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middlewa
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { decryptToken, encryptToken } from "@/server/crypto.server";
 import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
+import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
@@ -69,7 +70,8 @@ async function categorizeEmails(
       }),
     });
     if (!res.ok) {
-      console.error("AI categorize failed:", res.status, await res.text());
+      // Status only — the response body can echo the emails we sent up.
+      console.error("AI categorize failed: http", res.status);
       return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
     }
     const json = await res.json();
@@ -80,7 +82,7 @@ async function categorizeEmails(
     while (out.length < emails.length) out.push({ category: "ignore", domain: "personal", reason: "" });
     return out.slice(0, emails.length);
   } catch (e) {
-    console.error("AI categorize threw:", e);
+    console.error("AI categorize threw:", e instanceof Error ? e.name : "Error");
     return emails.map(() => ({ category: "ignore" as const, domain: "personal" as const, reason: "" }));
   }
 }
@@ -215,7 +217,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
       if (exErr) {
         // Fail closed: skip inserts entirely if we can't verify what's already
         // there, otherwise we'd resurface emails the user already marked done.
-        console.error("dedup lookup failed; skipping insert this pull:", exErr);
+        console.error("dedup lookup failed; skipping insert this pull:", scrubErrorMessage(exErr.message));
         return { count: summaries.length, inserted: 0, account: label, summaries };
       }
       const seen = new Set<string>(
@@ -265,7 +267,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
           .insert(rows)
           .select("id");
         if (insErr && insErr.code !== "23505") {
-          console.error("memory_nodes insert error:", insErr);
+          console.error("memory_nodes insert error:", scrubErrorMessage(insErr.message));
         } else {
           inserted = insData?.length ?? 0;
         }
