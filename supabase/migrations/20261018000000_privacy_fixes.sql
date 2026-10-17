@@ -1,6 +1,6 @@
 drop function if exists public.delete_user_data(uuid);
 
-create function public.delete_user_data(target_user_id uuid)
+create or replace function public.delete_user_data(target_user_id uuid)
 returns table(
   chat_messages_deleted integer,
   chat_threads_deleted integer,
@@ -129,9 +129,6 @@ begin
   if to_regclass('public.agent_runs') is not null then
     delete from public.agent_runs where user_id = target_user_id;
     get diagnostics ar_count = row_count;
-  end if;
-  if to_regclass('public.relay_missions') is not null then
-    delete from public.relay_missions where user_id = target_user_id;
   end if;
   if to_regclass('public.agents') is not null then
     delete from public.agents where user_id = target_user_id;
