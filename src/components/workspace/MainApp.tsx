@@ -12,7 +12,7 @@ import {
   Moon, Clock, Loader, Lock, ExternalLink, Star, ShoppingCart,
   Search, Mic, MicOff, Lightbulb, Volume2,
   Flag, RotateCcw, Bell, BellRing, User, Plus, ChevronUp, CalendarDays, Calendar, Package, Plug, LogOut, Mail, Inbox, ArrowLeft, Pin, PinOff, Paperclip, ListTodo,
-  ShieldAlert, Camera as CameraIcon,
+  ShieldAlert, Camera as CameraIcon, MoreHorizontal,
 } from "lucide-react";
 import { IMAGE_BLOCKED_PLACEHOLDER_TEXT } from "@/lib/chat-message-kinds";
 import { IMAGE_BLOCKED_RETRY_ACTION_LABEL } from "@/lib/chat-message-kinds";
@@ -560,27 +560,116 @@ function TopBar({
 // Bottom safe-area padding (pb-[max(...)]) so the bar clears the iPhone home
 // indicator without leaving a gap on Androids without the inset.
 
-function MobileQuickBar({ onChat }: { onChat: () => void }) {
+function MobileQuickBar({ onChat, onCompose, onYou, onTest, onSignOut }: {
+  onChat: () => void;
+  onCompose: () => void;
+  onYou: () => void;
+  onTest: () => void;
+  onSignOut: () => void;
+}) {
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  // Same Google prompt the desktop header's Search pill runs.
+  const onSearch = () => {
+    const q = window.prompt("Search Google for:")?.trim();
+    if (!q) return;
+    const a = document.createElement("a");
+    a.href = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+    a.target = "_blank"; a.rel = "noopener noreferrer";
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+
+  const close = () => setMoreOpen(false);
+  const act = (fn: () => void) => () => { close(); fn(); };
+
   return (
-    <div
-      className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-background/95 backdrop-blur-md border-t border-border pt-2 px-3"
-      style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
-    >
-      {/* Single primary entry point. The other intents (Search / Add Task /
-          Draft) live as chips inside the ChatPanel empty state — surfacing
-          them on home would compete with the Brief + ambient bento for
-          attention. Two-tap path is acceptable for those non-primary actions. */}
-      <button
-        type="button"
-        onClick={onChat}
-        aria-label="Open chat"
-        className="w-full flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border border-primary/40 bg-primary/[0.07] text-left text-[14px] text-foreground/90 active:bg-primary/[0.13] transition-colors"
+    <>
+      <div
+        className="md:hidden fixed inset-x-0 bottom-0 z-40 bg-background/95 backdrop-blur-md border-t border-border pt-2 px-3"
+        style={{ paddingBottom: "max(env(safe-area-inset-bottom), 0.5rem)" }}
       >
-        <Sparkles size={16} className="text-success flex-shrink-0" />
-        <span className="flex-1 truncate">Ask anything…</span>
-        <Send size={15} className="text-success flex-shrink-0" />
-      </button>
-    </div>
+        <div className="flex items-center gap-2">
+          {/* Single primary entry point. The other intents (Search / Add Task /
+              Draft) live as chips inside the ChatPanel empty state — surfacing
+              them on home would compete with the Brief + ambient bento for
+              attention. Two-tap path is acceptable for those non-primary actions. */}
+          <button
+            type="button"
+            onClick={onChat}
+            aria-label="Open chat"
+            className="flex-1 flex items-center gap-2.5 px-4 py-3.5 rounded-2xl border border-primary/40 bg-primary/[0.07] text-left text-[14px] text-foreground/90 active:bg-primary/[0.13] transition-colors"
+          >
+            <Sparkles size={16} className="text-success flex-shrink-0" />
+            <span className="flex-1 truncate">Ask anything…</span>
+            <Send size={15} className="text-success flex-shrink-0" />
+          </button>
+          {/* More — the header actions that don't fit on a phone. */}
+          <button
+            type="button"
+            onClick={() => setMoreOpen(true)}
+            aria-label="More actions"
+            className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-2xl border border-border bg-card text-foreground/80 active:bg-secondary transition-colors"
+          >
+            <MoreHorizontal size={18} />
+          </button>
+        </div>
+      </div>
+
+      {moreOpen && (
+        <div className="md:hidden fixed inset-0 z-50" role="dialog" aria-label="More actions">
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={close}
+            className="absolute inset-0 bg-foreground/30 backdrop-blur-sm"
+          />
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-t-3xl glass-elevated p-4 pt-3"
+            style={{ paddingBottom: "max(env(safe-area-inset-bottom), 1rem)" }}
+          >
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
+            <div className="grid grid-cols-1 gap-1">
+              <button type="button" onClick={act(onSearch)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <Search size={16} style={{ color: "var(--professional)" }} /> Search
+              </button>
+              <div className="flex items-center gap-3 rounded-xl px-3 py-1 [&>button]:w-full [&>button]:justify-start">
+                <Plus size={16} style={{ color: "var(--learning)" }} />
+                <AddTaskButton />
+              </div>
+              <button type="button" onClick={act(onCompose)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <PenLine size={16} style={{ color: "var(--social)" }} /> Compose
+              </button>
+              <button type="button" onClick={act(onYou)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <User size={16} style={{ color: "var(--personal)" }} /> You
+              </button>
+              <div className="flex items-center gap-3 rounded-xl px-3 py-1 [&>button]:w-full [&>button]:justify-start">
+                <Moon size={16} style={{ color: "var(--primary)" }} />
+                <BriefingsButton />
+              </div>
+              <Link to="/workspace/connections" onClick={close}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <Plug size={16} style={{ color: "var(--professional)" }} /> Connect
+              </Link>
+              <button type="button" onClick={act(onTest)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <Sparkles size={16} style={{ color: "var(--family)" }} /> Test
+              </button>
+              <Link to="/workspace/personalization" onClick={close}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <Shield size={16} style={{ color: "var(--learning)" }} /> Personalization
+              </Link>
+              <button type="button" onClick={act(onSignOut)}
+                className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                <LogOut size={16} className="text-muted-foreground" /> Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
