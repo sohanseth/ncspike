@@ -1304,7 +1304,9 @@ export type Database = {
           pii_scrub_events_deleted: number
           push_permission_events_deleted: number
           research_tasks_deleted: number
+          search_queries_deleted: number
           tool_invocations_deleted: number
+          voice_profiles_deleted: number
         }[]
       }
       cleanup_relay: { Args: never; Returns: Json }
@@ -1319,6 +1321,8 @@ export type Database = {
           chat_message_attachments_deleted: number
           chat_messages_deleted: number
           chat_threads_deleted: number
+          connections_deleted: number
+          drafts_deleted: number
           extraction_failures_deleted: number
           inference_usage_daily_deleted: number
           inference_usage_deleted: number
@@ -1328,12 +1332,16 @@ export type Database = {
           relay_cards_deleted: number
           relay_devices_deleted: number
           relay_pairing_codes_deleted: number
+          research_tasks_deleted: number
           search_queries_deleted: number
+          user_endpoints_deleted: number
           user_known_names_deleted: number
           user_provider_category_blocks_del: number
           user_settings_deleted: number
           user_trait_blocks_deleted: number
           user_traits_deleted: number
+          voice_profiles_deleted: number
+          watchers_deleted: number
         }[]
       }
       import_known_names: {
