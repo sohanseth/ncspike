@@ -149,6 +149,18 @@ type SupabaseAdminMock = {
     data: Array<Record<string, number>> | null;
     error: { message: string } | null;
   }>;
+  auth: {
+    admin: {
+      signOut(): Promise<{ error: null }>;
+      deleteUser(): Promise<{ error: null }>;
+    };
+  };
+  storage: {
+    from(bucket: string): {
+      list(): Promise<{ data: Row[]; error: null }>;
+      remove(): Promise<{ error: null }>;
+    };
+  };
 };
 
 type Fixture = {

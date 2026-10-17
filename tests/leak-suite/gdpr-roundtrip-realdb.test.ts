@@ -151,6 +151,31 @@ const SEEDS: Record<string, SeedRow> = {
     columns: ["agent_id", "user_id", "key", "value"],
     values: ["00000000-0000-0000-0000-000000000000", userId, "cursor", { v: 1 }],
   }),
+  // ─── Privacy fixes (migration 20261018000000_*) — newly wiped tables ─────
+  connections: (userId) => ({
+    columns: ["user_id", "provider"],
+    values: [userId, "gmail"],
+  }),
+  drafts: (userId) => ({
+    columns: ["user_id", "template", "body_encrypted", "chars_in_draft"],
+    values: [userId, "reply", "enc-seed", 10],
+  }),
+  voice_profiles: (userId) => ({
+    columns: ["user_id", "expires_at"],
+    values: [userId, new Date(Date.now() + 86_400_000)],
+  }),
+  research_tasks: (userId) => ({
+    columns: ["user_id", "tool_id", "input", "input_key"],
+    values: [userId, "research_thread_context", {}, "seed-key"],
+  }),
+  user_endpoints: (userId) => ({
+    columns: ["user_id"],
+    values: [userId],
+  }),
+  watchers: (userId) => ({
+    columns: ["user_id", "kind", "target", "rule"],
+    values: [userId, "web", "example.com", {}],
+  }),
 };
 
 // ─── Ensure every EXPORT_TABLES entry has a seed strategy ──────────────────
