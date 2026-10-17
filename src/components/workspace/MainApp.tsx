@@ -4454,7 +4454,13 @@ export function MainApp() {
           Hides when any modal is open. Other intents (Search/Task/Draft)
           are chips inside the ChatPanel empty state, two taps away. */}
       {tool === null && !voiceOpen && !exploreOpen && !domain && (
-        <MobileQuickBar onChat={() => setTool("chat")} />
+        <MobileQuickBar
+          onChat={() => setTool("chat")}
+          onCompose={() => setTool("compose")}
+          onYou={handleExplore}
+          onTest={handleTest}
+          onSignOut={async () => { await signOut(); navigate({ to: "/auth" }); }}
+        />
       )}
 
       {/* Modals */}
