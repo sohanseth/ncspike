@@ -21,3 +21,15 @@
 - [x] Add Mac pairing settings and signed-in Worth knowing cards using the shared demo card view.
 - [x] Verify encryption vectors, key storage, page isolation, and full suite (396 passed; 32 real-database tests skipped without their test settings).
 - [x] Verify signed-in pairing, card read-back, persistent dismissal, and disconnection in the browser.
+## Privacy fixes (prompt D)
+- [ ] 1. Full account deletion: sign out sessions, revoke Google tokens, wipe storage, extend delete_user_data (new tables + service_role-only), delete auth user; export new tables (no tokens, decrypted drafts/voice); update privacy wording
+- [ ] 2. Google disconnect: shared-token semantics, revoke on last disconnect, always delete row
+- [ ] 3. Voice Drafts consent wording + null out voice_drafts_consent_at; buildVoiceProfile refuses without consent
+- [ ] 4. Stop auto-queueing sender research in Gmail pull; cancel queued tasks
+- [ ] 5. WhatsApp entry points → 410 gone
+- [ ] 6. supabase/functions/chat → 410 gone
+- [ ] 7. Scrub personal data from logs (8 files)
+- [ ] 8. Retention: search_queries 30d, expired voice_profiles, orphaned chat-attachments files
+- [ ] 9. capacitor.config.ts: https server.url, no cleartext
+- [ ] 10. Mobile "More" bottom sheet with nine header actions
+- [ ] 11. New tests for all of the above; full suite green
