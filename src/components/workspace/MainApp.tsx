@@ -4381,6 +4381,8 @@ function ScoutCanvas({ tasks, onNewTask }: { tasks: AgentTask[]; onNewTask:()=>v
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export function MainApp() {
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
   const [mapView,     setMapView]     = useState<MapView|null>(null);
   const [tool,        setTool]        = useState<Tool>(null);
   const [domain,      setDomain]      = useState<DomainId|"other"|null>(null);
