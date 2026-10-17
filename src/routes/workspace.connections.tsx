@@ -76,6 +76,7 @@ function ConnectionsPage() {
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const [calSlots, setCalSlots] = useState<Array<{ human: string; startIso: string }> | null>(null);
   const [calError, setCalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !user) navigate({ to: "/auth" });
