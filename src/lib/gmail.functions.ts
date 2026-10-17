@@ -350,65 +350,78 @@ export const markInboxItemDone = createServerFn({ method: "POST" })
  *     if revocation fails — in that case the UI shows the
  *     myaccount.google.com/permissions link.
  */
+export type DisconnectResult = {
+  ok: true;
+  /** True when another Google connection still shares the token. */
+  otherGoogleRemain: boolean;
+  /** True when we tried to revoke at Google and it failed. */
+  revokeFailed: boolean;
+};
+
+/**
+ * Pure handler for disconnectProvider — exported for direct testing. The
+ * server-fn wrapper only resolves the userId from auth context.
+ */
+export async function disconnectProviderFor(
+  userId: string,
+  provider: "gmail" | "google_calendar",
+): Promise<DisconnectResult> {
+  const otherProvider = provider === "gmail" ? "google_calendar" : "gmail";
+  const { data: other } = await supabaseAdmin
+    .from("connections")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("provider", otherProvider)
+    .maybeSingle();
+
+  let revokeFailed = false;
+  if (!other) {
+    // Last Google connection — try to revoke the shared token at Google.
+    const { data: conn } = await supabaseAdmin
+      .from("connections")
+      .select("access_token_encrypted, refresh_token_encrypted")
+      .eq("user_id", userId)
+      .eq("provider", provider)
+      .maybeSingle();
+    try {
+      const token = conn?.refresh_token_encrypted
+        ? decryptToken(conn.refresh_token_encrypted)
+        : conn?.access_token_encrypted
+          ? decryptToken(conn.access_token_encrypted)
+          : null;
+      if (token) {
+        const res = await fetch("https://oauth2.googleapis.com/revoke", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token }),
+        });
+        if (!res.ok) {
+          revokeFailed = true;
+          console.warn("[connections] google revoke failed: http", res.status);
+        }
+      }
+    } catch (e) {
+      revokeFailed = true;
+      console.warn(
+        "[connections] google revoke threw:",
+        e instanceof Error ? e.name : "Error",
+      );
+    }
+  }
+
+  // Always delete the row, even if revocation failed.
+  const { error } = await supabaseAdmin
+    .from("connections")
+    .delete()
+    .eq("user_id", userId)
+    .eq("provider", provider);
+  if (error) throw error;
+  return { ok: true, otherGoogleRemain: !!other, revokeFailed };
+}
+
 export const disconnectProvider = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { provider: "gmail" | "google_calendar" }) => d)
-  .handler(async ({ data, context }): Promise<{
-    ok: true;
-    /** True when another Google connection still shares the token. */
-    otherGoogleRemain: boolean;
-    /** True when we tried to revoke at Google and it failed. */
-    revokeFailed: boolean;
-  }> => {
-    const otherProvider = data.provider === "gmail" ? "google_calendar" : "gmail";
-    const { data: other } = await supabaseAdmin
-      .from("connections")
-      .select("id")
-      .eq("user_id", context.userId)
-      .eq("provider", otherProvider)
-      .maybeSingle();
-
-    let revokeFailed = false;
-    if (!other) {
-      // Last Google connection — try to revoke the shared token at Google.
-      const { data: conn } = await supabaseAdmin
-        .from("connections")
-        .select("access_token_encrypted, refresh_token_encrypted")
-        .eq("user_id", context.userId)
-        .eq("provider", data.provider)
-        .maybeSingle();
-      try {
-        const token = conn?.refresh_token_encrypted
-          ? decryptToken(conn.refresh_token_encrypted)
-          : conn?.access_token_encrypted
-            ? decryptToken(conn.access_token_encrypted)
-            : null;
-        if (token) {
-          const res = await fetch("https://oauth2.googleapis.com/revoke", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams({ token }),
-          });
-          if (!res.ok) {
-            revokeFailed = true;
-            console.warn("[connections] google revoke failed: http", res.status);
-          }
-        }
-      } catch (e) {
-        revokeFailed = true;
-        console.warn(
-          "[connections] google revoke threw:",
-          e instanceof Error ? e.name : "Error",
-        );
-      }
-    }
-
-    // Always delete the row, even if revocation failed.
-    const { error } = await supabaseAdmin
-      .from("connections")
-      .delete()
-      .eq("user_id", context.userId)
-      .eq("provider", data.provider);
-    if (error) throw error;
-    return { ok: true, otherGoogleRemain: !!other, revokeFailed };
-  });
+  .handler(({ data, context }): Promise<DisconnectResult> =>
+    disconnectProviderFor(context.userId, data.provider),
+  );
