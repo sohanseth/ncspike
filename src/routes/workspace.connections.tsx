@@ -119,8 +119,17 @@ function ConnectionsPage() {
 
   const onDisconnect = async (provider: "gmail" | "google_calendar") => {
     setBusy(provider);
+    setNotice(null);
     try {
-      await disconnectProvider({ data: { provider } });
+      const res = await disconnectProvider({ data: { provider } });
+      if (res.otherGoogleRemain) {
+        const other = provider === "gmail" ? "your calendar" : "your mail";
+        setNotice(`Google still lets NeuralConnexions read ${other} until you disconnect it too.`);
+      } else if (res.revokeFailed) {
+        setNotice(
+          "Disconnected, but we couldn't cancel Google's access from here — please remove NeuralConnexions at https://myaccount.google.com/permissions.",
+        );
+      }
       await refresh();
     } finally {
       setBusy(null);
