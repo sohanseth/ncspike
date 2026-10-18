@@ -211,6 +211,11 @@ export const getVoiceProfile = createServerFn({ method: "POST" })
 export const buildVoiceProfile = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_on_server");
+      void noteCloudActivity(context.userId, "email_on_server", "gmail");
+    }
     // Building the profile reads the sent folder, so it needs the same
     // informed consent as drafting.
     await assertCanDraft(context.userId);
@@ -301,6 +306,11 @@ export const setVoiceDraftsConsent = createServerFn({ method: "POST" })
         { onConflict: "user_id" },
       );
     if (error) throw error;
+    // "I understand, enable" is also the email_ai consent (prompt E).
+    if (data.accept) {
+      const { recordConsent } = await import("@/server/cloud-features.server");
+      await recordConsent(context.userId, "email_ai", true, "prompt");
+    }
     return { consentedAt };
   });
 
@@ -465,6 +475,11 @@ export const analyzeDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { memoryNodeId: string }) => d)
   .handler(async ({ data, context }): Promise<AnalyzeResult> => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_ai");
+      void noteCloudActivity(context.userId, "email_ai", "lovable-gemini");
+    }
     await assertCanDraft(context.userId);
     const email = await loadIncomingEmail(context.userId, data.memoryNodeId);
     const analysis = await analyzeEmailForDraft(email);
@@ -492,6 +507,11 @@ export const draftReply = createServerFn({ method: "POST" })
     followUp?: { afterDays: number; summary: string };
   }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_ai");
+      void noteCloudActivity(context.userId, "email_ai", "lovable-gemini");
+    }
     await assertCanDraft(context.userId);
     const [profile, email] = await Promise.all([
       loadVoiceProfileForUser(context.userId),
@@ -551,6 +571,11 @@ export const regenerateDraft = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { draftId: string; clarifications?: Record<string, string> }) => d)
   .handler(async ({ data, context }): Promise<DraftPayload> => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_ai");
+      void noteCloudActivity(context.userId, "email_ai", "lovable-gemini");
+    }
     await assertCanDraft(context.userId);
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from("drafts")
@@ -686,6 +711,27 @@ export const runAgentTool = createServerFn({ method: "POST" })
   // express `unknown` here (TanStack Start's serialization type-guard rejects
   // it), so `any` is correct at the framework boundary.
   .handler(async ({ data, context }): Promise<{ ok: true; result: any } | { ok: false; error: string }> => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "calendar_on_server");
+      void noteCloudActivity(context.userId, "calendar_on_server", "google-calendar");
+    }
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "calendar_on_server");
+      void noteCloudActivity(context.userId, "calendar_on_server", "google-calendar");
+    }
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "calendar_on_server");
+      void noteCloudActivity(context.userId, "calendar_on_server", "google-calendar");
+    }
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      const feature = data.toolId === "research_thread_context" ? "email_ai" : "calendar_on_server";
+      await requireCloudFeature(context.userId, feature);
+      void noteCloudActivity(context.userId, feature, feature === "email_ai" ? "lovable-gemini" : "google-calendar");
+    }
     try {
       const { enforceToolRateLimit } = await import("@/server/rate-limit.server");
       const decision = await enforceToolRateLimit(context.userId, data.toolId);
@@ -731,6 +777,11 @@ export const enqueueResearchTaskFn = createServerFn({ method: "POST" })
     }) => d,
   )
   .handler(async ({ data, context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_ai");
+      void noteCloudActivity;
+    }
     const { enqueueResearchTask } = await import("@/server/research-queue");
     return enqueueResearchTask(context.userId, data);
   });
@@ -753,6 +804,11 @@ export const runResearchBatchFn = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d?: { limit?: number }) => d ?? {})
   .handler(async ({ data, context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_ai");
+      void noteCloudActivity;
+    }
     const { runResearchBatch } = await import("@/server/research-queue");
     return runResearchBatch(context.userId, data);
   });

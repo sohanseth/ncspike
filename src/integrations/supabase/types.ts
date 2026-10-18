@@ -412,6 +412,60 @@ export type Database = {
         }
         Relationships: []
       }
+      cloud_activity: {
+        Row: {
+          created_at: string
+          feature: string
+          id: number
+          provider: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          feature: string
+          id?: never
+          provider: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          feature?: string
+          id?: never
+          provider?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      cloud_consents: {
+        Row: {
+          created_at: string
+          feature: string
+          granted: boolean
+          id: number
+          source: string
+          user_id: string
+          wording_version: string
+        }
+        Insert: {
+          created_at?: string
+          feature: string
+          granted: boolean
+          id?: never
+          source: string
+          user_id: string
+          wording_version: string
+        }
+        Update: {
+          created_at?: string
+          feature?: string
+          granted?: boolean
+          id?: never
+          source?: string
+          user_id?: string
+          wording_version?: string
+        }
+        Relationships: []
+      }
       connections: {
         Row: {
           access_token_encrypted: string | null
@@ -1102,6 +1156,7 @@ export type Database = {
           personalization_v1_enabled: boolean
           prefer_local_audio: boolean
           preferred_model: string
+          private_default_applied_at: string | null
           private_only_mode: boolean
           storage_mode: Database["public"]["Enums"]["storage_mode"]
           updated_at: string
@@ -1116,6 +1171,7 @@ export type Database = {
           personalization_v1_enabled?: boolean
           prefer_local_audio?: boolean
           preferred_model?: string
+          private_default_applied_at?: string | null
           private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
@@ -1130,6 +1186,7 @@ export type Database = {
           personalization_v1_enabled?: boolean
           prefer_local_audio?: boolean
           preferred_model?: string
+          private_default_applied_at?: string | null
           private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
@@ -1296,6 +1353,7 @@ export type Database = {
         Returns: {
           auth_callback_rejections_deleted: number
           chat_context_log_deleted: number
+          cloud_activity_deleted: number
           cron_run_deleted: number
           device_tokens_deleted: number
           extraction_failures_deleted: number
@@ -1321,6 +1379,8 @@ export type Database = {
           chat_message_attachments_deleted: number
           chat_messages_deleted: number
           chat_threads_deleted: number
+          cloud_activity_deleted: number
+          cloud_consents_deleted: number
           connections_deleted: number
           drafts_deleted: number
           extraction_failures_deleted: number

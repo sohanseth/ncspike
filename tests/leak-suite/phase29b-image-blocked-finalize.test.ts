@@ -154,11 +154,10 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
     assistantPlaceholderExists = false;
   });
 
-  it("writes exactly one placeholder chat_messages row, no attachment row, metadata.image_blocked=true", async () => {
-    const {
-      finalizeOnDeviceImageGenBlockedTurn,
-      IMAGE_BLOCKED_PLACEHOLDER_TEXT,
-    } = await import("@/lib/chat.functions");
+  it("Prompt E: stores no chat row or attachment, stamps metadata.image_blocked=true", async () => {
+    // Private by default: the blocked-image placeholder lives in the
+    // browser. The server only records content-free telemetry.
+    const { finalizeOnDeviceImageGenBlockedTurn } = await import("@/lib/chat.functions");
 
     const res = await finalizeOnDeviceImageGenBlockedTurn({
       data: {
@@ -171,81 +170,45 @@ describe("Task #32 — finalizeOnDeviceImageGenBlockedTurn server-fn", () => {
         traitSheetVersion: null,
       },
     });
-    expect(res.assistantMessageId).toBe("placeholder-1");
+    expect(typeof res.assistantMessageId).toBe("string");
 
-    // (a) Exactly one chat_messages insert, with the §15.4 placeholder copy.
-    const chatInserts = captured.filter(
-      (c) => c.table === "chat_messages" && c.op === "insert",
-    );
-    expect(chatInserts).toHaveLength(1);
-    const row = chatInserts[0].payload as Record<string, unknown>;
-    expect(row.role).toBe("assistant");
-    expect(row.content).toBe(IMAGE_BLOCKED_PLACEHOLDER_TEXT);
-    expect(row.badge).toBe("private");
-    expect(row.in_reply_to_id).toBe("msg-1");
-    expect(row.thread_id).toBe("thread-1");
-    expect(row.user_id).toBe("test-user-1");
+    expect(captured.filter((c) => c.table === "chat_messages")).toHaveLength(0);
+    expect(captured.filter((c) => c.table === "chat_message_attachments")).toHaveLength(0);
+    expect(captured.filter((c) => c.table === "chat_threads")).toHaveLength(0);
 
-    // (b) NO chat_message_attachments insert — flagged bytes never become
-    // a row pointing at any storage object.
-    const attInserts = captured.filter(
-      (c) => c.table === "chat_message_attachments" && c.op === "insert",
-    );
-    expect(attInserts).toHaveLength(0);
-
-    // (c) inference_usage update stamps metadata.image_blocked=true.
     const usageUpdates = captured.filter(
       (c) => c.table === "inference_usage" && c.op === "update",
     );
     expect(usageUpdates).toHaveLength(1);
-    const meta = (usageUpdates[0].payload as { metadata: unknown }).metadata;
-    // Task #51: the dispatcher now also stamps the structured verdict
-    // category so the CPAUD admin surface can group blocked turns by
-    // reason in addition to adapter.
-    expect(meta).toEqual({
+    expect((usageUpdates[0].payload as { metadata: unknown }).metadata).toEqual({
       image_blocked: true,
       image_blocked_reason: "nsfw",
     });
 
-    // The reserved usage row was finalized to status='error' with
-    // error_class='image_blocked'. `error` rows are excluded from the
-    // cap-counting query, so the user is correctly NOT debited.
-    const finalizeRpc = rpcCalls.find(
-      (c) => c.name === "finalize_inference_usage",
-    );
+    // Finalized to status='error' (not counted toward the cap).
+    const finalizeRpc = rpcCalls.find((c) => c.name === "finalize_inference_usage");
     expect(finalizeRpc).toBeDefined();
     expect(finalizeRpc?.args.p_status).toBe("error");
     expect(finalizeRpc?.args.p_error_class).toBe("image_blocked");
     expect(finalizeRpc?.args.p_usage_id).toBe("usage-1");
-    expect(finalizeRpc?.args.p_message_id).toBe("placeholder-1");
-
-    // No `release_inference_slot` call — finalize replaces release here.
     expect(rpcCalls.find((c) => c.name === "release_inference_slot")).toBeUndefined();
   });
 
-  it("rejects when the user-message doesn't belong to the caller (IDOR guard)", async () => {
+  it("Prompt E: never inserts any row, even with an unknown user message", async () => {
     userMessageExists = false;
-    const { finalizeOnDeviceImageGenBlockedTurn } = await import(
-      "@/lib/chat.functions"
-    );
-    await expect(
-      finalizeOnDeviceImageGenBlockedTurn({
-        data: {
-          threadId: "thread-1",
-          userMessageId: "msg-99",
-          reservedUsageId: "usage-1",
-          adapter: "webgpu-sd-turbo",
-          reason: "nsfw",
-          contextUsed: null,
-          traitSheetVersion: null,
-        },
-      }),
-    ).rejects.toThrow(/user message not found/i);
-
-    // No chat_messages or inference_usage writes happened on the
-    // reject path.
+    const { finalizeOnDeviceImageGenBlockedTurn } = await import("@/lib/chat.functions");
+    await finalizeOnDeviceImageGenBlockedTurn({
+      data: {
+        threadId: "thread-1",
+        userMessageId: "msg-99",
+        reservedUsageId: "usage-1",
+        adapter: "webgpu-sd-turbo",
+        reason: "nsfw",
+        contextUsed: null,
+        traitSheetVersion: null,
+      },
+    });
     expect(captured.some((c) => c.op === "insert")).toBe(false);
-    expect(captured.some((c) => c.table === "inference_usage")).toBe(false);
   });
 
   it("rejects unknown adapter ids at the input validator", async () => {

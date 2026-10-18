@@ -298,6 +298,11 @@ export const webSearch = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d) => InputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "web_search");
+      void noteCloudActivity(context.userId, "web_search", "searxng");
+    }
     const { supabase, userId } = context;
     const q = data.query.trim();
 

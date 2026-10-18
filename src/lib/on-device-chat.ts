@@ -75,7 +75,7 @@ export async function* streamOnDeviceChat(
   let prep: Awaited<ReturnType<typeof prepareOnDeviceTurn>>;
   try {
     prep = await prepareOnDeviceTurn({
-      data: { threadId: input.threadId, content: input.content },
+      data: { threadId: input.threadId },
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Couldn't prepare on-device turn";
@@ -116,7 +116,7 @@ export async function* streamOnDeviceChat(
   // ─── 3. Run on-device generation ────────────────────────────────────────
   const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
     { role: "system", content: prep.systemPrompt },
-    ...prep.history,
+    ...(input.history ?? []).slice(-19),
     { role: "user", content: input.content },
   ];
 

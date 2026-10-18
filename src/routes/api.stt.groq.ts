@@ -23,6 +23,14 @@ export const Route = createFileRoute("/api/stt/groq")({
         const auth = await authenticateAudioRequest(request);
         if (!auth.ok) return auth.response;
 
+        {
+          const cf = await import("@/server/cloud-features.server");
+          if (!(await cf.isCloudFeatureOn(auth.userId, "voice_input"))) {
+            return cf.cloudFeatureOffResponse("voice_input");
+          }
+          void cf.noteCloudActivity(auth.userId, "voice_input", "groq");
+        }
+
         const rl = await enforceAudioRateLimit(auth.userId, "stt-groq");
         if (!rl.ok) return rateLimitResponse(rl);
 

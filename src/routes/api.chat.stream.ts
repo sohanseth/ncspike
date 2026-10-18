@@ -239,6 +239,18 @@ export const Route = createFileRoute("/api/chat/stream")({
         const v = validateBody(raw);
         if (typeof v === "string") return new Response(v, { status: 400 });
 
+        // Private by default: this route always runs hosted inference, so it
+        // refuses before creating a thread, storing text, embedding or
+        // reading attachments unless cloud chat is on. Fails closed.
+        {
+          const { isCloudFeatureOn, cloudFeatureOffResponse } = await import(
+            "@/server/cloud-features.server"
+          );
+          if (!(await isCloudFeatureOn(userId, "cloud_chat"))) {
+            return cloudFeatureOffResponse("cloud_chat");
+          }
+        }
+
         // Resolve thread up-front so we can include the id in the meta event.
         let threadId = v.threadId;
         if (threadId) {
@@ -636,7 +648,8 @@ export const Route = createFileRoute("/api/chat/stream")({
           traitSheetVersion: null,
         };
         try {
-          broker = await assembleSystemPrompt({
+          // A PRIVATE turn's message never goes to the embedding service.
+          if (effectiveBadge !== "private") broker = await assembleSystemPrompt({
             userId,
             query: v.content,
             badge: effectiveBadge,

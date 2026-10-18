@@ -40,14 +40,38 @@ import type { Badge as VoiceBadge } from "@/lib/voice-types";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
+import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
+import { CLOUD_FEATURE_OFF_MESSAGE } from "@/lib/cloud-features";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
 const DEFAULT_TTS_VOICE = "JBFqnCBsd6RMkjVDRZzb";
 
 /** Play assistant text via the proxied ElevenLabs endpoint. PRIVATE badge skips. */
-async function playAssistantTts(text: string, badge: VoiceBadge): Promise<HTMLAudioElement | null> {
+/** Read text with the device's own voice (never a network voice). */
+export function speakOnDevice(text: string): boolean {
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return false;
+  const voices = window.speechSynthesis.getVoices();
+  const local = voices.find((v) => v.localService && v.lang.startsWith(navigator.language.slice(0, 2)))
+    ?? voices.find((v) => v.localService);
+  if (!local) return false;
+  const u = new SpeechSynthesisUtterance(text.slice(0, 5000));
+  u.voice = local;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+  return true;
+}
+
+async function playAssistantTts(
+  text: string,
+  badge: VoiceBadge,
+  cloudVoice = true,
+): Promise<HTMLAudioElement | null> {
   if (badge === "PRIVATE" || !text.trim()) return null;
+  if (!cloudVoice) {
+    speakOnDevice(text);
+    return null;
+  }
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) return null;
@@ -2767,6 +2791,12 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [model, setModel] = useState<AIModel>("flash");
+  // Private by default: hosted badges are locked until "Cloud chat" is on.
+  const cloud = useCloudConsent();
+  const cloudChatOn = cloud.isOn("cloud_chat");
+  useEffect(() => {
+    if (cloud.features && !cloudChatOn) setModel("private");
+  }, [cloud.features, cloudChatOn]);
   const [messages, setMessages] = useState<LiveChatMsg[]>([]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -2852,6 +2882,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
       throw new Error("BUSY");
     }
     setError(null);
+    if (model !== "private" && !(await cloud.ensure("cloud_chat"))) {
+      return { provider: null, text: "" };
+    }
     setSending(true);
 
     // Upload attachments first so we can include their storage paths.
@@ -2883,7 +2916,14 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     let assistantText = "";
     try {
       const { streamChatMessage } = await import("@/lib/chat-stream");
-      const stream = streamChatMessage({ threadId, content: text, badge: model, attachments: attachmentPaths });
+      // PRIVATE: earlier turns stay in this browser and are passed in here.
+      const history = model === "private"
+        ? messagesRef.current
+            .filter((m) => m.text && !m.searchQuery)
+            .slice(-19)
+            .map((m) => ({ role: m.role, content: m.text }))
+        : undefined;
+      const stream = streamChatMessage({ threadId, content: text, badge: model, attachments: attachmentPaths, history });
       for await (const evt of stream) {
         if (evt.kind === "init") {
           setThreadId(evt.threadId);
@@ -2975,6 +3015,10 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
             break;
           }
           errorMsg = evt.message;
+          if (evt.type === "cloud_feature_off") {
+            errorMsg = CLOUD_FEATURE_OFF_MESSAGE;
+            void cloud.refresh();
+          }
           // Friendly cap-exceeded toast (spec §1 line 351 / §A1 line 386).
           if (evt.type === "cap_exceeded") {
             const badgeLabel = (evt.badge ?? model).toString().toUpperCase();
@@ -3011,13 +3055,19 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     }
     if (finalProvider) setLastLlmProvider(finalProvider);
     return { provider: finalProvider, text: assistantText };
-  }, [threadId, model]);
+  }, [threadId, model, cloud]);
 
   const handleSend = useCallback(() => {
     const text = input.trim();
     if ((!text && attachments.length === 0) || sending) return;
 
     // Mode dispatch — Search and Task short-circuit the chat pipeline.
+    if (inputMode === "search" && text && !cloud.isOn("web_search")) {
+      void cloud.ensure("web_search").then((ok) => {
+        if (ok) setTimeout(() => handleSendRef.current?.(), 0);
+      });
+      return;
+    }
     if (inputMode === "search" && text) {
       // Push the query as a user message + a "Searching…" assistant
       // placeholder, then call SearXNG and replace the placeholder with the
@@ -3092,7 +3142,9 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     setInput("");
     setAttachments([]);
     void runChatTurn(text, pending).catch(() => { /* keyboard path can't BUSY-race itself */ });
-  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask, runWebSearch]);
+  }, [input, attachments, sending, model, runChatTurn, inputMode, addTask, runWebSearch, cloud]);
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
 
   // Unified Converse seam: voice turns stream into the same thread as the
   // keyboard input, then auto-play the assembled assistant text via the
@@ -3107,7 +3159,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
       ttsAudioRef.current = null;
       if (replyText && badge !== "PRIVATE") {
         try {
-          ttsAudioRef.current = await playAssistantTts(replyText, badge);
+          ttsAudioRef.current = await playAssistantTts(replyText, badge, cloud.isOn("voice_replies"));
         } catch {
           /* TTS is best-effort — text reply already rendered. */
         }
@@ -3122,7 +3174,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
       }
       throw e;
     }
-  }, [runChatTurn]);
+  }, [runChatTurn, cloud]);
 
   if(!open) return null;
 
@@ -3623,6 +3675,21 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
                       });
                     }}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border border-border bg-muted text-muted-foreground cursor-not-allowed relative"
+                  >
+                    <Icon size={9}/>
+                    {m.label}
+                    <Lock size={8} className="ml-0.5 opacity-60"/>
+                  </button>
+                );
+              }
+              if (m.id !== "private" && !cloudChatOn) {
+                return (
+                  <button
+                    key={m.id}
+                    type="button"
+                    title="Turn on Cloud chat to use this model"
+                    onClick={() => { void cloud.ensure("cloud_chat").then((ok) => { if (ok) setModel(m.id); }); }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wide border border-border bg-muted text-muted-foreground"
                   >
                     <Icon size={9}/>
                     {m.label}

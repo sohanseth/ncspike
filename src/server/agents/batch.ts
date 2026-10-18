@@ -87,7 +87,17 @@ export async function runAgentBatch(deps: RunnerDeps): Promise<{
 
   for (const agent of agents) {
     try {
-      const run = await execute(agent, deps);
+      // Private by default: agents run only when their owner has "Research
+      // agents" on. Mac-started agents (relay_missions) run without it —
+      // pressing Start on the Mac is the consent for their topics — but
+      // never with the person's trait summary.
+      const gate = await agentConsentGate(agent.user_id, agent.id);
+      if (gate === "skip") continue;
+      const runDeps: RunnerDeps =
+        gate === "mac"
+          ? { ...deps, assembleBroker: async () => ({ fragment: "", resolvedTier: -1 }) }
+          : deps;
+      const run = await execute(agent, runDeps);
       // 'ok' / 'partial_success' / 'skipped_*' are all "the runner
       // reached finalize without a crash". 'failed' means the runner
       // caught a thrown exception and recorded it — also not a batch
@@ -113,6 +123,31 @@ export async function runAgentBatch(deps: RunnerDeps): Promise<{
   }
 
   return { sweptTimedOut, claimed, succeeded, failed };
+}
+
+/** "run" (consent on), "mac" (Mac-started, no trait summary) or "skip". */
+export async function agentConsentGate(
+  userId: string,
+  agentId: string,
+): Promise<"run" | "mac" | "skip"> {
+  let mac = false;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabaseAdmin as any)
+      .from("relay_missions")
+      .select("id")
+      .eq("agent_id", agentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    mac = !error && !!data;
+  } catch {
+    mac = false;
+  }
+  if (mac) return "mac";
+  const { isCloudFeatureOn, noteCloudActivity } = await import("@/server/cloud-features.server");
+  if (!(await isCloudFeatureOn(userId, "overnight_research"))) return "skip";
+  void noteCloudActivity(userId, "overnight_research", "search+flash");
+  return "run";
 }
 
 /**
