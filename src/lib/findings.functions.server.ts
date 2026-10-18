@@ -2,11 +2,11 @@
  * Phase 3.0 — findings inbox (server-only handler).
  *
  * Server-only impl of `listFindingsFor`. Lives in a `.server.ts` sibling
- * to keep the `@/server/agents/error-scrub` import out of the client
+ * to keep the `@/lib/error-scrub` import out of the client
  * bundle — see the long-form rationale in `agents.functions.server.ts`.
  */
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 
 import {
   ListFindingsInputSchema,
