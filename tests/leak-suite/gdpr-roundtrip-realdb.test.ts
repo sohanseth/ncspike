@@ -176,6 +176,14 @@ const SEEDS: Record<string, SeedRow> = {
     columns: ["user_id", "kind", "target", "rule"],
     values: [userId, "web", "example.com", {}],
   }),
+  cloud_consents: (userId) => ({
+    columns: ["user_id", "feature", "granted", "wording_version", "source"],
+    values: [userId, "cloud_chat", true, "2026-10-17", "settings"],
+  }),
+  cloud_activity: (userId) => ({
+    columns: ["user_id", "feature", "provider"],
+    values: [userId, "web_search", "searxng"],
+  }),
 };
 
 // ─── Ensure every EXPORT_TABLES entry has a seed strategy ──────────────────

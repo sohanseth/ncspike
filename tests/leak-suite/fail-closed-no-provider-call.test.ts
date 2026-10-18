@@ -77,6 +77,14 @@ vi.mock("@supabase/supabase-js", () => ({
   }),
 }));
 
+// Prompt E: hosted chat needs cloud chat consent. This suite exercises the
+// broker fail-closed path, which runs only once that consent is on.
+vi.mock("@/server/cloud-features.server", () => ({
+  isCloudFeatureOn: async () => true,
+  requireCloudFeature: async () => {},
+  cloudFeatureOffResponse: () => new Response("{}", { status: 403 }),
+}));
+
 // ─── supabaseAdmin: minimal but flexible chainable stub. ───────────────────
 // Returns rows shaped like the columns each call site selects, count=0 for
 // the cap-check head query, and empty lists for everything else.
@@ -267,17 +275,17 @@ describe("Fail-closed: broker errors never reach a hosted provider", () => {
     expect(providerGenerateSpy).not.toHaveBeenCalled();
   });
 
-  it("prepareOnDeviceTurn: broker throw → SCRUB_BLOCKED:context, runChain never called", async () => {
-    // The on-device path runs inference on the user's device, not via the
-    // chain runner — but it ALSO must surface SCRUB_BLOCKED rather than
-    // silently substitute the default prompt, so a future refactor can't
-    // re-introduce the same fail-OPEN bug on this entry point.
+  it("prepareOnDeviceTurn: never calls the broker or a provider (PRIVATE stays on device)", async () => {
+    // Prompt E step 5: a PRIVATE turn sends no message to the server, so the
+    // broker (and its query embedding) cannot run and no provider is called.
+    // Even with the broker rigged to throw, prepare only books the cap slot.
     const { prepareOnDeviceTurn } = await import("@/lib/chat.functions");
-    await expect(
-      (prepareOnDeviceTurn as unknown as (i: unknown) => Promise<unknown>)({
-        data: { threadId: null, content: "hi" },
-      }),
-    ).rejects.toThrow("SCRUB_BLOCKED:context");
+    const out = (await (prepareOnDeviceTurn as unknown as (i: unknown) => Promise<unknown>)({
+      data: { threadId: null, content: "hi" },
+    })) as { systemPrompt: string; history: unknown[]; contextUsed: unknown };
+    expect(out.history).toEqual([]);
+    expect(out.contextUsed).toBeNull();
+    expect(out.systemPrompt).not.toContain("hi");
     expect(runChainSpy).not.toHaveBeenCalled();
     expect(getProviderSpy).not.toHaveBeenCalled();
     expect(providerGenerateSpy).not.toHaveBeenCalled();
