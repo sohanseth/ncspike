@@ -291,7 +291,8 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       traitSheetVersion: null,
     };
     try {
-      broker = await assembleSystemPrompt({
+      // A PRIVATE turn's message never goes to the embedding service.
+      if (effectiveBadge !== "private") broker = await assembleSystemPrompt({
         userId,
         query: data.content,
         badge: effectiveBadge,

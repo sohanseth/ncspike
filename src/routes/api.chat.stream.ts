@@ -648,7 +648,8 @@ export const Route = createFileRoute("/api/chat/stream")({
           traitSheetVersion: null,
         };
         try {
-          broker = await assembleSystemPrompt({
+          // A PRIVATE turn's message never goes to the embedding service.
+          if (effectiveBadge !== "private") broker = await assembleSystemPrompt({
             userId,
             query: v.content,
             badge: effectiveBadge,
