@@ -2798,6 +2798,8 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
     if (cloud.features && !cloudChatOn) setModel("private");
   }, [cloud.features, cloudChatOn]);
   const [messages, setMessages] = useState<LiveChatMsg[]>([]);
+  const messagesRef = useRef<LiveChatMsg[]>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
   const [threadId, setThreadId] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -3710,6 +3712,7 @@ function ChatPanel({ open, onClose, onSwitchToCompose }: { open:boolean; onClose
         </div>
       </div>
 
+      {cloud.sheet}
       {lightboxSrc && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center p-6 cursor-zoom-out"
