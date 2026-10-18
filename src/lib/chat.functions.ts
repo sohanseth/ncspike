@@ -445,52 +445,23 @@ export type PrepareOnDeviceTurnResult = {
 
 export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((d: PrepareOnDeviceTurnInput): PrepareOnDeviceTurnInput => {
-    if (!d || typeof d !== "object") throw new Error("Invalid input");
-    if (typeof d.content !== "string" || d.content.trim().length === 0) {
-      throw new Error("Message content is required");
-    }
-    if (d.content.length > 8000) throw new Error("Message too long (max 8000 chars)");
-    if (d.threadId !== null && typeof d.threadId !== "string") {
-      throw new Error("Invalid threadId");
-    }
-    return { threadId: d.threadId, content: d.content.trim() };
+  .inputValidator((d: Partial<PrepareOnDeviceTurnInput> | undefined): PrepareOnDeviceTurnInput => {
+    // Private by default (prompt E step 5): a PRIVATE turn sends no
+    // question to the server. Any content a stale client sends is dropped
+    // here, before the handler.
+    const threadId = d && typeof d.threadId === "string" ? d.threadId : null;
+    return { threadId, content: "" };
   })
   .handler(async ({ data, context }): Promise<PrepareOnDeviceTurnResult> => {
     const userId = context.userId;
     const badge: Badge = "private";
-
-    // 1. Resolve thread + ownership check (mirrors sendChatMessage).
-    let threadId = data.threadId;
-    if (threadId) {
-      const { data: existing, error: oErr } = await supabaseAdmin
-        .from("chat_threads")
-        .select("id")
-        .eq("id", threadId)
-        .eq("user_id", userId)
-        .maybeSingle();
-      if (oErr) throw oErr;
-      if (!existing) throw new Error("Thread not found");
-    } else {
-      const title = data.content.slice(0, 60).replace(/\s+/g, " ").trim() || "New chat";
-      const { data: t, error: tErr } = await supabaseAdmin
-        .from("chat_threads")
-        .insert({ user_id: userId, title })
-        .select("id")
-        .single();
-      if (tErr) throw tErr;
-      threadId = t.id;
-    }
-
-    // 2. Cap check BEFORE persisting the user row. Convert CapExceededError
-    //    into a structured error string the on-device dispatcher parses
-    //    into a typed `cap_exceeded` event. The atomic reservation is
-    //    threaded out via reservedUsageId so finalizeOnDeviceTurn can
-    //    flip the same row to status='ok' (race-proof — task #8).
+    // Cap check only. No thread, no message row, no broker call: the
+    // conversation stays in the browser, and the personalization summary
+    // is not fetched because the broker needs the message to pick it.
     const paidTier = await getPaidTier(userId);
     let reservedUsageId: string;
     try {
-      const r = await assertCap({ userId, threadId, badge, paidTier });
+      const r = await assertCap({ userId, threadId: null, badge, paidTier });
       reservedUsageId = r.usageId;
     } catch (e) {
       if (e instanceof CapExceededError) {
@@ -498,95 +469,16 @@ export const prepareOnDeviceTurn = createServerFn({ method: "POST" })
       }
       throw e;
     }
-
-    // From here on, any thrown error must release the reserved cap slot
-    // — the user shouldn't be debited for a turn that never produces an
-    // assistant reply. (task #8)
-    try {
-
-    // 3. Persist the user message.
-    const { data: userRow, error: uErr } = await supabaseAdmin
-      .from("chat_messages")
-      .insert({
-        user_id: userId,
-        thread_id: threadId,
-        role: "user",
-        content: data.content,
-        badge,
-      })
-      .select("id")
-      .single();
-    if (uErr) throw uErr;
-
-    // 4. Load history for context.
-    const { data: history, error: hErr } = await supabaseAdmin
-      .from("chat_messages")
-      .select("role, content, created_at")
-      .eq("user_id", userId)
-      .eq("thread_id", threadId)
-      .neq("id", userRow.id)
-      .order("created_at", { ascending: false })
-      .limit(HISTORY_WINDOW - 1);
-    if (hErr) throw hErr;
-
-    const historyMessages = (history ?? [])
-      .reverse()
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
-    // 5. Broker at tier -1 (full personalization since data never leaves
-    //    the device). Best-effort; default to empty system prompt on failure.
-    let broker: AssembleResult = {
-      fragment: "",
-      contextUsed: { categories: [], trait_paths: [] },
-      scrubBlocked: false,
-      traitSheetVersion: null,
-    };
-    try {
-      broker = await assembleSystemPrompt({
-        userId,
-        query: data.content,
-        badge,
-        strictestTierInChain: -1,
-      });
-    } catch (e) {
-      // Fail-CLOSED on any broker exception. Even though tier=-1 means data
-      // never leaves the device, consistency with the hosted path matters:
-      // a broker throw here masks privacy-guard state, so refuse rather
-      // than silently default-prompt.
-      console.warn("[prepareOnDeviceTurn] broker threw, fail-closing:", e instanceof Error ? e.name : "Error");
-      throw new Error("SCRUB_BLOCKED:context");
-    }
-
-    // Fail-closed on scrub-block, same as the hosted path. The outer
-    // try/catch below releases the reserved cap slot since no on-device
-    // generation will run.
-    if (broker.scrubBlocked) {
-      throw new Error("SCRUB_BLOCKED:context");
-    }
-
     return {
-      threadId,
-      userMessageId: userRow.id,
+      threadId: data.threadId ?? `local-${crypto.randomUUID()}`,
+      userMessageId: crypto.randomUUID(),
       reservedUsageId,
       systemPrompt:
-        broker.fragment ||
         "You are a helpful assistant running on the user's own device. Keep replies concise and practical.",
-      history: historyMessages,
-      contextUsed:
-        broker.contextUsed.categories.length > 0 ? broker.contextUsed : null,
-      traitSheetVersion: broker.traitSheetVersion,
+      history: [],
+      contextUsed: null,
+      traitSheetVersion: null,
     };
-
-    } catch (e) {
-      // Release the reserved cap slot on any post-reservation failure
-      // (user-row persist, history load, broker scrub-block). The
-      // on-device runner only sees the reservedUsageId on the success
-      // path, so a throw here means it never gets a chance to release
-      // it itself. (task #8)
-      await releaseReservedUsage(reservedUsageId, userId).catch(() => {});
-      throw e;
-    }
   });
 
 /**
@@ -620,6 +512,8 @@ export type FinalizeOnDeviceTurnInput = {
   model: string;
   contextUsed: { categories: string[]; trait_paths: string[] } | null;
   traitSheetVersion: number | null;
+  inputTokens?: number | null;
+  outputTokens?: number | null;
 };
 
 export type FinalizeOnDeviceTurnResult = {
@@ -636,161 +530,29 @@ export const finalizeOnDeviceTurn = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: FinalizeOnDeviceTurnInput): FinalizeOnDeviceTurnInput => {
     if (!d || typeof d !== "object") throw new Error("Invalid input");
-    if (typeof d.threadId !== "string") throw new Error("threadId required");
-    if (typeof d.userMessageId !== "string") throw new Error("userMessageId required");
     if (typeof d.reservedUsageId !== "string") throw new Error("reservedUsageId required");
-    if (typeof d.assistantText !== "string" || d.assistantText.length === 0) {
-      throw new Error("assistantText required");
-    }
-    if (d.assistantText.length > 100_000) {
-      throw new Error("assistantText too long (max 100000 chars)");
-    }
     if (!ON_DEVICE_PROVIDER_IDS.has(d.provider)) {
       throw new Error("Invalid on-device provider");
     }
     if (typeof d.model !== "string") throw new Error("model required");
-    return d;
+    // The reply text is never accepted: it stays on the device.
+    return { ...d, assistantText: "", model: d.model.slice(0, 128) };
   })
   .handler(async ({ data, context }): Promise<FinalizeOnDeviceTurnResult> => {
-    const userId = context.userId;
-    const badge: Badge = "private";
-
-    // Verify thread ownership AND that the user message belongs to it. This
-    // closes IDOR (a malicious client could otherwise stuff replies into
-    // another user's thread).
-    const { data: userMsg, error: umErr } = await supabaseAdmin
-      .from("chat_messages")
-      .select("id, thread_id, user_id")
-      .eq("id", data.userMessageId)
-      .eq("user_id", userId)
-      .eq("thread_id", data.threadId)
-      .maybeSingle();
-    if (umErr) throw umErr;
-    if (!userMsg) throw new Error("User message not found");
-
-    // Idempotency check (migration 20260515 — adds `in_reply_to_id`). If a
-    // prior finalize call already wrote an assistant row for this user
-    // message, return it instead of writing a duplicate. The unique partial
-    // index on `chat_messages(in_reply_to_id)` is the authoritative guard
-    // against races; this lookup is the fast path.
-    const { data: existingAssistant } = await supabaseAdmin
-      .from("chat_messages")
-      .select("id")
-      .match({ user_id: userId, thread_id: data.threadId, role: "assistant" } as never)
-      .eq("in_reply_to_id" as never, data.userMessageId as never)
-      .maybeSingle();
-    if (existingAssistant) {
-      // Best-effort finalize even on the idempotency fast-path. Crash-window
-      // case: a prior call inserted the assistant row but crashed before
-      // calling finalizeReservedUsage, leaving the reservation 'pending'.
-      // The retry comes through here. Without this nudge, the pending row
-      // would linger until the 5-min sweep, after which the successful
-      // turn would be undercounted against the daily cap. The RPC is
-      // idempotent (returns false if already finalized/swept), so this is
-      // safe in the common case where the prior call DID finalize.
-      await finalizeReservedUsage({
-        usageId: data.reservedUsageId,
-        userId,
-        status: "ok",
-        providerUsed: data.provider,
-        modelUsed: data.model,
-        fallbackDepth: 0,
-        latencyMs: 0,
-        messageId: existingAssistant.id,
-      }).catch(() => {
-        // Telemetry-only — never fail the user-visible idempotent return
-        // on a finalize hiccup. The 5-min sweep is the backstop.
-      });
-      return { assistantMessageId: existingAssistant.id };
-    }
-
-    // Persist assistant row, linked to the user message via in_reply_to_id.
-    // On unique-index violation (concurrent finalize), the catch path
-    // re-fetches and returns the winning row — preserving idempotency
-    // under races.
-    const { data: aRow, error: aErr } = await supabaseAdmin
-      .from("chat_messages")
-      .insert({
-        user_id: userId,
-        thread_id: data.threadId,
-        role: "assistant",
-        content: data.assistantText,
-        badge,
-        provider: data.provider,
-        model: data.model,
-        fallback_depth: 0,
-        context_used:
-          data.contextUsed && data.contextUsed.categories.length > 0
-            ? data.contextUsed
-            : null,
-        trait_sheet_version: data.traitSheetVersion,
-        in_reply_to_id: data.userMessageId,
-      } as never)
-      .select("id")
-      .single();
-    if (aErr) {
-      // Postgres unique_violation on the partial index = concurrent
-      // finalize won. Re-fetch and return the winner.
-      const code = (aErr as { code?: string }).code;
-      if (code === "23505") {
-        const { data: winner } = await supabaseAdmin
-          .from("chat_messages")
-          .select("id")
-          .eq("in_reply_to_id" as never, data.userMessageId as never)
-          .maybeSingle();
-        if (winner) return { assistantMessageId: winner.id };
-      }
-      throw aErr;
-    }
-
-    // Finalize the reserved (pending) usage row created by
-    // prepareOnDeviceTurn. Race-proof: the same row that booked a slot
-    // against the daily cap is now flipped to status='ok' with the
-    // assistant message id attached. Idempotent: a duplicate finalize
-    // call returns false (no pending row) and the existing-assistant
-    // fast path above already returned the winning message id, so we
-    // never write a second telemetry row.
-    const finalized = await finalizeReservedUsage({
+    // Content-free: flips the reserved usage row (provider, model, token
+    // counts) so the daily cap still counts PRIVATE turns.
+    await finalizeReservedUsage({
       usageId: data.reservedUsageId,
-      userId,
+      userId: context.userId,
       status: "ok",
       providerUsed: data.provider,
       modelUsed: data.model,
       fallbackDepth: 0,
       latencyMs: 0,
-      messageId: aRow.id,
+      ...(typeof data.inputTokens === "number" ? { inputTokens: data.inputTokens } : {}),
+      ...(typeof data.outputTokens === "number" ? { outputTokens: data.outputTokens } : {}),
     });
-    if (!finalized) {
-      // Reservation was already finalized or swept. The assistant row was
-      // still written (we got past the existing-assistant guard), so the
-      // request is well-formed; just note it for telemetry.
-      console.warn(
-        `[finalizeOnDeviceTurn] reservation ${data.reservedUsageId} no longer pending (already finalized or swept)`,
-      );
-    }
-
-    // Broker audit row. The `contextUsed` shape was hand-crafted on the
-    // client; cast back to `ContextUsed` (categories are runtime-validated
-    // against TraitCategory by the broker schema, but the server-fn
-    // boundary erases the enum to string[]).
-    await logContextDecision({
-      userId,
-      messageId: aRow.id,
-      badge,
-      strictestTier: -1,
-      contextUsed: (data.contextUsed ?? { categories: [], trait_paths: [] }) as ContextUsed,
-      fragmentLength: 0,
-      scrubBlocked: false,
-      traitSheetVersion: data.traitSheetVersion,
-    });
-
-    await supabaseAdmin
-      .from("chat_threads")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", data.threadId)
-      .eq("user_id", userId);
-
-    return { assistantMessageId: aRow.id };
+    return { assistantMessageId: crypto.randomUUID() };
   });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -978,108 +740,10 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
       context,
     }): Promise<FinalizeOnDeviceImageGenBlockedTurnResult> => {
       const userId = context.userId;
-      const badge: Badge = "private";
       const provider = adapterToProvider(data.adapter);
-
-      // IDOR guard: thread + user-message ownership.
-      const { data: userMsg, error: umErr } = await supabaseAdmin
-        .from("chat_messages")
-        .select("id, thread_id, user_id")
-        .eq("id", data.userMessageId)
-        .eq("user_id", userId)
-        .eq("thread_id", data.threadId)
-        .maybeSingle();
-      if (umErr) throw umErr;
-      if (!userMsg) throw new Error("User message not found");
-
-      // Idempotency fast path: if a prior call already wrote the
-      // placeholder for this user message (same in_reply_to_id unique
-      // partial index used by the success path), return it.
-      const { data: existingAssistant } = await supabaseAdmin
-        .from("chat_messages")
-        .select("id")
-        .match({
-          user_id: userId,
-          thread_id: data.threadId,
-          role: "assistant",
-        } as never)
-        .eq("in_reply_to_id" as never, data.userMessageId as never)
-        .maybeSingle();
-      if (existingAssistant) {
-        // Best-effort finalize — same crash-window rationale as the
-        // success path: a prior call may have written the placeholder
-        // but crashed before finalizing the reservation. RPC is
-        // idempotent (returns false on a non-pending row).
-        await finalizeReservedUsage({
-          usageId: data.reservedUsageId,
-          userId,
-          status: "error",
-          providerUsed: provider,
-          modelUsed: data.adapter,
-          fallbackDepth: 0,
-          latencyMs: 0,
-          errorClass: "image_blocked",
-          messageId: existingAssistant.id,
-        }).catch(() => {});
-        await supabaseAdmin
-          .from("inference_usage")
-          .update({
-            metadata: {
-              image_blocked: true,
-              image_blocked_reason: data.reason,
-            },
-          } as never)
-          .eq("id", data.reservedUsageId)
-          .eq("user_id", userId);
-        return { assistantMessageId: existingAssistant.id };
-      }
-
-      // Persist the placeholder assistant row. NO companion attachment
-      // row — the bytes were discarded in memory by the dispatcher and
-      // the §15.4 invariant is "flagged bytes never touch the bucket,
-      // not even the user's own".
-      const { data: aRow, error: aErr } = await supabaseAdmin
-        .from("chat_messages")
-        .insert({
-          user_id: userId,
-          thread_id: data.threadId,
-          role: "assistant",
-          content: IMAGE_BLOCKED_PLACEHOLDER_TEXT,
-          badge,
-          provider,
-          model: data.adapter,
-          fallback_depth: 0,
-          context_used:
-            data.contextUsed && data.contextUsed.categories.length > 0
-              ? data.contextUsed
-              : null,
-          trait_sheet_version: data.traitSheetVersion,
-          in_reply_to_id: data.userMessageId,
-        } as never)
-        .select("id")
-        .single();
-      if (aErr) {
-        // Concurrent finalize won the unique partial index race —
-        // re-fetch the winner and return it.
-        const code = (aErr as { code?: string }).code;
-        if (code === "23505") {
-          const { data: winner } = await supabaseAdmin
-            .from("chat_messages")
-            .select("id")
-            .eq("in_reply_to_id" as never, data.userMessageId as never)
-            .maybeSingle();
-          if (winner) return { assistantMessageId: winner.id };
-        }
-        throw aErr;
-      }
-
-      // Finalize the reserved usage row to status='error' with
-      // error_class='image_blocked'. `error` rows are excluded from the
-      // cap-counting query (reserve_inference_slot only counts ok+pending),
-      // so the user is not debited for the blocked turn — same effective
-      // accounting as the prior `releaseReservedUsage` path, but with a
-      // visible telemetry trail.
-      const finalized = await finalizeReservedUsage({
+      // Content-free: no chat row (the placeholder bubble lives in the
+      // browser). `error` rows don't count toward the daily cap.
+      await finalizeReservedUsage({
         usageId: data.reservedUsageId,
         userId,
         status: "error",
@@ -1088,66 +752,21 @@ export const finalizeOnDeviceImageGenBlockedTurn = createServerFn({
         fallbackDepth: 0,
         latencyMs: 0,
         errorClass: "image_blocked",
-        messageId: aRow.id,
-      });
-      if (!finalized) {
-        console.warn(
-          `[finalizeOnDeviceImageGenBlockedTurn] reservation ${data.reservedUsageId} no longer pending`,
-        );
-      }
-
-      // Stamp `metadata.image_blocked = true`. Done as a separate
-      // direct update (gated by user_id) rather than extending the RPC
-      // signature — keeps the existing finalize_inference_usage contract
-      // stable for hosted-tier callers. Service-role bypasses RLS so the
-      // explicit user_id filter is the authorization check.
+      }).catch(() => {});
       const { error: metaErr } = await supabaseAdmin
         .from("inference_usage")
         .update({
-          metadata: {
-            image_blocked: true,
-            // Task #51: structured verdict category — `nsfw`,
-            // `classifier_unavailable`, `invalid_image`, or `other`.
-            // Lets the CPAUD admin surface group blocked turns by
-            // reason in addition to adapter so ops can tell whether
-            // refusals are coming from the NSFW gate vs structural
-            // checks vs a degraded classifier.
-            image_blocked_reason: data.reason,
-          },
+          metadata: { image_blocked: true, image_blocked_reason: data.reason },
         } as never)
         .eq("id", data.reservedUsageId)
         .eq("user_id", userId);
       if (metaErr) {
-        // Telemetry is non-blocking — the placeholder is already in the
-        // thread and the cap slot is correctly returned. Log and move on.
         console.warn(
           "[finalizeOnDeviceImageGenBlockedTurn] metadata stamp failed:",
           scrubErrorMessage(metaErr.message),
         );
       }
-
-      // Broker audit row for parity with the success path.
-      await logContextDecision({
-        userId,
-        messageId: aRow.id,
-        badge,
-        strictestTier: -1,
-        contextUsed: (data.contextUsed ?? {
-          categories: [],
-          trait_paths: [],
-        }) as ContextUsed,
-        fragmentLength: 0,
-        scrubBlocked: false,
-        traitSheetVersion: data.traitSheetVersion,
-      });
-
-      await supabaseAdmin
-        .from("chat_threads")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", data.threadId)
-        .eq("user_id", userId);
-
-      return { assistantMessageId: aRow.id };
+      return { assistantMessageId: crypto.randomUUID() };
     },
   );
 
@@ -1156,212 +775,28 @@ export const finalizeOnDeviceImageGenTurn = createServerFn({ method: "POST" })
   .inputValidator(
     (d: FinalizeOnDeviceImageGenTurnInput): FinalizeOnDeviceImageGenTurnInput => {
       if (!d || typeof d !== "object") throw new Error("Invalid input");
-      if (typeof d.threadId !== "string") throw new Error("threadId required");
-      if (typeof d.userMessageId !== "string") {
-        throw new Error("userMessageId required");
-      }
       if (typeof d.reservedUsageId !== "string") {
         throw new Error("reservedUsageId required");
-      }
-      if (typeof d.caption !== "string" || d.caption.length === 0) {
-        throw new Error("caption required");
-      }
-      if (d.caption.length > 1000) {
-        throw new Error("caption too long (max 1000 chars)");
-      }
-      if (typeof d.storagePath !== "string" || d.storagePath.length === 0) {
-        throw new Error("storagePath required");
-      }
-      if (d.storagePath.length > 512) throw new Error("storagePath too long");
-      if (!ALLOWED_IMAGE_OUT_MIMES.has(d.mime)) {
-        throw new Error(`Unsupported image mime "${d.mime}"`);
-      }
-      if (!Number.isFinite(d.bytes) || d.bytes <= 0 || d.bytes > 25 * 1024 * 1024) {
-        throw new Error("Invalid byte size");
-      }
-      if (!Number.isFinite(d.width) || !Number.isFinite(d.height)) {
-        throw new Error("width/height must be numbers");
       }
       if (!IMAGE_GEN_ADAPTERS.has(d.adapter)) {
         throw new Error(`Unknown adapter "${d.adapter}"`);
       }
-      return d;
+      // The picture, its caption and any storage path stay on the device.
+      return { ...d, caption: "", storagePath: "" };
     },
   )
   .handler(
     async ({ data, context }): Promise<FinalizeOnDeviceImageGenTurnResult> => {
-      const userId = context.userId;
-      const badge: Badge = "private";
-      const provider = adapterToProvider(data.adapter);
-
-      // IDOR guard #1: the storage path must live under this user's prefix.
-      // The chat-attachments bucket policy already enforces this at the
-      // storage layer (see migrations); double-check here so a crafted
-      // client can't link the row to someone else's existing object.
-      if (!data.storagePath.startsWith(`${userId}/`)) {
-        throw new Error("storagePath does not belong to this user");
-      }
-
-      // IDOR guard #2: thread + user-message ownership. Mirrors
-      // finalizeOnDeviceTurn — service-role bypasses RLS so we MUST
-      // verify by hand.
-      const { data: userMsg, error: umErr } = await supabaseAdmin
-        .from("chat_messages")
-        .select("id, thread_id, user_id")
-        .eq("id", data.userMessageId)
-        .eq("user_id", userId)
-        .eq("thread_id", data.threadId)
-        .maybeSingle();
-      if (umErr) throw umErr;
-      if (!userMsg) throw new Error("User message not found");
-
-      // Idempotency: if a prior finalize already wrote an assistant row
-      // for this user message, return it (and its existing attachment row).
-      const { data: existingAssistant } = await supabaseAdmin
-        .from("chat_messages")
-        .select("id")
-        .match({
-          user_id: userId,
-          thread_id: data.threadId,
-          role: "assistant",
-        } as never)
-        .eq("in_reply_to_id" as never, data.userMessageId as never)
-        .maybeSingle();
-      if (existingAssistant) {
-        await finalizeReservedUsage({
-          usageId: data.reservedUsageId,
-          userId,
-          status: "ok",
-          providerUsed: provider,
-          modelUsed: data.adapter,
-          fallbackDepth: 0,
-          latencyMs: 0,
-          messageId: existingAssistant.id,
-        }).catch(() => {});
-        const sign = await supabaseAdmin.storage
-          .from("chat-attachments")
-          .createSignedUrl(data.storagePath, 60 * 60 * 24);
-        return {
-          assistantMessageId: existingAssistant.id,
-          signedUrl: sign.data?.signedUrl ?? "",
-        };
-      }
-
-      // Persist assistant row.
-      const { data: aRow, error: aErr } = await supabaseAdmin
-        .from("chat_messages")
-        .insert({
-          user_id: userId,
-          thread_id: data.threadId,
-          role: "assistant",
-          content: data.caption,
-          badge,
-          provider,
-          model: data.adapter,
-          fallback_depth: 0,
-          context_used:
-            data.contextUsed && data.contextUsed.categories.length > 0
-              ? data.contextUsed
-              : null,
-          trait_sheet_version: data.traitSheetVersion,
-          in_reply_to_id: data.userMessageId,
-        } as never)
-        .select("id")
-        .single();
-      if (aErr) {
-        const code = (aErr as { code?: string }).code;
-        if (code === "23505") {
-          const { data: winner } = await supabaseAdmin
-            .from("chat_messages")
-            .select("id")
-            .eq("in_reply_to_id" as never, data.userMessageId as never)
-            .maybeSingle();
-          if (winner) {
-            const sign = await supabaseAdmin.storage
-              .from("chat-attachments")
-              .createSignedUrl(data.storagePath, 60 * 60 * 24);
-            return {
-              assistantMessageId: winner.id,
-              signedUrl: sign.data?.signedUrl ?? "",
-            };
-          }
-        }
-        throw aErr;
-      }
-
-      // Persist attachment row tagged image_out (phase 2.9a discriminator).
-      // attachment_kind isn't yet in the regenerated types.ts so the cast
-      // matches the pattern used elsewhere in this file.
-      const { error: attErr } = await supabaseAdmin
-        .from("chat_message_attachments")
-        .insert({
-          message_id: aRow.id,
-          user_id: userId,
-          storage_path: data.storagePath,
-          mime: data.mime,
-          bytes: data.bytes,
-          width: data.width,
-          height: data.height,
-          attachment_kind: "image_out",
-        } as never);
-      if (attErr) {
-        // Roll back the assistant row so the thread doesn't develop a
-        // caption with no image. The reserved usage row gets released
-        // by the throw — release_inference_slot is idempotent.
-        await supabaseAdmin
-          .from("chat_messages")
-          .delete()
-          .eq("id", aRow.id)
-          .eq("user_id", userId);
-        await releaseReservedUsage(data.reservedUsageId, userId).catch(() => {});
-        throw attErr;
-      }
-
-      // Telemetry. Cost is zero — bytes never left the device.
-      const finalized = await finalizeReservedUsage({
+      // Content-free telemetry so the daily cap counts the turn.
+      await finalizeReservedUsage({
         usageId: data.reservedUsageId,
-        userId,
+        userId: context.userId,
         status: "ok",
-        providerUsed: provider,
+        providerUsed: adapterToProvider(data.adapter),
         modelUsed: data.adapter,
         fallbackDepth: 0,
         latencyMs: 0,
-        messageId: aRow.id,
       });
-      if (!finalized) {
-        console.warn(
-          `[finalizeOnDeviceImageGenTurn] reservation ${data.reservedUsageId} no longer pending`,
-        );
-      }
-
-      // Broker audit row. Same shape as the text on-device path.
-      await logContextDecision({
-        userId,
-        messageId: aRow.id,
-        badge,
-        strictestTier: -1,
-        contextUsed: (data.contextUsed ?? {
-          categories: [],
-          trait_paths: [],
-        }) as ContextUsed,
-        fragmentLength: 0,
-        scrubBlocked: false,
-        traitSheetVersion: data.traitSheetVersion,
-      });
-
-      await supabaseAdmin
-        .from("chat_threads")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", data.threadId)
-        .eq("user_id", userId);
-
-      const sign = await supabaseAdmin.storage
-        .from("chat-attachments")
-        .createSignedUrl(data.storagePath, 60 * 60 * 24);
-
-      return {
-        assistantMessageId: aRow.id,
-        signedUrl: sign.data?.signedUrl ?? "",
-      };
+      return { assistantMessageId: crypto.randomUUID(), signedUrl: "" };
     },
   );
