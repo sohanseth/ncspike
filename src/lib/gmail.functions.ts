@@ -49,7 +49,10 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     // Phase 1: deterministic rules-first triage. No external AI by default.
     // Ambiguous emails are tagged `needs_review`. Gemini fallback is opt-in
     // via ENABLE_LLM_FALLBACK=true (off by default — keeps email data local).
-    const llmFallbackEnabled = process.env.ENABLE_LLM_FALLBACK === "true";
+    const { isCloudFeatureOn } = await import("@/server/cloud-features.server");
+    const llmFallbackEnabled =
+      process.env.ENABLE_LLM_FALLBACK === "true" &&
+      (await isCloudFeatureOn(context.userId, "email_ai"));
     const ruleResults = summaries.map((s) => rulesClassify(s.from, s.subject));
 
     const ambiguousIdx = ruleResults
@@ -60,6 +63,7 @@ export const pullRecentEmails = createServerFn({ method: "POST" })
     if (llmFallbackEnabled && ambiguousIdx.length > 0) {
       const ambiguousEmails = ambiguousIdx.map((i) => summaries[i]);
       const llmResults = await categorizeEmails(ambiguousEmails);
+      void (await import("@/server/cloud-features.server")).noteCloudActivity(context.userId, "email_ai", "lovable-gemini");
       ambiguousIdx.forEach((origIdx, j) => {
         const r = llmResults[j];
         if (r) {
