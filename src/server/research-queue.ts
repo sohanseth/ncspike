@@ -255,6 +255,15 @@ export async function runResearchBatch(
 ): Promise<RunBatchSummary> {
   const limit = Math.min(MAX_BATCH, Math.max(1, opts.limit ?? 10));
 
+  // Private by default: research tasks run only while the owner has
+  // "AI help with email" on. Checked here, for the owner, at pickup.
+  {
+    const { isCloudFeatureOn } = await import("@/server/cloud-features.server");
+    if (!(await isCloudFeatureOn(userId, "email_ai"))) {
+      return { attempted: 0, succeeded: 0, failed: 0, results: [] };
+    }
+  }
+
   // Reaper pass: requeue stuck `running` rows whose lease expired. This frees
   // dedupe slots and gives the work another shot after a runner crash. Done
   // before the claim query so the reaped rows are eligible in this same batch.
