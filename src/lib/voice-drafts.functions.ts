@@ -306,6 +306,11 @@ export const setVoiceDraftsConsent = createServerFn({ method: "POST" })
         { onConflict: "user_id" },
       );
     if (error) throw error;
+    // "I understand, enable" is also the email_ai consent (prompt E).
+    if (data.accept) {
+      const { recordConsent } = await import("@/server/cloud-features.server");
+      await recordConsent(context.userId, "email_ai", true, "prompt");
+    }
     return { consentedAt };
   });
 
