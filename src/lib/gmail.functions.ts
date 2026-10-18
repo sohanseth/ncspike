@@ -8,6 +8,11 @@ export type { DisconnectResult };
 export const pullRecentEmails = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, "email_on_server");
+      void noteCloudActivity(context.userId, "email_on_server", "gmail");
+    }
     const { supabaseAdmin, rulesClassify, scrubErrorMessage, getValidAccessToken, categorizeEmails, decodeHeader } = await import("./gmail.server");
     const { token, label } = await getValidAccessToken(context.userId);
 

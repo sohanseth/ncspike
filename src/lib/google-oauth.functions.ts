@@ -29,6 +29,11 @@ export const startGoogleOAuth = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((d: { provider: "gmail" | "google_calendar" }) => d)
   .handler(async ({ data, context }) => {
+    {
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(context.userId, (data.provider === "gmail" ? "email_on_server" : "calendar_on_server"));
+      void noteCloudActivity;
+    }
     const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
     if (!clientId) throw new Error("Missing GOOGLE_OAUTH_CLIENT_ID");
 
