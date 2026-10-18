@@ -56,8 +56,11 @@ export type ChatStreamEvent =
          *  `IMAGE_BLOCKED_PLACEHOLDER_TEXT` instead of rolling back —
          *  otherwise the user only sees the styled bubble after a
          *  reload. (Task #52.) */
-        | "image_blocked";
+        | "image_blocked"
+        /** Server refused: the cloud feature this needs is turned off. */
+        | "cloud_feature_off";
       message: string;
+      feature?: string;
       badge?: Badge;
       used?: number;
       cap?: number;
@@ -71,6 +74,10 @@ export type StreamChatInput = {
   /** Storage paths in the chat-attachments bucket. Optional. */
   attachments?: string[];
   signal?: AbortSignal;
+  /** PRIVATE only: the open conversation, kept in the browser. */
+  history?: { role: "user" | "assistant"; content: string }[];
+  /** PRIVATE only: photos to edit, read locally (never uploaded). */
+  localImages?: { bytes: Uint8Array; mime: string }[];
 };
 
 export async function* streamChatMessage(
@@ -142,6 +149,22 @@ export async function* streamChatMessage(
 
   if (!res.ok || !res.body) {
     const text = await res.text().catch(() => "");
+    if (res.status === 403) {
+      try {
+        const j = JSON.parse(text) as { error?: string; feature?: string };
+        if (j.error === "cloud_feature_off") {
+          yield {
+            kind: "error",
+            type: "cloud_feature_off",
+            feature: j.feature,
+            message: "This uses a cloud service that's turned off. Turn it on in Privacy → Cloud features.",
+          };
+          return;
+        }
+      } catch {
+        /* not JSON */
+      }
+    }
     yield {
       kind: "error",
       type: "internal",
