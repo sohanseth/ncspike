@@ -193,6 +193,12 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   })
   .handler(async ({ data, context }): Promise<SendChatMessageResult> => {
     const userId = context.userId;
+    // Private by default: hosted inference only with cloud chat on. Checked
+    // before any thread, message or embedding. Fails closed.
+    {
+      const { requireCloudFeature } = await import("@/server/cloud-features.server");
+      await requireCloudFeature(userId, "cloud_chat");
+    }
 
     // 1. Resolve thread (create if missing). When the client supplies a
     //    threadId we MUST verify ownership — service-role bypasses RLS, so
