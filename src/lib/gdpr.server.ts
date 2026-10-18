@@ -73,6 +73,8 @@ export const EXPORT_TABLES = [
   "research_tasks",
   "user_endpoints",
   "watchers",
+  "cloud_consents",
+  "cloud_activity",
 ] as const;
 
 /** Columns that must never appear in an export. */
