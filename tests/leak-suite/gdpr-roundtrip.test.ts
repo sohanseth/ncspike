@@ -281,7 +281,7 @@ import {
   deleteAccountFor,
   EXPORT_TABLES,
   RPC_COLUMN_TO_TABLE,
-} from "@/lib/gdpr.functions";
+} from "@/lib/gdpr.server";
 
 const store = fixture.store;
 

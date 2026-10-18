@@ -20,7 +20,7 @@ import path from "node:path";
 import {
   EXPORT_TABLES,
   RPC_COLUMN_TO_TABLE,
-} from "@/lib/gdpr.functions";
+} from "@/lib/gdpr.server";
 import {
   GDPR_IGNORE_TABLE_NAMES,
   GDPR_IGNORE_TABLES,

@@ -55,7 +55,7 @@ vi.stubGlobal("fetch", async (url: string, init?: { body?: URLSearchParams }) =>
   throw new Error(`unexpected fetch ${url}`);
 });
 
-const { disconnectProviderFor } = await import("@/lib/gmail.functions");
+const { disconnectProviderFor } = await import("@/lib/gmail.server");
 
 beforeEach(() => {
   state.rows = new Map();

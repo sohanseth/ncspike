@@ -78,7 +78,7 @@ vi.mock("@/server/crypto.server", () => ({
   encryptToken: (s: string) => `enc:${s}`,
 }));
 
-const { exportAccountDataFor, EXPORT_TABLES } = await import("@/lib/gdpr.functions");
+const { exportAccountDataFor, EXPORT_TABLES } = await import("@/lib/gdpr.server");
 
 describe("exportAccountDataFor — new tables", () => {
   it("includes the newly covered tables", async () => {
