@@ -106,7 +106,7 @@ vi.stubGlobal("fetch", async (url: string, init?: { body?: URLSearchParams }) =>
 });
 
 const { deleteAccountFor, wipeUserStorage, revokeGoogleTokens } = await import(
-  "@/lib/gdpr.functions"
+  "@/lib/gdpr.server"
 );
 
 beforeEach(() => {

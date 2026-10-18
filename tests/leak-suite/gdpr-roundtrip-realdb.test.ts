@@ -25,7 +25,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { Client } from "pg";
-import { EXPORT_TABLES, RPC_COLUMN_TO_TABLE } from "@/lib/gdpr.functions";
+import { EXPORT_TABLES, RPC_COLUMN_TO_TABLE } from "@/lib/gdpr.server";
 
 const REAL_DB_URL = process.env.GDPR_REAL_DB_URL;
 
