@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { startGoogleOAuth } from "@/lib/google-oauth.functions";
+import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
 import {
   getConnections,
   disconnectProvider,
@@ -60,6 +61,7 @@ const PROVIDER_META = {
 } as const;
 
 function ConnectionsPage() {
+  const cloud = useCloudConsent();
   const { user, loading } = useAuth();
   const navigate = useNavigate();
   const search = useSearch({ from: "/workspace/connections" });
@@ -104,6 +106,7 @@ function ConnectionsPage() {
   }, [user]);
 
   const onConnect = async (provider: "gmail" | "google_calendar") => {
+    if (!(await cloud.ensure(provider === "gmail" ? "email_on_server" : "calendar_on_server"))) return;
     setBusy(provider);
     try {
       const { url } = await startGoogleOAuth({ data: { provider } });
@@ -138,6 +141,7 @@ function ConnectionsPage() {
   };
 
   const onBuildVoice = async () => {
+    if (!(await cloud.ensure("email_on_server"))) return;
     setBusy("voice");
     setVoiceError(null);
     try {
@@ -190,6 +194,7 @@ function ConnectionsPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground px-6 py-10">
+      {cloud.sheet}
       <div className="max-w-3xl mx-auto space-y-8">
         <header>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
