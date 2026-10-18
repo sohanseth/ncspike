@@ -25,7 +25,7 @@
  */
 import { researchDigest, ResearchDigestConfigSchema } from "@/server/agents/templates/research-digest";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 import { macAgentIdsFor } from "./mac-agent-owner.server";
 
 import {

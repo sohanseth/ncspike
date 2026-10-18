@@ -42,7 +42,7 @@ async function loadCrypto(): Promise<void> {
   const mod = await import("@/server/crypto.server");
   decryptToken = mod.decryptToken;
 }
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 import { RELAY_GDPR_TABLES } from "@/lib/gdpr.coverage";
 
 // ─── Export ─────────────────────────────────────────────────────────────────

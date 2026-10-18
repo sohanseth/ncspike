@@ -35,7 +35,7 @@ import {
   type VoiceProfile,
 } from "@/server/voice-profile.server";
 import { generate, InferenceError } from "@/server/inference";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 
 const SENT_SAMPLE_SIZE = 200;
 

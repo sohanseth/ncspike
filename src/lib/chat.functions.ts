@@ -14,7 +14,7 @@
  * cap enforcement, fallbacks, and telemetry. This file is the thin glue.
  */
 import { createServerFn } from "@tanstack/react-start";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";

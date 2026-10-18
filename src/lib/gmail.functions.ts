@@ -15,7 +15,7 @@ async function loadCrypto(): Promise<void> {
   encryptToken = mod.encryptToken;
 }
 import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
-import { scrubErrorMessage } from "@/server/agents/error-scrub";
+import { scrubErrorMessage } from "@/lib/error-scrub";
 
 async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
