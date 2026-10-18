@@ -33,3 +33,15 @@
 - [x] 9. capacitor.config.ts: https server.url, no cleartext
 - [x] 10. Mobile "More" bottom sheet with nine header actions
 - [x] 11. New tests for all of the above; full suite green
+
+## Prompt E — private by default
+- [ ] 1 cloud-features.ts list + wording check
+- [ ] 2 migration (user_settings default, cloud_consents, cloud_activity, retention, GDPR)
+- [ ] 3 server fns getCloudFeatures/setCloudFeature + deletions + presets; cloud-features.server.ts
+- [ ] 4 guards before every cloud call + activity rows
+- [ ] 5 PRIVATE turns stay on device; delete PRIVATE server chats button
+- [ ] 6 browser follows setting (ChatPanel lock, TTS local voices, dictation, consent triggers, Voice Drafts dialog, error link)
+- [ ] 7 CloudFeatureSheet component
+- [ ] 8 Privacy page sections + truthful claims
+- [ ] 9 one-time notice
+- [ ] 10 tests + full suite
