@@ -4625,6 +4625,8 @@ function AddTaskButton() {
     // Some engines support alternative results — request a few so accented
     // speech has more chances to match the right word.
     try { recog.maxAlternatives = 3; } catch { /* noop */ }
+    // Ask the browser to recognise speech on this device when it can.
+    try { if ("processLocally" in recog) recog.processLocally = true; } catch { /* noop */ }
 
     // Track the text we had when dictation started so we can append cleanly
     // and keep what the user already typed.
