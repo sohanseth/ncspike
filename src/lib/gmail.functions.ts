@@ -2,7 +2,18 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { decryptToken, encryptToken } from "@/server/crypto.server";
+// Loaded lazily so the server-only crypto module never enters the browser bundle.
+let decryptToken: (raw: string) => string = () => {
+  throw new Error("crypto not loaded");
+};
+let encryptToken: (raw: string) => string = () => {
+  throw new Error("crypto not loaded");
+};
+async function loadCrypto(): Promise<void> {
+  const mod = await import("@/server/crypto.server");
+  decryptToken = mod.decryptToken;
+  encryptToken = mod.encryptToken;
+}
 import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/email-rules.server";
 import { scrubErrorMessage } from "@/server/agents/error-scrub";
 
@@ -106,6 +117,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{
 }
 
 async function getValidAccessToken(userId: string): Promise<{ token: string; label: string | null }> {
+  await loadCrypto();
   const { data: conn, error } = await supabaseAdmin
     .from("connections")
     .select("id, access_token_encrypted, refresh_token_encrypted, expires_at, account_label")
@@ -366,6 +378,7 @@ export async function disconnectProviderFor(
   userId: string,
   provider: "gmail" | "google_calendar",
 ): Promise<DisconnectResult> {
+  await loadCrypto();
   const otherProvider = provider === "gmail" ? "google_calendar" : "gmail";
   const { data: other } = await supabaseAdmin
     .from("connections")
