@@ -464,6 +464,14 @@ export async function runTraitExtractionForUserId(userId: string): Promise<Extra
   if (!settings?.personalization_v1_enabled) {
     return { written: false, reason: "blocked_by_user_setting", version: 0 };
   }
+  // Private by default: extraction needs both the flag and consent.
+  {
+    const { isCloudFeatureOn, noteCloudActivity } = await import("@/server/cloud-features.server");
+    if (!(await isCloudFeatureOn(userId, "nightly_traits"))) {
+      return { written: false, reason: "blocked_by_user_setting", version: 0 };
+    }
+    void noteCloudActivity(userId, "nightly_traits", "cloudflare");
+  }
 
   // Load existing sheet (full row — needed for spec §B9 carry-forward).
   const { data: existing } = await (supabaseAdmin as any)
