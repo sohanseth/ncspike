@@ -34,7 +34,14 @@ import { getRequest } from "@tanstack/react-start/server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-client-middleware";
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import { decryptToken } from "@/server/crypto.server";
+// Loaded lazily so the server-only crypto module never enters the browser bundle.
+let decryptToken: (raw: string) => string = () => {
+  throw new Error("crypto not loaded");
+};
+async function loadCrypto(): Promise<void> {
+  const mod = await import("@/server/crypto.server");
+  decryptToken = mod.decryptToken;
+}
 import { scrubErrorMessage } from "@/server/agents/error-scrub";
 import { RELAY_GDPR_TABLES } from "@/lib/gdpr.coverage";
 
@@ -129,6 +136,7 @@ function shapeRow(table: string, row: Record<string, unknown>): Record<string, u
  * tanstack/react-start.
  */
 export async function exportAccountDataFor(userId: string): Promise<AccountExport> {
+  await loadCrypto();
   const tables: Record<string, unknown[]> = {};
   const counts: Record<string, number> = {};
 
@@ -296,6 +304,7 @@ const GOOGLE_PROVIDERS = new Set(["gmail", "google_calendar"]);
  * https://myaccount.google.com/permissions.
  */
 export async function revokeGoogleTokens(userId: string): Promise<{ failed: boolean }> {
+  await loadCrypto();
   let failed = false;
   const { data, error } = await supabaseAdmin
     .from("connections")
