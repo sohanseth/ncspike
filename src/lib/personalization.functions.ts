@@ -400,6 +400,15 @@ export const applyPersonalizationPreset = createServerFn({ method: "POST" })
     return { preset: d.preset as PersonalizationPreset };
   })
   .handler(async ({ data, context }): Promise<{ applied: PersonalizationPreset }> => {
+    // Presets follow the cloud chat switch (prompt E).
+    {
+      const cf = await import("@/server/cloud-features.server");
+      if (data.preset === "strict") {
+        await cf.recordConsent(context.userId, "cloud_chat", false, "preset");
+      } else {
+        await cf.requireCloudFeature(context.userId, "cloud_chat");
+      }
+    }
     // Replace all existing rows with the preset's rows. Service-role bypasses
     // RLS so we pin user_id explicitly on every statement.
     const { error: dErr } = await (supabaseAdmin as any)
@@ -447,7 +456,7 @@ export const getPersonalizationGlobals = createServerFn({ method: "POST" })
     return {
       enabled: data?.personalization_v1_enabled ?? false,
       ossOnlyMode: data?.oss_only_mode ?? false,
-      privateOnlyMode: data?.private_only_mode ?? false,
+      privateOnlyMode: data?.private_only_mode ?? true,
     };
   });
 
@@ -457,6 +466,14 @@ export const setPersonalizationGlobals = createServerFn({ method: "POST" })
     (d: { enabled?: boolean; ossOnlyMode?: boolean; privateOnlyMode?: boolean }) => d,
   )
   .handler(async ({ data, context }): Promise<PersonalizationGlobals> => {
+    if (typeof data.privateOnlyMode === "boolean") {
+      const cf = await import("@/server/cloud-features.server");
+      if (data.privateOnlyMode) {
+        await cf.recordConsent(context.userId, "cloud_chat", false, "settings");
+      } else {
+        await cf.requireCloudFeature(context.userId, "cloud_chat");
+      }
+    }
     const patch: Record<string, boolean> = {};
     if (typeof data.enabled === "boolean") patch.personalization_v1_enabled = data.enabled;
     if (typeof data.ossOnlyMode === "boolean") patch.oss_only_mode = data.ossOnlyMode;
@@ -473,6 +490,6 @@ export const setPersonalizationGlobals = createServerFn({ method: "POST" })
     return {
       enabled: row?.personalization_v1_enabled ?? false,
       ossOnlyMode: row?.oss_only_mode ?? false,
-      privateOnlyMode: row?.private_only_mode ?? false,
+      privateOnlyMode: row?.private_only_mode ?? true,
     };
   });

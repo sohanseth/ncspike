@@ -28,6 +28,14 @@ export const Route = createFileRoute("/api/tts/elevenlabs")({
         const auth = await authenticateAudioRequest(request);
         if (!auth.ok) return auth.response;
 
+        {
+          const cf = await import("@/server/cloud-features.server");
+          if (!(await cf.isCloudFeatureOn(auth.userId, "voice_replies"))) {
+            return cf.cloudFeatureOffResponse("voice_replies");
+          }
+          void cf.noteCloudActivity(auth.userId, "voice_replies", "elevenlabs");
+        }
+
         const rl = await enforceAudioRateLimit(auth.userId, "tts-elevenlabs");
         if (!rl.ok) return rateLimitResponse(rl);
 
