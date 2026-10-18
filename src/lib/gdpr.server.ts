@@ -206,6 +206,8 @@ export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   research_tasks_deleted: "research_tasks",
   user_endpoints_deleted: "user_endpoints",
   watchers_deleted: "watchers",
+  cloud_consents_deleted: "cloud_consents",
+  cloud_activity_deleted: "cloud_activity",
 };
 
 /** Storage buckets the app writes per-user files into. */
