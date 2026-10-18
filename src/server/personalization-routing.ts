@@ -70,7 +70,8 @@ export async function resolveBadgeForUser(
         coercedFromDbFailure: true,
       };
     }
-    if (data?.private_only_mode === true) {
+    // Private by default: a missing user_settings row counts as private mode on.
+    if (!data || data.private_only_mode === true) {
       return {
         badge: "private",
         coercedFromPrivateOnly: true,
