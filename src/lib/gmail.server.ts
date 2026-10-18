@@ -5,7 +5,7 @@ import { rulesClassify, type EmailCategory, type EmailDomain } from "@/server/em
 import { scrubErrorMessage } from "@/lib/error-scrub";
 export { supabaseAdmin, rulesClassify, scrubErrorMessage };
 export type { EmailCategory, EmailDomain };
-async function categorizeEmails(
+export async function categorizeEmails(
   emails: Array<{ subject: string; from: string; snippet: string; date: string }>,
 ): Promise<Array<{ category: EmailCategory; domain: EmailDomain; reason: string }>> {
   if (!emails.length) return [];
