@@ -345,6 +345,10 @@ export async function assembleSystemPrompt(args: AssembleArgs): Promise<Assemble
   const sheet: TraitSheet = parsed.data;
   const version: number = row.version ?? 1;
 
+  // Private by default: a PRIVATE turn's message never goes to the
+  // embedding service, so no query embedding (and no selection) runs.
+  if (args.badge === "private") return { ...empty, traitSheetVersion: version };
+
   // 2. Embed the query (bge-small, 384-dim). Failure → return empty
   //    (best-effort — broker must never break chat).
   let queryEmbedding: number[];
