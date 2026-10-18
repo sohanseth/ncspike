@@ -6,6 +6,7 @@ import { exportAccountData, deleteAccount } from "@/lib/gdpr.functions";
 import { Loader, Download, Trash2, ShieldCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { PersonalizationDisclosure } from "@/components/workspace/PersonalizationDisclosure";
 import { ConnectMacSection } from "@/components/workspace/ConnectMacSection";
+import { CloudFeaturesSection } from "@/components/workspace/CloudFeaturesSection";
 
 export const Route = createFileRoute("/workspace/privacy")({
   component: PrivacyPage,
@@ -151,6 +152,8 @@ function PrivacyPage() {
           for category-level controls.
         </p>
       </header>
+
+      <CloudFeaturesSection />
 
       <section className="mb-12 rounded-xl border bg-card/40 p-6">
         <div className="mb-4 flex items-center gap-2">

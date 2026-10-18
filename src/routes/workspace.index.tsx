@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import MainApp from "@/components/workspace/MainApp";
 import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import { MacWorthKnowing } from "@/components/workspace/MacWorthKnowing";
+import { PrivateDefaultNotice } from "@/components/workspace/PrivateDefaultNotice";
 import { useAuth } from "@/lib/auth-context";
 
 export const Route = createFileRoute("/workspace/")({
@@ -42,6 +43,7 @@ function WorkspaceLayout() {
       <div className="px-4 pt-4">
         <WorkspaceLocalNav />
       </div>
+      <PrivateDefaultNotice />
       <MacWorthKnowing />
       <MainApp />
     </>

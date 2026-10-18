@@ -41,7 +41,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
-import { CLOUD_FEATURE_OFF_MESSAGE } from "@/lib/cloud-features";
+import { CLOUD_FEATURE_OFF_MESSAGE, CLOUD_FEATURES } from "@/lib/cloud-features";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
@@ -1002,6 +1002,10 @@ function ConsentModal({ open, onClose, onAccepted }: { open: boolean; onClose: (
           <li>To learn your style, our server reads up to <strong>200 of your sent emails</strong> and keeps a short profile (sign-off, openers, sentence length, formality and up to 20 typical phrases) for <strong>7 days</strong>. Up to 8 of those phrases and 3 openers go with each draft request; the emails themselves aren't sent to any AI service.</li>
           <li>Drafts are saved <strong>encrypted</strong> in your account. <strong>Nothing is sent automatically</strong>: every reply needs your click.</li>
         </ul>
+        <p className="text-[11.5px] text-muted-foreground mb-2 leading-relaxed">{CLOUD_FEATURES.email_ai.words}</p>
+        <p className="text-[11.5px] text-muted-foreground mb-4 leading-relaxed">
+          Choosing "I understand, enable" turns on AI help with email. If an email includes health or other sensitive details, this is your explicit consent to send them. You can turn it off any time in Privacy, which deletes your drafts and research tasks.
+        </p>
         {err && <p className="text-[11px] text-social/80 mb-2">{err}</p>}
         <div className="flex justify-end gap-2">
           <button onClick={onClose} disabled={busy}
@@ -4621,6 +4625,8 @@ function AddTaskButton() {
     // Some engines support alternative results — request a few so accented
     // speech has more chances to match the right word.
     try { recog.maxAlternatives = 3; } catch { /* noop */ }
+    // Ask the browser to recognise speech on this device when it can.
+    try { if ("processLocally" in recog) recog.processLocally = true; } catch { /* noop */ }
 
     // Track the text we had when dictation started so we can append cleanly
     // and keep what the user already typed.

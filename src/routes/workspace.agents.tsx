@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link, Outlet, useRouterState } from "@tanstack/react-router";
+import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
 import { useCallback, useEffect, useState } from "react";
 import { Archive, Loader, Pause, Play, Plus, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -79,6 +80,7 @@ function stateBadgeClass(state: string): string {
 }
 
 function AgentsPage() {
+  const cloud = useCloudConsent();
   // Auth gate — matches workspace.connections.tsx. Server fn is also
   // gated by requireSupabaseAuth middleware (the authoritative check);
   // this redirect + render gate is the UX layer so an unauthed visitor
@@ -203,6 +205,7 @@ function AgentsPage() {
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+    if (!(await cloud.ensure("overnight_research"))) return;
     setSubmitting(true);
     setStatus(null);
     try {
@@ -239,6 +242,7 @@ function AgentsPage() {
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-10">
+      {cloud.sheet}
       <WorkspaceLocalNav />
       <header className="mb-8">
         <h1 className="text-3xl font-semibold tracking-tight">Agents</h1>
