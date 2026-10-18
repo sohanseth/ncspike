@@ -90,6 +90,14 @@ function setup(opts: {
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 
+// Prompt E: these jobs run only with the owner's cloud consent. This suite
+// tests the job itself, so consent is on here.
+vi.mock("@/server/cloud-features.server", () => ({
+  isCloudFeatureOn: async () => true,
+  requireCloudFeature: async () => {},
+  noteCloudActivity: async () => {},
+}));
+
 vi.mock("@/integrations/supabase/client.server", () => {
   function makeMemoryChain() {
     const result = { data: harness.memory, error: null };
