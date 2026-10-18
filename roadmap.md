@@ -49,8 +49,8 @@
 ### Prompt E status
 - [x] Feature list, database, server switches, cloud guards, PRIVATE chats local, presets
 - [x] Chat: locked cloud models + consent sheet, search consent, device voice fallback
-- [ ] Privacy page sections (switches, activity, legacy PRIVATE chats cleanup)
-- [ ] One-time "private by default" notice
-- [ ] Consent prompts on Connect Gmail/Calendar, Context on sender, Research overnight, voice profile, new agent
-- [ ] On-device dictation option; Voice Drafts dialog wording
-- [ ] New tests for each rule
+- [x] Privacy page sections (switches, activity, legacy PRIVATE chats cleanup)
+- [x] One-time "private by default" notice
+- [x] Consent prompts on Connect Gmail/Calendar, Context on sender, Research overnight, voice profile, new agent
+- [x] On-device dictation option; Voice Drafts dialog wording
+- [x] New tests for each rule
