@@ -45,7 +45,7 @@ const PRESETS: { id: PersonalizationPreset; name: string; copy: string }[] = [
   {
     id: "strict",
     name: "Strict",
-    copy: "Minimal personalization for any provider that isn't on-device or open-weights. OpenAI / Anthropic see nothing.",
+    copy: "Everything runs like the Private badge — chat stays on this device and cloud chat is switched off. OpenAI / Anthropic see nothing.",
   },
   {
     id: "open",

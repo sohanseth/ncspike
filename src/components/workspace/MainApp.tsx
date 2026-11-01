@@ -42,6 +42,8 @@ import { Button } from "@/components/ui/button";
 import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
 import { CLOUD_FEATURE_OFF_MESSAGE, CLOUD_FEATURES } from "@/lib/cloud-features";
+import { voiceDraftsNeedsConsent } from "@/lib/voice-drafts-consent";
+import { withEmailAiConsent } from "@/lib/email-ai-consent";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
@@ -955,7 +957,7 @@ function useInbox() {
 
 // ─── Voice Drafts (Slice B / Week 3) ──────────────────────────────────────────
 
-type VoiceDraftsStatus = { featureEnabled: boolean; consented: boolean; consentedAt: string | null };
+type VoiceDraftsStatus = { featureEnabled: boolean; consented: boolean; consentedAt: string | null; emailAiOn: boolean };
 
 function useVoiceDraftsStatus() {
   const [status, setStatus] = useState<VoiceDraftsStatus | null>(null);
@@ -963,9 +965,18 @@ function useVoiceDraftsStatus() {
     try {
       const { getVoiceDraftsStatus } = await import("@/lib/voice-drafts.functions");
       const s = await getVoiceDraftsStatus();
-      setStatus(s);
+      // The consent dialog is tied to the email_ai cloud feature, not only
+      // to voice_drafts_consent_at: someone who agreed to Voice Drafts
+      // before email_ai existed is asked once more.
+      let emailAiOn = true; // server unreachable → don't nag; the server still guards
+      try {
+        const { getCloudFeatures } = await import("@/lib/cloud-features.functions");
+        const f = await getCloudFeatures();
+        emailAiOn = !!f.features.find((x) => x.feature === "email_ai")?.on;
+      } catch { /* keep the default */ }
+      setStatus({ ...s, emailAiOn });
     } catch {
-      setStatus({ featureEnabled: false, consented: false, consentedAt: null });
+      setStatus({ featureEnabled: false, consented: false, consentedAt: null, emailAiOn: false });
     }
   };
   useEffect(() => { void refresh(); }, []);
@@ -1062,7 +1073,7 @@ type ScheduleState =
 
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
-function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
+function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>, ensureEmailAi?: () => Promise<boolean>) {
   const [phase, setPhase] = useState<"idle" | "analyzing" | "asking" | "generating" | "open" | "sending">("idle");
   const [draft, setDraft] = useState<DraftDisplay | null>(null);
   const [body, setBody] = useState("");
@@ -1340,7 +1351,18 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
    * dedicated server fn) to demonstrate that any feature can use the same
    * surface — chat agent, command palette, etc. would call it the same way.
    */
+  // When AI help with email (email_ai) is off, the chip first opens the
+  // same consent card the other cloud features use; "Turn on" records the
+  // consent and then carries on, "Not now" does nothing.
   async function researchContext() {
+    if (ensureEmailAi) {
+      await withEmailAiConsent(ensureEmailAi, doResearchContext);
+    } else {
+      await doResearchContext();
+    }
+  }
+
+  async function doResearchContext() {
     if (!draft?.id) return;
     if (contextInFlight.current) return;
     if (contextBrief.phase === "loading" || contextBrief.phase === "ok") return;
@@ -1395,6 +1417,14 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
    * a triage session coalesces nicely.
    */
   async function scheduleResearchOvernight() {
+    if (ensureEmailAi) {
+      await withEmailAiConsent(ensureEmailAi, doScheduleResearchOvernight);
+    } else {
+      await doScheduleResearchOvernight();
+    }
+  }
+
+  async function doScheduleResearchOvernight() {
     if (!draft?.id) return;
     if (scheduleInFlight.current) return;
     if (scheduleState.phase === "enqueuing" || scheduleState.phase === "scheduled" || scheduleState.phase === "duplicate") return;
@@ -1850,6 +1880,7 @@ function InboxRow({
   s,
   consented,
   onRequestConsent,
+  onEnsureEmailAi,
   onCompose,
   onMarkDone,
   draftable,
@@ -1859,11 +1890,12 @@ function InboxRow({
   s: typeof CAT_STYLE[InboxItem["category"]];
   consented: boolean;
   onRequestConsent: () => Promise<boolean>;
+  onEnsureEmailAi?: () => Promise<boolean>;
   onCompose: () => void;
   onMarkDone: () => void;
   draftable: boolean;
 }) {
-  const draft = useDraftReply(item, consented, onRequestConsent);
+  const draft = useDraftReply(item, consented, onRequestConsent, onEnsureEmailAi);
   return (
     <div className={`group rounded-2xl border ${s.border} px-4 py-3 transition-all hover:brightness-110`}
       style={{background:s.bg}}>
@@ -1896,6 +1928,7 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
   const [done, setDone] = useState<string[]>([]);
   const [showLow, setShowLow] = useState(false);
   const { status, refresh } = useVoiceDraftsStatus();
+  const cloud = useCloudConsent();
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
 
@@ -1954,8 +1987,9 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
             item={item}
             c={c}
             s={s}
-            consented={status?.consented ?? false}
+            consented={!voiceDraftsNeedsConsent(status ? { consented: status.consented, emailAiOn: status.emailAiOn } : null)}
             onRequestConsent={requestConsent}
+            onEnsureEmailAi={() => cloud.ensure("email_ai")}
             onCompose={onCompose}
             onMarkDone={() => {
               setDone(d => [...d, item.id]);
@@ -1981,9 +2015,12 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
         onClose={() => closeConsent(false)}
         onAccepted={() => { void refresh(); closeConsent(true); }}
       />
+      {cloud.sheet}
     </div>
   );
 }
+
+
 
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
@@ -2316,13 +2353,14 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
 
 // ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve }: {
+function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve, ensureEmailAi }: {
   domainId: DomainId | "other";
   onClose: () => void;
   onCompose: () => void;
   doneIds: Set<string>;
   onResolve: (id: string) => void;
   onUnresolve: (id: string) => void;
+  ensureEmailAi?: () => Promise<boolean>;
 }) {
   const isOther = domainId === "other";
   const domain = isOther ? null : DOMAINS[domainId];
@@ -2451,8 +2489,9 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
                 item={item}
                 c={cardC}
                 s={s}
-                consented={status?.consented ?? false}
+                consented={!voiceDraftsNeedsConsent(status ? { consented: status.consented, emailAiOn: status.emailAiOn } : null)}
                 onRequestConsent={requestConsent}
+                onEnsureEmailAi={ensureEmailAi}
                 onCompose={onCompose}
                 onMarkDone={() => {
                   onResolve(item.id);
@@ -4467,6 +4506,9 @@ export function MainApp() {
   const [doneIds,     setDoneIds]     = useState<Set<string>>(() => new Set());
   const resolveItem   = (id: string) => setDoneIds(s => { const n = new Set(s); n.add(id); return n; });
   const unresolveItem = (id: string) => setDoneIds(s => { const n = new Set(s); n.delete(id); return n; });
+  // Consent card for email_ai actions in the domain detail sheet (Context
+  // on this sender, Research overnight).
+  const cloud = useCloudConsent();
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
@@ -4522,7 +4564,8 @@ export function MainApp() {
           />
 
           {/* Domain detail drawer */}
-          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")} doneIds={doneIds} onResolve={resolveItem} onUnresolve={unresolveItem}/>}
+          {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")} doneIds={doneIds} onResolve={resolveItem} onUnresolve={unresolveItem} ensureEmailAi={() => cloud.ensure("email_ai")}/>}
+          {cloud.sheet}
         </div>
       </div>
 

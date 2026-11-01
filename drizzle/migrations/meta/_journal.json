@@ -29,6 +29,13 @@
       "when": 1792302484681,
       "tag": "0003_private_by_default",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793548217289,
+      "tag": "0004_private_notice_dismissed",
+      "breakpoints": true
     }
   ]
 }

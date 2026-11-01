@@ -196,8 +196,10 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     // Private by default: hosted inference only with cloud chat on. Checked
     // before any thread, message or embedding. Fails closed.
     {
-      const { requireCloudFeature } = await import("@/server/cloud-features.server");
+      const { requireCloudFeature, noteCloudActivity } = await import("@/server/cloud-features.server");
       await requireCloudFeature(userId, "cloud_chat");
+      // Content-free activity row: which feature, which service, when.
+      void noteCloudActivity(userId, "cloud_chat", "lovable-ai");
     }
 
     // 1. Resolve thread (create if missing). When the client supplies a

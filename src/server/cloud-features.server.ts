@@ -362,3 +362,30 @@ export async function setCloudFeatureFor(
   if (!granted) await deleteFeatureData(userId, feature, opts);
   return getCloudFeaturesFor(userId);
 }
+
+/**
+ * One-time "private by default" notice. Shown to existing users (their
+ * settings row predates the switch) until they dismiss it. Dismissal is
+ * stored on the account so the notice stays gone on every device; the
+ * browser keeps a localStorage copy as a fallback for when the server
+ * can't be reached.
+ */
+export async function getPrivateDefaultNoticeFor(userId: string): Promise<{ show: boolean }> {
+  const { data } = await db()
+    .from("user_settings")
+    .select("private_default_applied_at, private_notice_dismissed_at, created_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!data?.private_default_applied_at || !data?.created_at) return { show: false };
+  if (data.private_notice_dismissed_at) return { show: false };
+  // Existing users: their row predates the switch to private-by-default.
+  return {
+    show:
+      new Date(data.created_at).getTime() <
+      new Date(data.private_default_applied_at).getTime() - 60_000,
+  };
+}
+
+export async function dismissPrivateDefaultNoticeFor(userId: string): Promise<void> {
+  await upsertSettings(userId, { private_notice_dismissed_at: new Date().toISOString() });
+}

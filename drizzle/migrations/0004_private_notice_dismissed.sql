@@ -1,0 +1,2 @@
+ALTER TABLE public.user_settings ADD COLUMN IF NOT EXISTS private_notice_dismissed_at timestamptz;
+COMMENT ON COLUMN public.user_settings.private_notice_dismissed_at IS 'When the one-time private-by-default notice was dismissed; account-level so it stays dismissed across devices.';

@@ -121,14 +121,15 @@ export const deletePrivateServerChats = createServerFn({ method: "POST" })
 export const getPrivateDefaultNotice = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<{ show: boolean }> => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data } = await (supabaseAdmin as any)
-      .from("user_settings")
-      .select("private_default_applied_at, created_at")
-      .eq("user_id", context.userId)
-      .maybeSingle();
-    if (!data?.private_default_applied_at || !data?.created_at) return { show: false };
-    // Existing users: their row predates the switch to private-by-default.
-    return { show: new Date(data.created_at).getTime() < new Date(data.private_default_applied_at).getTime() - 60_000 };
+    const { getPrivateDefaultNoticeFor } = await import("@/server/cloud-features.server");
+    return getPrivateDefaultNoticeFor(context.userId);
+  });
+
+/** Remember on the account that the notice was dismissed (all devices). */
+export const dismissPrivateDefaultNotice = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async ({ context }): Promise<{ ok: true }> => {
+    const { dismissPrivateDefaultNoticeFor } = await import("@/server/cloud-features.server");
+    await dismissPrivateDefaultNoticeFor(context.userId);
+    return { ok: true };
   });

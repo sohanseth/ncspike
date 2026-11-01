@@ -55,7 +55,7 @@ const INVARIANTS: Array<{ n: number; title: string; body: string }> = [
   {
     n: 5,
     title: "The Private badge is fail-closed.",
-    body: "When you pick the Private badge, only the on-rails Cloudflare provider runs. There is no silent fallback to a non-private provider — if it can't serve, you see an error, not a leak.",
+    body: "When you pick the Private badge, the chat runs entirely on this device — your question, the answer and any picture never reach our servers. There is no silent fallback to a cloud provider — if the on-device model can't serve, you see an error, not a leak.",
   },
   {
     n: 6,

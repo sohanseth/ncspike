@@ -54,3 +54,11 @@
 - [x] Consent prompts on Connect Gmail/Calendar, Context on sender, Research overnight, voice profile, new agent
 - [x] On-device dictation option; Voice Drafts dialog wording
 - [x] New tests for each rule
+
+## Prompt E2 — finish private by default
+- [x] 1 Context on this sender + Research overnight open the email_ai consent card when off; Turn on carries on
+- [x] 2 Voice Drafts dialog shows whenever email_ai is off, even if voice_drafts_consent_at is set
+- [x] 3 Consent card + turn-off confirmation match app dialog theme; body text contrast >= 4.5:1
+- [x] 4 One-time notice dismissed on the account (user_settings.private_notice_dismissed_at) + localStorage fallback
+- [x] 5 Verify checklist items (privacy fixes + private-by-default) and report
+- [x] 6 New tests; full suite green without weakening existing tests

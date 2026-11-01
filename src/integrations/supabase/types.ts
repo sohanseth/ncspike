@@ -1157,6 +1157,7 @@ export type Database = {
           prefer_local_audio: boolean
           preferred_model: string
           private_default_applied_at: string | null
+          private_notice_dismissed_at: string | null
           private_only_mode: boolean
           storage_mode: Database["public"]["Enums"]["storage_mode"]
           updated_at: string
@@ -1172,6 +1173,7 @@ export type Database = {
           prefer_local_audio?: boolean
           preferred_model?: string
           private_default_applied_at?: string | null
+          private_notice_dismissed_at?: string | null
           private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
@@ -1187,6 +1189,7 @@ export type Database = {
           prefer_local_audio?: boolean
           preferred_model?: string
           private_default_applied_at?: string | null
+          private_notice_dismissed_at?: string | null
           private_only_mode?: boolean
           storage_mode?: Database["public"]["Enums"]["storage_mode"]
           updated_at?: string
