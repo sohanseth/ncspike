@@ -1417,6 +1417,14 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
    * a triage session coalesces nicely.
    */
   async function scheduleResearchOvernight() {
+    if (ensureEmailAi) {
+      await withEmailAiConsent(ensureEmailAi, doScheduleResearchOvernight);
+    } else {
+      await doScheduleResearchOvernight();
+    }
+  }
+
+  async function doScheduleResearchOvernight() {
     if (!draft?.id) return;
     if (scheduleInFlight.current) return;
     if (scheduleState.phase === "enqueuing" || scheduleState.phase === "scheduled" || scheduleState.phase === "duplicate") return;
