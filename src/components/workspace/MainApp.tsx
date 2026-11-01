@@ -1073,7 +1073,7 @@ type ScheduleState =
 
 type AssistantQuestion = { id: string; question: string; placeholder: string };
 
-function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>) {
+function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: () => Promise<boolean>, ensureEmailAi?: () => Promise<boolean>) {
   const [phase, setPhase] = useState<"idle" | "analyzing" | "asking" | "generating" | "open" | "sending">("idle");
   const [draft, setDraft] = useState<DraftDisplay | null>(null);
   const [body, setBody] = useState("");
@@ -1351,7 +1351,18 @@ function useDraftReply(item: InboxItem, consented: boolean, onRequestConsent: ()
    * dedicated server fn) to demonstrate that any feature can use the same
    * surface — chat agent, command palette, etc. would call it the same way.
    */
+  // When AI help with email (email_ai) is off, the chip first opens the
+  // same consent card the other cloud features use; "Turn on" records the
+  // consent and then carries on, "Not now" does nothing.
   async function researchContext() {
+    if (ensureEmailAi) {
+      await withEmailAiConsent(ensureEmailAi, doResearchContext);
+    } else {
+      await doResearchContext();
+    }
+  }
+
+  async function doResearchContext() {
     if (!draft?.id) return;
     if (contextInFlight.current) return;
     if (contextBrief.phase === "loading" || contextBrief.phase === "ok") return;
