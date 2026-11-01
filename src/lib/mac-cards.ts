@@ -6,6 +6,7 @@
 import { insightCardSchema } from "@/lib/insight-card.schema";
 import type { InsightCard } from "@/lib/insight-card";
 import { listRelayCards } from "@/lib/relay.functions";
+import { sendRelayAnswer } from "@/lib/relay-answers.functions";
 
 const DB_NAME = "nc-keys";
 const STORE = "keys";
@@ -57,6 +58,7 @@ function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
 }
 
 export type RelayCardRow = {
+  device_id: string;
   key_id: string;
   ref: string;
   nonce: string;
@@ -84,14 +86,15 @@ export async function decryptCard(row: RelayCardRow, key: CryptoKey): Promise<In
 }
 
 /** listRelayCards(), decrypted with whatever keys this browser has. Keeps server order. */
-export async function loadMacCards(): Promise<{ cards: InsightCard[]; missingKey: boolean }> {
+export type MacCard = InsightCard & { row: Pick<RelayCardRow, "device_id" | "key_id" | "ref" | "nonce"> };
+export async function loadMacCards(): Promise<{ cards: MacCard[]; missingKey: boolean }> {
   let rows: RelayCardRow[];
   try {
     rows = (await listRelayCards()) as unknown as RelayCardRow[];
   } catch {
     return { cards: [], missingKey: false };
   }
-  const cards: InsightCard[] = [];
+  const cards: MacCard[] = [];
   let missingKey = false;
   const keyCache = new Map<string, CryptoKey | null>();
   for (const row of rows) {
@@ -105,7 +108,7 @@ export async function loadMacCards(): Promise<{ cards: InsightCard[]; missingKey
       continue;
     }
     const card = await decryptCard(row, key);
-    if (card) cards.push(card);
+    if (card) cards.push({ ...card, row: { device_id: row.device_id, key_id: row.key_id, ref: row.ref, nonce: row.nonce } });
   }
   return { cards, missingKey };
 }
@@ -122,11 +125,40 @@ export async function saveKeyFromLink(text: string): Promise<boolean> {
     const raw = atob(k.replace(/-/g, "+").replace(/_/g, "/") + "=");
     const bytes = new Uint8Array(32);
     for (let i = 0; i < 32; i++) bytes[i] = raw.charCodeAt(i);
-    const key = await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]);
+    const key = await crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
     bytes.fill(0);
     await putKey(kid, key);
     return true;
   } catch {
     return false;
   }
+}
+
+export type MacAnswer = { v: 1; id: string; ref: string; action: string; at: string };
+const toBase64 = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes));
+export function makeAnswer(ref: string, action: string): MacAnswer {
+  return {
+    v: 1,
+    id: toBase64(crypto.getRandomValues(new Uint8Array(16))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""),
+    ref,
+    action,
+    at: new Date().toISOString().slice(0, 19) + "Z",
+  };
+}
+export async function encryptAnswer(answer: MacAnswer, key: CryptoKey, keyId: string, nonce: Uint8Array<ArrayBuffer>): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(answer));
+  if (bytes.length > 256 || nonce.length !== 12) throw new Error("bad_answer");
+  const plaintext = new Uint8Array(256).fill(0x20);
+  plaintext.set(bytes);
+  const additionalData = new TextEncoder().encode(`nc-answer-v1|${keyId}|${answer.ref}`);
+  const encrypted = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce, additionalData }, key, plaintext);
+  return toBase64(new Uint8Array(encrypted));
+}
+export function canAnswer(key: CryptoKey | null): boolean { return key?.usages.includes("encrypt") ?? false; }
+export async function answerCard(row: MacCard["row"], action: string) {
+  const key = await getKey(row.key_id);
+  if (!key || !canAnswer(key)) return { needsScan: true as const };
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await encryptAnswer(makeAnswer(row.ref, action), key, row.key_id, nonce);
+  return sendRelayAnswer({ data: { deviceId: row.device_id, keyId: row.key_id, ref: row.ref, nonce: toBase64(nonce), ciphertext } });
 }

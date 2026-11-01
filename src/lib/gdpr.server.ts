@@ -182,6 +182,8 @@ export const RPC_COLUMN_TO_TABLE: Record<string, string> = {
   relay_pairing_codes_deleted: "relay_pairing_codes",
   relay_devices_deleted: "relay_devices",
   relay_cards_deleted: "relay_cards",
+  relay_answers_deleted: "relay_answers",
+  relay_answer_log_deleted: "relay_answer_log",
   chat_messages_deleted: "chat_messages",
   chat_message_attachments_deleted: "chat_message_attachments",
   chat_threads_deleted: "chat_threads",

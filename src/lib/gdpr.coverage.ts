@@ -22,7 +22,7 @@ export type GdprIgnoreEntry = {
 };
 
 /** Relay credentials and opaque cards are still personal data. */
-export const RELAY_GDPR_TABLES = ["relay_pairing_codes", "relay_devices", "relay_cards"] as const;
+export const RELAY_GDPR_TABLES = ["relay_pairing_codes", "relay_devices", "relay_cards", "relay_answers", "relay_answer_log"] as const;
 
 /**
  * Tables with a `user_id` column that are intentionally NOT wiped by
