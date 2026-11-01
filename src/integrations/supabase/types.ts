@@ -1454,6 +1454,8 @@ export type Database = {
           memory_edges_deleted: number
           memory_nodes_deleted: number
           pii_scrub_events_deleted: number
+          relay_answer_log_deleted: number
+          relay_answers_deleted: number
           relay_cards_deleted: number
           relay_devices_deleted: number
           relay_pairing_codes_deleted: number
