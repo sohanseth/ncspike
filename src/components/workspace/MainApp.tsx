@@ -42,6 +42,8 @@ import { Button } from "@/components/ui/button";
 import { useManualTasks, classifyTask, type ManualTask } from "@/lib/manual-tasks";
 import { useCloudConsent } from "@/components/workspace/CloudFeatureSheet";
 import { CLOUD_FEATURE_OFF_MESSAGE, CLOUD_FEATURES } from "@/lib/cloud-features";
+import { voiceDraftsNeedsConsent } from "@/lib/voice-drafts-consent";
+import { withEmailAiConsent } from "@/lib/email-ai-consent";
 
 // Default ElevenLabs voice for the unified Converse surface (matches the
 // server-side default in tts/elevenlabs-flash.ts: George — neutral low-latency).
@@ -955,7 +957,7 @@ function useInbox() {
 
 // ─── Voice Drafts (Slice B / Week 3) ──────────────────────────────────────────
 
-type VoiceDraftsStatus = { featureEnabled: boolean; consented: boolean; consentedAt: string | null };
+type VoiceDraftsStatus = { featureEnabled: boolean; consented: boolean; consentedAt: string | null; emailAiOn: boolean };
 
 function useVoiceDraftsStatus() {
   const [status, setStatus] = useState<VoiceDraftsStatus | null>(null);
@@ -963,9 +965,18 @@ function useVoiceDraftsStatus() {
     try {
       const { getVoiceDraftsStatus } = await import("@/lib/voice-drafts.functions");
       const s = await getVoiceDraftsStatus();
-      setStatus(s);
+      // The consent dialog is tied to the email_ai cloud feature, not only
+      // to voice_drafts_consent_at: someone who agreed to Voice Drafts
+      // before email_ai existed is asked once more.
+      let emailAiOn = true; // server unreachable → don't nag; the server still guards
+      try {
+        const { getCloudFeatures } = await import("@/lib/cloud-features.functions");
+        const f = await getCloudFeatures();
+        emailAiOn = !!f.features.find((x) => x.feature === "email_ai")?.on;
+      } catch { /* keep the default */ }
+      setStatus({ ...s, emailAiOn });
     } catch {
-      setStatus({ featureEnabled: false, consented: false, consentedAt: null });
+      setStatus({ featureEnabled: false, consented: false, consentedAt: null, emailAiOn: false });
     }
   };
   useEffect(() => { void refresh(); }, []);
