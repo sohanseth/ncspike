@@ -4506,6 +4506,9 @@ export function MainApp() {
   const [doneIds,     setDoneIds]     = useState<Set<string>>(() => new Set());
   const resolveItem   = (id: string) => setDoneIds(s => { const n = new Set(s); n.add(id); return n; });
   const unresolveItem = (id: string) => setDoneIds(s => { const n = new Set(s); n.delete(id); return n; });
+  // Consent card for email_ai actions in the domain detail sheet (Context
+  // on this sender, Research overnight).
+  const cloud = useCloudConsent();
 
   const handleDomain  = (id: DomainId) => { setDomain(id); setTool(null); setMapView(null); setExploreOpen(false); };
   const handleOther   = () => { setDomain("other"); setTool(null); setMapView(null); setExploreOpen(false); };
