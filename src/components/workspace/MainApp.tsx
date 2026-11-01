@@ -2015,9 +2015,12 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
         onClose={() => closeConsent(false)}
         onAccepted={() => { void refresh(); closeConsent(true); }}
       />
+      {cloud.sheet}
     </div>
   );
 }
+
+
 
 
 // ─── Home canvas ──────────────────────────────────────────────────────────────
@@ -2350,13 +2353,14 @@ function OtherCard({ size, count, items, onClick, pinned, onTogglePin }: {
 
 // ─── Domain detail (full-screen sheet) ────────────────────────────────────────
 
-function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve }: {
+function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnresolve, ensureEmailAi }: {
   domainId: DomainId | "other";
   onClose: () => void;
   onCompose: () => void;
   doneIds: Set<string>;
   onResolve: (id: string) => void;
   onUnresolve: (id: string) => void;
+  ensureEmailAi?: () => Promise<boolean>;
 }) {
   const isOther = domainId === "other";
   const domain = isOther ? null : DOMAINS[domainId];
