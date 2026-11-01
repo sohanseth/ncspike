@@ -85,7 +85,9 @@ class TurnOffConfirmationE2E(unittest.IsolatedAsyncioTestCase):
 
             async def turn_on():
                 await switch.click()
-                dialog = page.get_by_role("dialog", name=FEATURE_TITLE, exact=True)
+                dialog = page.get_by_role("dialog").filter(
+                    has=page.get_by_role("heading", name=FEATURE_TITLE, exact=True)
+                )
                 await expect(dialog).to_be_visible()
                 await dialog.get_by_role("button", name="Turn on", exact=True).click()
                 await expect(dialog).not_to_be_visible()
