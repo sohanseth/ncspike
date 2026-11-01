@@ -1880,6 +1880,7 @@ function InboxRow({
   s,
   consented,
   onRequestConsent,
+  onEnsureEmailAi,
   onCompose,
   onMarkDone,
   draftable,
@@ -1889,11 +1890,12 @@ function InboxRow({
   s: typeof CAT_STYLE[InboxItem["category"]];
   consented: boolean;
   onRequestConsent: () => Promise<boolean>;
+  onEnsureEmailAi?: () => Promise<boolean>;
   onCompose: () => void;
   onMarkDone: () => void;
   draftable: boolean;
 }) {
-  const draft = useDraftReply(item, consented, onRequestConsent);
+  const draft = useDraftReply(item, consented, onRequestConsent, onEnsureEmailAi);
   return (
     <div className={`group rounded-2xl border ${s.border} px-4 py-3 transition-all hover:brightness-110`}
       style={{background:s.bg}}>
