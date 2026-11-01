@@ -35,10 +35,10 @@ describe("Mac cards browser safety", () => {
     expect(await saveKeyFromLink(`https://example.test/link#k=${vectors.key}&kid=${vectors.keyId}`)).toBe(true);
     const key = await getKey(vectors.keyId);
     expect(key?.extractable).toBe(false);
-    expect(key?.usages).toEqual(["decrypt"]);
+    expect(key?.usages).toEqual(["encrypt", "decrypt"]);
     for (const bad of ["", "https://example.test/link", "#k=bad&kid=1a2b3c4d", `#k=${vectors.key}&kid=ABCDEF12`]) expect(await saveKeyFromLink(bad)).toBe(false);
     expect(network).not.toHaveBeenCalled();
-    expect(await loadMacCards()).toEqual({ cards: vectors.examples.map(e => e.card), missingKey: false });
+    expect(await loadMacCards()).toEqual({ cards: vectors.examples.map(e => ({ ...e.card, row: { device_id: undefined, key_id: e.row.key_id, ref: e.row.ref, nonce: e.row.nonce } })), missingKey: false });
     vi.stubGlobal("indexedDB", new IDBFactory());
     expect(await loadMacCards()).toEqual({ cards: [], missingKey: true });
   });

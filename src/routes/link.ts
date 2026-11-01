@@ -24,7 +24,7 @@ function page(nonce: string): string {
     }
     var raw = atob(k.replace(/-/g, "+").replace(/_/g, "/") + "="), bytes = new Uint8Array(32);
     for (var i = 0; i < 32; i++) bytes[i] = raw.charCodeAt(i);
-    crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["decrypt"]).then(function (key) {
+    crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]).then(function (key) {
       bytes.fill(0);
       return new Promise(function (resolve, reject) {
         var req = indexedDB.open("nc-keys", 1);

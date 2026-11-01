@@ -815,6 +815,68 @@ export type Database = {
         }
         Relationships: []
       }
+      relay_answer_log: {
+        Row: {
+          created_at: string
+          id: number
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          user_id?: string
+        }
+        Relationships: []
+      }
+      relay_answers: {
+        Row: {
+          ciphertext: string
+          created_at: string
+          device_id: string
+          expires_at: string
+          id: string
+          key_id: string
+          nonce: string
+          ref: string
+          user_id: string
+        }
+        Insert: {
+          ciphertext: string
+          created_at?: string
+          device_id: string
+          expires_at?: string
+          id?: string
+          key_id: string
+          nonce: string
+          ref: string
+          user_id: string
+        }
+        Update: {
+          ciphertext?: string
+          created_at?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          key_id?: string
+          nonce?: string
+          ref?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relay_answers_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "relay_devices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       relay_cards: {
         Row: {
           ciphertext: string
@@ -1392,6 +1454,8 @@ export type Database = {
           memory_edges_deleted: number
           memory_nodes_deleted: number
           pii_scrub_events_deleted: number
+          relay_answer_log_deleted: number
+          relay_answers_deleted: number
           relay_cards_deleted: number
           relay_devices_deleted: number
           relay_pairing_codes_deleted: number
@@ -1417,6 +1481,21 @@ export type Database = {
       mark_memory_node_resolved: {
         Args: { p_action: string; p_node_id: string; p_user_id: string }
         Returns: undefined
+      }
+      relay_answer_put: {
+        Args: {
+          p_ciphertext: string
+          p_device: string
+          p_key_id: string
+          p_nonce: string
+          p_ref: string
+          p_user: string
+        }
+        Returns: Json
+      }
+      relay_answers_take: {
+        Args: { p_ack: string[]; p_device: string }
+        Returns: Json
       }
       relay_claim: {
         Args: { p_code_hash: string; p_ip_hash: string }

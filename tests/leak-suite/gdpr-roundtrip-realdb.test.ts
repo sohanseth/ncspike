@@ -46,6 +46,8 @@ type SeedRow = (userId: string, ctx: { threadId: string; messageId: string }) =>
   { columns: string[]; values: unknown[] };
 
 const SEEDS: Record<string, SeedRow> = {
+  relay_answers: (userId, ctx) => ({ columns: ["user_id", "device_id", "ref", "key_id", "nonce", "ciphertext"], values: [userId, ctx.threadId, "a".repeat(24), "a".repeat(8), "AAAAAAAAAAAAAAAA", "A".repeat(363) + "="] }),
+  relay_answer_log: (userId) => ({ columns: ["user_id"], values: [userId] }),
   relay_pairing_codes: (userId) => ({ columns: ["user_id", "code_hash", "expires_at"], values: [userId, `code-${userId}`, new Date(Date.now() + 600000)] }),
   relay_devices: (userId) => ({ columns: ["user_id", "name", "token_hash"], values: [userId, "Test Mac", `token-${userId}`] }),
   relay_cards: (userId, ctx) => ({ columns: ["user_id", "device_id", "ref", "key_id", "nonce", "ciphertext", "expires_at"], values: [userId, ctx.threadId, "a".repeat(24), "a".repeat(8), "AAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAA==", new Date(Date.now() + 600000)] }),
@@ -218,7 +220,7 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
     await client.query("begin");
     try {
       for (const t of [
-        "relay_cards", "relay_devices", "relay_pairing_codes",
+        "relay_answers", "relay_answer_log", "relay_cards", "relay_devices", "relay_pairing_codes",
         // FK-safe: children first within each subsystem.
         "agent_findings",
         "agent_state",
@@ -320,6 +322,10 @@ describeIfDb("GDPR round-trip against a real Postgres", () => {
     const device = await client.query("insert into public.relay_devices (user_id,name,token_hash) values ($1,'Test Mac',$2) returning id", [userId, `token-${userId}`]);
     const relaySeed = SEEDS.relay_cards(userId, { threadId: device.rows[0].id, messageId });
     await client.query(`insert into public.relay_cards (${relaySeed.columns.join(",")}) values (${relaySeed.columns.map((_, i) => `$${i + 1}`).join(",")})`, relaySeed.values);
+    for (const table of ["relay_answers", "relay_answer_log"]) {
+      const seed = SEEDS[table](userId, { threadId: device.rows[0].id, messageId });
+      await client.query(`insert into public.${table} (${seed.columns.join(",")}) values (${seed.columns.map((_, i) => `$${i + 1}`).join(",")})`, seed.values);
+    }
     const independent = [
       "relay_pairing_codes",
       "user_traits",

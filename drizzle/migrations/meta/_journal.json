@@ -36,6 +36,20 @@
       "when": 1793548217289,
       "tag": "0004_private_notice_dismissed",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793568171656,
+      "tag": "0005_encrypted_relay_answers",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793568469683,
+      "tag": "0006_relay_answer_delete_counts",
+      "breakpoints": true
     }
   ]
 }

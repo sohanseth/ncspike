@@ -1,5 +1,10 @@
 # Encrypted Mac relay
 
+## Prompt F — encrypted answers
+- [x] Add private answer storage, atomic limits, polling, GDPR cleanup.
+- [x] Add browser encryption and Mac card answer controls without editing MainApp.
+- [x] Verify vectors, security limits, signed-in browser send/poll/decryption/republication/rescan flow, full suite (484 passed, 43 pre-existing gated skips) and source-preservation checklist; limitations documented in docs/encrypted-answers-verification.md.
+
 # Mac overnight research
 
 - [x] Apply mission mapping and atomic mission functions with owner-only server access; restore missing research prerequisites.
