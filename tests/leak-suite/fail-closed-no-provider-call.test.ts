@@ -83,6 +83,7 @@ vi.mock("@/server/cloud-features.server", () => ({
   isCloudFeatureOn: async () => true,
   requireCloudFeature: async () => {},
   cloudFeatureOffResponse: () => new Response("{}", { status: 403 }),
+  noteCloudActivity: async () => {},
 }));
 
 // ─── supabaseAdmin: minimal but flexible chainable stub. ───────────────────
