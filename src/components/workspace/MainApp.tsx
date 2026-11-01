@@ -1928,6 +1928,7 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
   const [done, setDone] = useState<string[]>([]);
   const [showLow, setShowLow] = useState(false);
   const { status, refresh } = useVoiceDraftsStatus();
+  const cloud = useCloudConsent();
   const [consentOpen, setConsentOpen] = useState(false);
   const consentResolverRef = useRef<((ok: boolean) => void) | null>(null);
 
@@ -1986,8 +1987,9 @@ function InboxQueue({ onCompose, items, error }: { onCompose:()=>void; items: In
             item={item}
             c={c}
             s={s}
-            consented={status?.consented ?? false}
+            consented={!voiceDraftsNeedsConsent(status ? { consented: status.consented, emailAiOn: status.emailAiOn } : null)}
             onRequestConsent={requestConsent}
+            onEnsureEmailAi={() => cloud.ensure("email_ai")}
             onCompose={onCompose}
             onMarkDone={() => {
               setDone(d => [...d, item.id]);
