@@ -82,6 +82,8 @@ class TurnOffConfirmationE2E(unittest.IsolatedAsyncioTestCase):
                 await expect(page.get_by_role("heading", name="Cloud features", exact=True)).to_be_visible()
                 # Every feature's controlled switch must finish its authenticated read.
                 await expect(page.get_by_role("switch", name=FEATURE_TITLE, exact=True)).to_be_visible()
+                # SSR renders off switches before hydration attaches click handlers.
+                await page.wait_for_load_state("networkidle")
 
             async def turn_on():
                 await switch.click()
