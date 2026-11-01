@@ -2489,8 +2489,9 @@ function DomainDetail({ domainId, onClose, onCompose, doneIds, onResolve, onUnre
                 item={item}
                 c={cardC}
                 s={s}
-                consented={status?.consented ?? false}
+                consented={!voiceDraftsNeedsConsent(status ? { consented: status.consented, emailAiOn: status.emailAiOn } : null)}
                 onRequestConsent={requestConsent}
+                onEnsureEmailAi={ensureEmailAi}
                 onCompose={onCompose}
                 onMarkDone={() => {
                   onResolve(item.id);
