@@ -4565,6 +4565,7 @@ export function MainApp() {
 
           {/* Domain detail drawer */}
           {domain && !exploreOpen && <DomainDetail domainId={domain} onClose={()=>setDomain(null)} onCompose={()=>setTool("compose")} doneIds={doneIds} onResolve={resolveItem} onUnresolve={unresolveItem} ensureEmailAi={() => cloud.ensure("email_ai")}/>}
+          {cloud.sheet}
         </div>
       </div>
 
