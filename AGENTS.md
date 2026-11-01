@@ -12,3 +12,4 @@
 - Account deletion is a five-step pipeline in src/lib/gdpr.server.ts (gdpr.functions.ts holds only RPC wrappers that lazy-import it) (sign out sessions → revoke Google tokens → wipe Storage → delete_user_data RPC → delete auth user); delete_user_data is service_role-only and every public user_id table must stay covered by export+RPC or GDPR_IGNORE_TABLES (CI-enforced).
 - Retired endpoints answer 410 {"error":"gone"} and call/log nothing (WhatsApp fn + route, supabase/functions/chat).
 - Logs never carry raw provider bodies, request payloads, push titles or whole error objects — log error class + HTTP status, using scrubErrorMessage where it fits.
+- Live Privacy confirmation tests use Python Playwright with managed preview auth and owner-scoped persisted read-back; use voice replies and restore its original state to avoid deleting user content.
