@@ -114,7 +114,7 @@ export function CloudFeaturesSection() {
                 />
               </div>
               {confirmOff === k && (
-                <div className="mt-3 rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm">
+                <div className="mt-3 rounded-xl glass-elevated p-4 text-[12.5px] text-foreground/90 leading-relaxed">
                   <p>Turning this off deletes: {CLOUD_FEATURE_OFF_DELETES[k]}</p>
                   {k === "cloud_chat" && (
                     <label className="mt-2 flex items-center gap-2">
@@ -122,13 +122,20 @@ export function CloudFeaturesSection() {
                       Also delete my cloud chats, their messages and photos
                     </label>
                   )}
-                  <div className="mt-3 flex gap-2">
-                    <Button size="sm" variant="destructive" disabled={busy === k} onClick={() => change(k, false)}>
-                      Turn off
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setConfirmOff(null)}>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      onClick={() => setConfirmOff(null)}
+                      className="px-3 py-1.5 rounded-md text-[12px] text-muted-foreground/80 hover:bg-muted hover:text-foreground"
+                    >
                       Keep on
-                    </Button>
+                    </button>
+                    <button
+                      onClick={() => change(k, false)}
+                      disabled={busy === k}
+                      className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-destructive/15 text-destructive ring-1 ring-destructive/30 hover:bg-destructive/20 disabled:opacity-50"
+                    >
+                      Turn off
+                    </button>
                   </div>
                 </div>
               )}

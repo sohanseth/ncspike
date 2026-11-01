@@ -78,9 +78,9 @@ export function CloudFeatureSheet({
   }
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg rounded-2xl glass-elevated">
         <DialogHeader>
-          <DialogTitle className="font-display">{info.title}</DialogTitle>
+          <DialogTitle className="text-sm font-semibold tracking-tight font-display">{info.title}</DialogTitle>
           <DialogDescription className="sr-only">Cloud feature consent</DialogDescription>
         </DialogHeader>
         {body}
