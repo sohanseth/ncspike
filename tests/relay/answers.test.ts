@@ -75,7 +75,7 @@ describe("Mac answers — real PostgreSQL atomic rules and HTTP handler", () => 
   const input = () => ({ deviceId: device, keyId: vectors.keyId, ref, nonce: Buffer.alloc(12).toString("base64"), ciphertext: Buffer.alloc(272).toString("base64") });
   const request = (body: unknown, bearer = token, json = true) => new Request("http://localhost/api/relay/answers", { method: "POST", headers: { ...(json ? { "content-type": "application/json" } : {}), authorization: `Bearer ${bearer}` }, body: JSON.stringify(body) });
   beforeEach(async () => {
-    client = new Client(); await client.connect(); await client.query("begin");
+    client = new Client({ ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : undefined }); await client.connect(); await client.query("begin");
     device = (await client.query("insert into relay_devices(user_id,name,token_hash) values($1,'Answer test',$2) returning id", [user, await sha256(token)])).rows[0].id;
     otherDevice = (await client.query("insert into relay_devices(user_id,name,token_hash) values($1,'Other test',$2) returning id", [other, await sha256(token + "b")])).rows[0].id;
     await client.query("insert into relay_cards(user_id,device_id,key_id,ref,nonce,ciphertext,ord,expires_at) values($1,$2,$3,$4,'nonce','ciphertext',0,now()+interval '1 day')", [user, device, vectors.keyId, ref]);
