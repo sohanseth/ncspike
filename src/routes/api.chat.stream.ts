@@ -243,12 +243,14 @@ export const Route = createFileRoute("/api/chat/stream")({
         // refuses before creating a thread, storing text, embedding or
         // reading attachments unless cloud chat is on. Fails closed.
         {
-          const { isCloudFeatureOn, cloudFeatureOffResponse } = await import(
+          const { isCloudFeatureOn, cloudFeatureOffResponse, noteCloudActivity } = await import(
             "@/server/cloud-features.server"
           );
           if (!(await isCloudFeatureOn(userId, "cloud_chat"))) {
             return cloudFeatureOffResponse("cloud_chat");
           }
+          // Content-free activity row: which feature, which service, when.
+          void noteCloudActivity(userId, "cloud_chat", "lovable-ai");
         }
 
         // Resolve thread up-front so we can include the id in the meta event.
