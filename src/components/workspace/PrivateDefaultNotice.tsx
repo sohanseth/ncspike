@@ -3,12 +3,16 @@ import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Link } from "@tanstack/react-router";
 import { X } from "lucide-react";
-import { getPrivateDefaultNotice } from "@/lib/cloud-features.functions";
+import { dismissPrivateDefaultNotice, getPrivateDefaultNotice } from "@/lib/cloud-features.functions";
 
+// Browser copy of the dismissal, used only as a fallback for when the
+// server can't be reached. The account-level private_notice_dismissed_at
+// column is the source of truth, so the notice stays gone on every device.
 const KEY = "nc:private-default-notice-seen";
 
 export function PrivateDefaultNotice() {
   const fn = useServerFn(getPrivateDefaultNotice);
+  const dismissFn = useServerFn(dismissPrivateDefaultNotice);
   const [show, setShow] = useState(false);
   useEffect(() => {
     if (localStorage.getItem(KEY)) return;
@@ -18,6 +22,8 @@ export function PrivateDefaultNotice() {
   const dismiss = () => {
     localStorage.setItem(KEY, "1");
     setShow(false);
+    // Best effort: the localStorage fallback above covers a failed call.
+    void dismissFn().catch(() => {});
   };
   return (
     <div role="status" className="mx-4 my-3 flex items-start gap-3 rounded-xl border bg-card/60 p-4 text-sm">
