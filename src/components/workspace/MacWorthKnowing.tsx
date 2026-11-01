@@ -2,15 +2,24 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Lightbulb } from "lucide-react";
 import type { InsightCard } from "@/lib/insight-card";
-import { InsightCardView } from "@/components/InsightCardView";
+import type { MacCard } from "@/lib/mac-cards";
+import { MacCards } from "@/components/workspace/MacCards";
+import { answerIdentity, readAnswered, rememberAnswered, type AnsweredCards } from "@/lib/mac-answer-state";
 import { listRelayDevices } from "@/lib/relay.functions";
 
 const HIDDEN_KEY = "nc.macCardsHidden.v1";
-type State = { cards: InsightCard[]; missingKey: boolean; hasMac: boolean } | null;
+type State = { cards: MacCard[]; missingKey: boolean; hasMac: boolean } | null;
 
 export function MacWorthKnowing() {
   const [state, setState] = useState<State>(null);
   const [hidden, setHidden] = useState<string[]>([]);
+  const [answered, setAnswered] = useState<AnsweredCards>({});
+  const [notice, setNotice] = useState("");
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(""), 8000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   const load = useCallback(async () => {
     try {
@@ -22,6 +31,7 @@ export function MacWorthKnowing() {
 
   useEffect(() => {
     try { setHidden(JSON.parse(localStorage.getItem(HIDDEN_KEY) || "[]")); } catch { /* ignore */ }
+    setAnswered(readAnswered());
     void load();
     const onFocus = () => void load();
     window.addEventListener("focus", onFocus);
@@ -36,13 +46,14 @@ export function MacWorthKnowing() {
   };
 
   if (!state) return null;
-  const cards = state.cards.filter((c) => !hidden.includes(c.id)).slice(0, 3);
+  const cards = state.cards.filter((c) => c.private ? !hidden.includes(c.id) : !answered[answerIdentity(c.row)]).slice(0, 3);
 
   return (
     <section aria-labelledby="mac-worth-knowing" className="mx-4 mt-4 py-4">
       <h2 id="mac-worth-knowing" className="mb-3 flex items-center gap-2 font-display text-sm font-semibold">
         <Lightbulb className="size-4 text-primary" /> Worth knowing
       </h2>
+      {notice && <p role="status" className="mb-3 text-sm text-muted-foreground">{notice}</p>}
       {!state.hasMac ? (
         <Link to="/workspace/privacy" hash="connect-mac" className="text-sm text-primary underline underline-offset-4">
           Connect your Mac to see what it noticed
@@ -50,8 +61,8 @@ export function MacWorthKnowing() {
       ) : cards.length > 0 ? (
         <ul className="grid gap-3 md:grid-cols-3">
           {cards.map((c) => (
-            <InsightCardView key={c.id} card={{ ...c, actions: [] }} onNotNow={notNow}
-              footnote="To act on it, open NeuralConnexions on your Mac." />
+            <MacCards key={`${c.id}:${c.row.nonce}`} card={c} onPrivateNotNow={() => notNow(c)}
+              onAnswered={() => setAnswered(rememberAnswered(c.row))} onNotice={setNotice} />
           ))}
         </ul>
       ) : state.missingKey ? (

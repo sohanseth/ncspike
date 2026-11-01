@@ -68,7 +68,7 @@ export type RelayCardRow = {
 };
 
 /** Decrypts one relay row into an InsightCard, or null. Never throws into the UI, never logs the plaintext. */
-export async function decryptCard(row: RelayCardRow, key: CryptoKey): Promise<InsightCard | null> {
+export async function decryptCard(row: Pick<RelayCardRow, "nonce" | "ciphertext" | "key_id" | "ref">, key: CryptoKey): Promise<InsightCard | null> {
   try {
     const iv = base64ToBytes(row.nonce);
     const ciphertext = base64ToBytes(row.ciphertext);
