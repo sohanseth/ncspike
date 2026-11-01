@@ -34,18 +34,29 @@ export function CloudFeatureSheet({
   const isMobile = useIsMobile();
   if (!feature) return null;
   const info = CLOUD_FEATURES[feature];
+  // Same surface, text and button styles as the app's other dialogs (e.g.
+  // the Voice Drafts consent dialog): glass-elevated surface, body text at
+  // foreground/90 so contrast stays at or above 4.5:1 in every theme.
   const body = (
-    <div className="space-y-3 text-sm text-muted-foreground">
-      <p className="text-foreground/90 leading-relaxed">{info.words}</p>
+    <div className="space-y-3 text-[12.5px] text-foreground/90 leading-relaxed">
+      <p>{info.words}</p>
       <p>{SENSITIVE_LINE}</p>
       <p>{OFF_ANYTIME_LINE}</p>
       <div className="flex justify-end gap-2 pt-2">
-        <Button variant="ghost" onClick={onNotNow} disabled={busy}>
+        <button
+          onClick={onNotNow}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-md text-[12px] text-muted-foreground/80 hover:bg-muted hover:text-foreground disabled:opacity-50"
+        >
           Not now
-        </Button>
-        <Button onClick={onTurnOn} disabled={busy}>
+        </button>
+        <button
+          onClick={onTurnOn}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-md text-[12px] font-medium bg-primary/15 text-success ring-1 ring-primary/30 hover:bg-primary/20 disabled:opacity-50"
+        >
           Turn on
-        </Button>
+        </button>
       </div>
     </div>
   );
@@ -55,9 +66,9 @@ export function CloudFeatureSheet({
   if (isMobile) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="bottom" className="rounded-t-2xl">
+        <SheetContent side="bottom" className="rounded-t-2xl glass-elevated">
           <SheetHeader className="text-left">
-            <SheetTitle className="font-display">{info.title}</SheetTitle>
+            <SheetTitle className="text-sm font-semibold tracking-tight font-display">{info.title}</SheetTitle>
             <SheetDescription className="sr-only">Cloud feature consent</SheetDescription>
           </SheetHeader>
           <div className="mt-3">{body}</div>
