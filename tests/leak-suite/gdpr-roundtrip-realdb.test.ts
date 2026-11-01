@@ -47,7 +47,7 @@ type SeedRow = (userId: string, ctx: { threadId: string; messageId: string }) =>
 
 const SEEDS: Record<string, SeedRow> = {
   relay_answers: (userId, ctx) => ({ columns: ["user_id", "device_id", "ref", "key_id", "nonce", "ciphertext"], values: [userId, ctx.threadId, "a".repeat(24), "a".repeat(8), "AAAAAAAAAAAAAAAA", "A".repeat(363) + "="] }),
-  relay_answer_log: (userId, ctx) => ({ columns: ["user_id", "device_id"], values: [userId, ctx.threadId] }),
+  relay_answer_log: (userId) => ({ columns: ["user_id"], values: [userId] }),
   relay_pairing_codes: (userId) => ({ columns: ["user_id", "code_hash", "expires_at"], values: [userId, `code-${userId}`, new Date(Date.now() + 600000)] }),
   relay_devices: (userId) => ({ columns: ["user_id", "name", "token_hash"], values: [userId, "Test Mac", `token-${userId}`] }),
   relay_cards: (userId, ctx) => ({ columns: ["user_id", "device_id", "ref", "key_id", "nonce", "ciphertext", "expires_at"], values: [userId, ctx.threadId, "a".repeat(24), "a".repeat(8), "AAAAAAAAAAAAAAAA", "AAAAAAAAAAAAAAAAAAAAAA==", new Date(Date.now() + 600000)] }),
