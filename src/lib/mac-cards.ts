@@ -7,6 +7,8 @@ import { insightCardSchema } from "@/lib/insight-card.schema";
 import type { InsightCard } from "@/lib/insight-card";
 import { listRelayCards } from "@/lib/relay.functions";
 import { sendRelayAnswer } from "@/lib/relay-answers.functions";
+import { listRelayLists } from "@/lib/relay-lists.functions";
+import { macListsDocumentSchema, type RelayListsRow } from "@/lib/relay-lists-schema";
 
 const DB_NAME = "nc-keys";
 const STORE = "keys";
@@ -161,4 +163,38 @@ export async function answerCard(row: MacCard["row"], action: string) {
   const nonce = crypto.getRandomValues(new Uint8Array(12));
   const ciphertext = await encryptAnswer(makeAnswer(row.ref, action), key, row.key_id, nonce);
   return sendRelayAnswer({ data: { deviceId: row.device_id, keyId: row.key_id, ref: row.ref, nonce: toBase64(nonce), ciphertext } });
+}
+
+export async function openMacLists(row: RelayListsRow) {
+  const key = await getKey(row.key_id);
+  if (!key) return { needsScan: true as const };
+  try {
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(row.nonce), additionalData: new TextEncoder().encode(`nc-lists-v1|${row.key_id}`) }, key, base64ToBytes(row.ciphertext));
+    const parsed = macListsDocumentSchema.safeParse(JSON.parse(new TextDecoder().decode(plain).replace(/ +$/, "")));
+    return parsed.success ? { doc: parsed.data, row } : null;
+  } catch { return null; }
+}
+export async function loadMacLists() {
+  const rows = await listRelayLists();
+  for (const row of rows) {
+    const opened = await openMacLists(row);
+    if (opened && "doc" in opened) return opened;
+  }
+  return rows.length ? { needsScan: true as const } : null;
+}
+export async function tickMacItem(row: RelayListsRow, ref: string) {
+  const key = await getKey(row.key_id);
+  if (!key || !canAnswer(key)) return { needsScan: true as const };
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await encryptAnswer(makeAnswer(ref, "tick"), key, row.key_id, nonce);
+  return sendRelayAnswer({ data: { deviceId: row.device_id, keyId: row.key_id, ref, nonce: toBase64(nonce), ciphertext } });
+}
+export function dayWords(due: string, today: string): string {
+  if (!due) return "";
+  const days = Math.round((Date.parse(`${due}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86400000);
+  if (days < 0) return `${-days} ${days === -1 ? "day" : "days"} late`;
+  if (days === 0) return "today";
+  if (days === 1) return "tomorrow";
+  const date = new Date(`${due}T12:00:00`);
+  return days <= 6 ? date.toLocaleDateString("en-GB", { weekday: "short" }) : date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }

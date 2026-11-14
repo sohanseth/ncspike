@@ -29,6 +29,7 @@ import { Route as ApiChatStreamRouteImport } from './routes/api.chat.stream'
 import { Route as ApiPublicWhatsappRouteImport } from './routes/api.public.whatsapp'
 import { Route as ApiRelayAnswersRouteImport } from './routes/api.relay.answers'
 import { Route as ApiRelayClaimRouteImport } from './routes/api.relay.claim'
+import { Route as ApiRelayListsRouteImport } from './routes/api.relay.lists'
 import { Route as ApiRelayPublishRouteImport } from './routes/api.relay.publish'
 import { Route as ApiRelayRevokeRouteImport } from './routes/api.relay.revoke'
 import { Route as ApiSttGroqRouteImport } from './routes/api.stt.groq'
@@ -38,11 +39,14 @@ import { Route as WorkspaceInternalCpaudRouteImport } from './routes/workspace.i
 import { Route as ApiPublicGoogleCallbackRouteImport } from './routes/api.public.google.callback'
 import { Route as ApiPublicRelayAnswersRouteImport } from './routes/api.public.relay.answers'
 import { Route as ApiPublicRelayClaimRouteImport } from './routes/api.public.relay.claim'
+import { Route as ApiPublicRelayListsRouteImport } from './routes/api.public.relay.lists'
 import { Route as ApiPublicRelayPublishRouteImport } from './routes/api.public.relay.publish'
 import { Route as ApiPublicRelayRevokeRouteImport } from './routes/api.public.relay.revoke'
+import { Route as ApiRelayListsDeleteRouteImport } from './routes/api.relay.lists.delete'
 import { Route as ApiRelayMissionsDeleteRouteImport } from './routes/api.relay.missions.delete'
 import { Route as ApiRelayMissionsResultsRouteImport } from './routes/api.relay.missions.results'
 import { Route as ApiRelayMissionsUpsertRouteImport } from './routes/api.relay.missions.upsert'
+import { Route as ApiPublicRelayListsDeleteRouteImport } from './routes/api.public.relay.lists.delete'
 import { Route as ApiPublicRelayMissionsDeleteRouteImport } from './routes/api.public.relay.missions.delete'
 import { Route as ApiPublicRelayMissionsResultsRouteImport } from './routes/api.public.relay.missions.results'
 import { Route as ApiPublicRelayMissionsUpsertRouteImport } from './routes/api.public.relay.missions.upsert'
@@ -148,6 +152,11 @@ const ApiRelayClaimRoute = ApiRelayClaimRouteImport.update({
   path: '/api/relay/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRelayListsRoute = ApiRelayListsRouteImport.update({
+  id: '/api/relay/lists',
+  path: '/api/relay/lists',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiRelayPublishRoute = ApiRelayPublishRouteImport.update({
   id: '/api/relay/publish',
   path: '/api/relay/publish',
@@ -193,6 +202,11 @@ const ApiPublicRelayClaimRoute = ApiPublicRelayClaimRouteImport.update({
   path: '/api/public/relay/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRelayListsRoute = ApiPublicRelayListsRouteImport.update({
+  id: '/api/public/relay/lists',
+  path: '/api/public/relay/lists',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicRelayPublishRoute = ApiPublicRelayPublishRouteImport.update({
   id: '/api/public/relay/publish',
   path: '/api/public/relay/publish',
@@ -202,6 +216,11 @@ const ApiPublicRelayRevokeRoute = ApiPublicRelayRevokeRouteImport.update({
   id: '/api/public/relay/revoke',
   path: '/api/public/relay/revoke',
   getParentRoute: () => rootRouteImport,
+} as any)
+const ApiRelayListsDeleteRoute = ApiRelayListsDeleteRouteImport.update({
+  id: '/delete',
+  path: '/delete',
+  getParentRoute: () => ApiRelayListsRoute,
 } as any)
 const ApiRelayMissionsDeleteRoute = ApiRelayMissionsDeleteRouteImport.update({
   id: '/api/relay/missions/delete',
@@ -218,6 +237,12 @@ const ApiRelayMissionsUpsertRoute = ApiRelayMissionsUpsertRouteImport.update({
   path: '/api/relay/missions/upsert',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRelayListsDeleteRoute =
+  ApiPublicRelayListsDeleteRouteImport.update({
+    id: '/delete',
+    path: '/delete',
+    getParentRoute: () => ApiPublicRelayListsRoute,
+  } as any)
 const ApiPublicRelayMissionsDeleteRoute =
   ApiPublicRelayMissionsDeleteRouteImport.update({
     id: '/api/public/relay/missions/delete',
@@ -258,6 +283,7 @@ export interface FileRoutesByFullPath {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/relay/answers': typeof ApiRelayAnswersRoute
   '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/lists': typeof ApiRelayListsRouteWithChildren
   '/api/relay/publish': typeof ApiRelayPublishRoute
   '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
@@ -267,11 +293,14 @@ export interface FileRoutesByFullPath {
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
   '/api/public/relay/answers': typeof ApiPublicRelayAnswersRoute
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/lists': typeof ApiPublicRelayListsRouteWithChildren
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/lists/delete': typeof ApiRelayListsDeleteRoute
   '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
   '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
   '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/lists/delete': typeof ApiPublicRelayListsDeleteRoute
   '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
   '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
   '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
@@ -297,6 +326,7 @@ export interface FileRoutesByTo {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/relay/answers': typeof ApiRelayAnswersRoute
   '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/lists': typeof ApiRelayListsRouteWithChildren
   '/api/relay/publish': typeof ApiRelayPublishRoute
   '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
@@ -306,11 +336,14 @@ export interface FileRoutesByTo {
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
   '/api/public/relay/answers': typeof ApiPublicRelayAnswersRoute
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/lists': typeof ApiPublicRelayListsRouteWithChildren
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/lists/delete': typeof ApiRelayListsDeleteRoute
   '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
   '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
   '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/lists/delete': typeof ApiPublicRelayListsDeleteRoute
   '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
   '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
   '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
@@ -337,6 +370,7 @@ export interface FileRoutesById {
   '/api/public/whatsapp': typeof ApiPublicWhatsappRoute
   '/api/relay/answers': typeof ApiRelayAnswersRoute
   '/api/relay/claim': typeof ApiRelayClaimRoute
+  '/api/relay/lists': typeof ApiRelayListsRouteWithChildren
   '/api/relay/publish': typeof ApiRelayPublishRoute
   '/api/relay/revoke': typeof ApiRelayRevokeRoute
   '/api/stt/groq': typeof ApiSttGroqRoute
@@ -346,11 +380,14 @@ export interface FileRoutesById {
   '/api/public/google/callback': typeof ApiPublicGoogleCallbackRoute
   '/api/public/relay/answers': typeof ApiPublicRelayAnswersRoute
   '/api/public/relay/claim': typeof ApiPublicRelayClaimRoute
+  '/api/public/relay/lists': typeof ApiPublicRelayListsRouteWithChildren
   '/api/public/relay/publish': typeof ApiPublicRelayPublishRoute
   '/api/public/relay/revoke': typeof ApiPublicRelayRevokeRoute
+  '/api/relay/lists/delete': typeof ApiRelayListsDeleteRoute
   '/api/relay/missions/delete': typeof ApiRelayMissionsDeleteRoute
   '/api/relay/missions/results': typeof ApiRelayMissionsResultsRoute
   '/api/relay/missions/upsert': typeof ApiRelayMissionsUpsertRoute
+  '/api/public/relay/lists/delete': typeof ApiPublicRelayListsDeleteRoute
   '/api/public/relay/missions/delete': typeof ApiPublicRelayMissionsDeleteRoute
   '/api/public/relay/missions/results': typeof ApiPublicRelayMissionsResultsRoute
   '/api/public/relay/missions/upsert': typeof ApiPublicRelayMissionsUpsertRoute
@@ -378,6 +415,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/relay/answers'
     | '/api/relay/claim'
+    | '/api/relay/lists'
     | '/api/relay/publish'
     | '/api/relay/revoke'
     | '/api/stt/groq'
@@ -387,11 +425,14 @@ export interface FileRouteTypes {
     | '/api/public/google/callback'
     | '/api/public/relay/answers'
     | '/api/public/relay/claim'
+    | '/api/public/relay/lists'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/lists/delete'
     | '/api/relay/missions/delete'
     | '/api/relay/missions/results'
     | '/api/relay/missions/upsert'
+    | '/api/public/relay/lists/delete'
     | '/api/public/relay/missions/delete'
     | '/api/public/relay/missions/results'
     | '/api/public/relay/missions/upsert'
@@ -417,6 +458,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/relay/answers'
     | '/api/relay/claim'
+    | '/api/relay/lists'
     | '/api/relay/publish'
     | '/api/relay/revoke'
     | '/api/stt/groq'
@@ -426,11 +468,14 @@ export interface FileRouteTypes {
     | '/api/public/google/callback'
     | '/api/public/relay/answers'
     | '/api/public/relay/claim'
+    | '/api/public/relay/lists'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/lists/delete'
     | '/api/relay/missions/delete'
     | '/api/relay/missions/results'
     | '/api/relay/missions/upsert'
+    | '/api/public/relay/lists/delete'
     | '/api/public/relay/missions/delete'
     | '/api/public/relay/missions/results'
     | '/api/public/relay/missions/upsert'
@@ -456,6 +501,7 @@ export interface FileRouteTypes {
     | '/api/public/whatsapp'
     | '/api/relay/answers'
     | '/api/relay/claim'
+    | '/api/relay/lists'
     | '/api/relay/publish'
     | '/api/relay/revoke'
     | '/api/stt/groq'
@@ -465,11 +511,14 @@ export interface FileRouteTypes {
     | '/api/public/google/callback'
     | '/api/public/relay/answers'
     | '/api/public/relay/claim'
+    | '/api/public/relay/lists'
     | '/api/public/relay/publish'
     | '/api/public/relay/revoke'
+    | '/api/relay/lists/delete'
     | '/api/relay/missions/delete'
     | '/api/relay/missions/results'
     | '/api/relay/missions/upsert'
+    | '/api/public/relay/lists/delete'
     | '/api/public/relay/missions/delete'
     | '/api/public/relay/missions/results'
     | '/api/public/relay/missions/upsert'
@@ -496,6 +545,7 @@ export interface RootRouteChildren {
   ApiPublicWhatsappRoute: typeof ApiPublicWhatsappRoute
   ApiRelayAnswersRoute: typeof ApiRelayAnswersRoute
   ApiRelayClaimRoute: typeof ApiRelayClaimRoute
+  ApiRelayListsRoute: typeof ApiRelayListsRouteWithChildren
   ApiRelayPublishRoute: typeof ApiRelayPublishRoute
   ApiRelayRevokeRoute: typeof ApiRelayRevokeRoute
   ApiSttGroqRoute: typeof ApiSttGroqRoute
@@ -504,6 +554,7 @@ export interface RootRouteChildren {
   ApiPublicGoogleCallbackRoute: typeof ApiPublicGoogleCallbackRoute
   ApiPublicRelayAnswersRoute: typeof ApiPublicRelayAnswersRoute
   ApiPublicRelayClaimRoute: typeof ApiPublicRelayClaimRoute
+  ApiPublicRelayListsRoute: typeof ApiPublicRelayListsRouteWithChildren
   ApiPublicRelayPublishRoute: typeof ApiPublicRelayPublishRoute
   ApiPublicRelayRevokeRoute: typeof ApiPublicRelayRevokeRoute
   ApiRelayMissionsDeleteRoute: typeof ApiRelayMissionsDeleteRoute
@@ -656,6 +707,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiRelayClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/relay/lists': {
+      id: '/api/relay/lists'
+      path: '/api/relay/lists'
+      fullPath: '/api/relay/lists'
+      preLoaderRoute: typeof ApiRelayListsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/relay/publish': {
       id: '/api/relay/publish'
       path: '/api/relay/publish'
@@ -719,6 +777,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicRelayClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/relay/lists': {
+      id: '/api/public/relay/lists'
+      path: '/api/public/relay/lists'
+      fullPath: '/api/public/relay/lists'
+      preLoaderRoute: typeof ApiPublicRelayListsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/relay/publish': {
       id: '/api/public/relay/publish'
       path: '/api/public/relay/publish'
@@ -732,6 +797,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/relay/revoke'
       preLoaderRoute: typeof ApiPublicRelayRevokeRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/relay/lists/delete': {
+      id: '/api/relay/lists/delete'
+      path: '/delete'
+      fullPath: '/api/relay/lists/delete'
+      preLoaderRoute: typeof ApiRelayListsDeleteRouteImport
+      parentRoute: typeof ApiRelayListsRoute
     }
     '/api/relay/missions/delete': {
       id: '/api/relay/missions/delete'
@@ -753,6 +825,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/relay/missions/upsert'
       preLoaderRoute: typeof ApiRelayMissionsUpsertRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/public/relay/lists/delete': {
+      id: '/api/public/relay/lists/delete'
+      path: '/delete'
+      fullPath: '/api/public/relay/lists/delete'
+      preLoaderRoute: typeof ApiPublicRelayListsDeleteRouteImport
+      parentRoute: typeof ApiPublicRelayListsRoute
     }
     '/api/public/relay/missions/delete': {
       id: '/api/public/relay/missions/delete'
@@ -790,6 +869,29 @@ const WorkspaceAgentsRouteWithChildren = WorkspaceAgentsRoute._addFileChildren(
   WorkspaceAgentsRouteChildren,
 )
 
+interface ApiRelayListsRouteChildren {
+  ApiRelayListsDeleteRoute: typeof ApiRelayListsDeleteRoute
+}
+
+const ApiRelayListsRouteChildren: ApiRelayListsRouteChildren = {
+  ApiRelayListsDeleteRoute: ApiRelayListsDeleteRoute,
+}
+
+const ApiRelayListsRouteWithChildren = ApiRelayListsRoute._addFileChildren(
+  ApiRelayListsRouteChildren,
+)
+
+interface ApiPublicRelayListsRouteChildren {
+  ApiPublicRelayListsDeleteRoute: typeof ApiPublicRelayListsDeleteRoute
+}
+
+const ApiPublicRelayListsRouteChildren: ApiPublicRelayListsRouteChildren = {
+  ApiPublicRelayListsDeleteRoute: ApiPublicRelayListsDeleteRoute,
+}
+
+const ApiPublicRelayListsRouteWithChildren =
+  ApiPublicRelayListsRoute._addFileChildren(ApiPublicRelayListsRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthRoute: AuthRoute,
@@ -811,6 +913,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicWhatsappRoute: ApiPublicWhatsappRoute,
   ApiRelayAnswersRoute: ApiRelayAnswersRoute,
   ApiRelayClaimRoute: ApiRelayClaimRoute,
+  ApiRelayListsRoute: ApiRelayListsRouteWithChildren,
   ApiRelayPublishRoute: ApiRelayPublishRoute,
   ApiRelayRevokeRoute: ApiRelayRevokeRoute,
   ApiSttGroqRoute: ApiSttGroqRoute,
@@ -819,6 +922,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGoogleCallbackRoute: ApiPublicGoogleCallbackRoute,
   ApiPublicRelayAnswersRoute: ApiPublicRelayAnswersRoute,
   ApiPublicRelayClaimRoute: ApiPublicRelayClaimRoute,
+  ApiPublicRelayListsRoute: ApiPublicRelayListsRouteWithChildren,
   ApiPublicRelayPublishRoute: ApiPublicRelayPublishRoute,
   ApiPublicRelayRevokeRoute: ApiPublicRelayRevokeRoute,
   ApiRelayMissionsDeleteRoute: ApiRelayMissionsDeleteRoute,

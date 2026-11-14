@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import MainApp from "@/components/workspace/MainApp";
 import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import { MacWorthKnowing } from "@/components/workspace/MacWorthKnowing";
+import { MacLists } from "@/components/workspace/MacLists";
 import { PrivateDefaultNotice } from "@/components/workspace/PrivateDefaultNotice";
 import { useAuth } from "@/lib/auth-context";
 
@@ -45,6 +46,7 @@ function WorkspaceLayout() {
       </div>
       <PrivateDefaultNotice />
       <MacWorthKnowing />
+      <MacLists />
       <MainApp />
     </>
   );

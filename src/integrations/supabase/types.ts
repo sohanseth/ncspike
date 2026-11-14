@@ -951,6 +951,7 @@ export type Database = {
           id: string
           last_seen_at: string | null
           last_seq: number
+          lists_seq: number
           name: string
           revoked_at: string | null
           token_hash: string
@@ -961,6 +962,7 @@ export type Database = {
           id?: string
           last_seen_at?: string | null
           last_seq?: number
+          lists_seq?: number
           name: string
           revoked_at?: string | null
           token_hash: string
@@ -971,12 +973,57 @@ export type Database = {
           id?: string
           last_seen_at?: string | null
           last_seq?: number
+          lists_seq?: number
           name?: string
           revoked_at?: string | null
           token_hash?: string
           user_id?: string
         }
         Relationships: []
+      }
+      relay_lists: {
+        Row: {
+          ciphertext: string
+          device_id: string
+          expires_at: string
+          key_id: string
+          nonce: string
+          refs: string[]
+          seq: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ciphertext: string
+          device_id: string
+          expires_at: string
+          key_id: string
+          nonce: string
+          refs: string[]
+          seq: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ciphertext?: string
+          device_id?: string
+          expires_at?: string
+          key_id?: string
+          nonce?: string
+          refs?: string[]
+          seq?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "relay_lists_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: true
+            referencedRelation: "relay_devices"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       relay_missions: {
         Row: {
@@ -1499,6 +1546,30 @@ export type Database = {
       }
       relay_claim: {
         Args: { p_code_hash: string; p_ip_hash: string }
+        Returns: Json
+      }
+      relay_lists_delete: { Args: { p_device: string }; Returns: Json }
+      relay_lists_for: {
+        Args: { p_user: string }
+        Returns: {
+          ciphertext: string
+          device_id: string
+          expires_at: string
+          key_id: string
+          nonce: string
+          updated_at: string
+        }[]
+      }
+      relay_lists_put: {
+        Args: {
+          p_ciphertext: string
+          p_device: string
+          p_expires: string
+          p_key_id: string
+          p_nonce: string
+          p_refs: string[]
+          p_seq: number
+        }
         Returns: Json
       }
       relay_mission_delete: {

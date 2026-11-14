@@ -1,5 +1,10 @@
 # Encrypted Mac relay
 
+## Prompt G — encrypted lists
+- [ ] Add encrypted list storage, endpoints, owner reads and deletion coverage.
+- [ ] Add browser decryption, calendar/list panels and encrypted ticks without changing existing cards or MainApp.
+- [ ] Verify vectors, access rules, browser flow and preservation checklist; report untested flows.
+
 ## Prompt F — encrypted answers
 - [x] Add private answer storage, atomic limits, polling, GDPR cleanup.
 - [x] Add browser encryption and Mac card answer controls without editing MainApp.
