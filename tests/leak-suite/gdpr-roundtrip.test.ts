@@ -200,7 +200,14 @@ const fixture: Fixture = vi.hoisted(() => {
   if (!latest) {
     throw new Error("No migration defines public.delete_user_data(...)");
   }
-  const sql = fs.readFileSync(path.join(migrationsDir, latest), "utf8");
+  let sql = fs.readFileSync(path.join(migrationsDir, latest), "utf8");
+  sql = sql.slice(sql.toLowerCase().indexOf("create or replace function public.delete_user_data"));
+  sql = sql.replace(/relay_answer_log_deleted integer\s*\)/, "relay_answer_log_deleted integer)");
+  for (const name of candidates) {
+    if (name <= latest) continue;
+    const update = fs.readFileSync(path.join(migrationsDir, name), "utf8");
+    for (const match of update.matchAll(/definition\s*:=\s*replace\(definition,\s*'([^']*)',\s*'([^']*)'\)/g)) sql = sql.replaceAll(match[1], match[2]);
+  }
 
   const deleteRe = /delete\s+from\s+public\.([a-z_][a-z0-9_]*)\s+where\s+user_id\s*=\s*target_user_id\s*;/gi;
   const tables: string[] = [];
@@ -217,7 +224,7 @@ const fixture: Fixture = vi.hoisted(() => {
     })
     .filter((c: string) => c.length > 0);
 
-  const pairs = tables.map((table, i) => ({ table, column: columns[i] }));
+  const pairs = tables.map(table => ({ table, column: columns.find(column => column === `${table}_deleted` || column === `${table}_del`) ?? "missing_column" }));
 
   type RowLocal = Record<string, unknown>;
   const store: Record<string, RowLocal[]> = {};
