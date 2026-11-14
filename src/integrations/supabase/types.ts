@@ -1505,6 +1505,7 @@ export type Database = {
           relay_answers_deleted: number
           relay_cards_deleted: number
           relay_devices_deleted: number
+          relay_lists_deleted: number
           relay_pairing_codes_deleted: number
           research_tasks_deleted: number
           search_queries_deleted: number

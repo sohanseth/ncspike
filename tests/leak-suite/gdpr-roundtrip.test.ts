@@ -87,7 +87,17 @@ type MigrationContract = {
 };
 
 function parseMigration(path: string): MigrationContract {
-  const sql = readFileSync(path, "utf8");
+  let sql = readFileSync(path, "utf8");
+  sql = sql.slice(sql.toLowerCase().indexOf("create or replace function public.delete_user_data"));
+  sql = sql.replace(/relay_answer_log_deleted integer\s*\)/, "relay_answer_log_deleted integer)");
+  // Guarded migrations mutate the existing definition rather than repeating it.
+  for (const name of readdirSync(MIGRATIONS_DIR).filter(n => n.endsWith(".sql")).sort()) {
+    if (join(MIGRATIONS_DIR, name) <= path) continue;
+    const update = readFileSync(join(MIGRATIONS_DIR, name), "utf8");
+    for (const match of update.matchAll(/definition\s*:=\s*replace\(definition,\s*'([^']*)',\s*'([^']*)'\)/g)) {
+      sql = sql.replaceAll(match[1], match[2]);
+    }
+  }
 
   const deleteRe = /delete\s+from\s+public\.([a-z_][a-z0-9_]*)\s+where\s+user_id\s*=\s*target_user_id\s*;/gi;
   const deleteOrder: string[] = [];
@@ -115,9 +125,9 @@ function parseMigration(path: string): MigrationContract {
     );
   }
 
-  const pairs = deleteOrder.map((table, i) => ({
+  const pairs = deleteOrder.map((table) => ({
     table,
-    column: returnColumns[i],
+    column: returnColumns.find(column => column === `${table}_deleted` || column === `${table}_del`) ?? "missing_column",
   }));
 
   return {

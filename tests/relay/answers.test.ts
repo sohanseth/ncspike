@@ -94,6 +94,10 @@ describe("Mac answers — real PostgreSQL atomic rules and HTTP handler", () => 
   });
   afterEach(async () => { if (client) { await client.query("rollback"); await client.end(); } });
   it("migration reruns with owner-only storage and service-role-only functions", async () => {
+    // Replay the historical migration against its original return signature,
+    // inside this rolled-back fixture, rather than downgrading today's API.
+    await client.query("drop function public.delete_user_data(uuid)");
+    await client.query(readFileSync("drizzle/migrations/0005_encrypted_relay_answers.sql", "utf8"));
     await client.query(readFileSync("drizzle/migrations/0005_encrypted_relay_answers.sql", "utf8"));
     for (const role of ["anon", "authenticated"]) {
       for (const table of ["relay_answers", "relay_answer_log"]) expect((await client.query("select has_table_privilege($1,$2,'SELECT') as allowed", [role, table])).rows[0].allowed).toBe(false);

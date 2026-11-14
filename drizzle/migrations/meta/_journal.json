@@ -57,6 +57,13 @@
       "when": 1794691960714,
       "tag": "0007_encrypted_mac_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794692763463,
+      "tag": "0008_guarded_relay_lists_delete_count",
+      "breakpoints": true
     }
   ]
 }
