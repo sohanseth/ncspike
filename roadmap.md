@@ -1,6 +1,7 @@
 # Encrypted Mac relay
 
 ## Prompt G — encrypted lists
+- [ ] Apply the user's exact guarded deletion-count migration; stop and show the current function definition if its anchors fail.
 - [ ] Add encrypted list storage, endpoints, owner reads and deletion coverage.
 - [ ] Add browser decryption, calendar/list panels and encrypted ticks without changing existing cards or MainApp.
 - [ ] Verify vectors, access rules, browser flow and preservation checklist; report untested flows.
