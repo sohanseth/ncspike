@@ -1,5 +1,8 @@
 # Encrypted Mac relay
 
+## Prompt G2 — display-only privacy boundary
+- [x] Audit existing consumers and add import/network boundary tests without changing runtime behavior; 25 targeted tests passed, with the strict import invariant expected-failing for three reported existing consumers.
+
 ## Prompt G — encrypted lists
 - [x] Apply the user's exact guarded deletion-count migration; all anchors passed and the new result column was verified.
 - [ ] Add encrypted list storage, endpoints, owner reads and deletion coverage.
