@@ -9,6 +9,7 @@ import { listRelayCards } from "@/lib/relay.functions";
 import { sendRelayAnswer } from "@/lib/relay-answers.functions";
 import { listRelayLists } from "@/lib/relay-lists.functions";
 import { macListsDocumentSchema, type RelayListsRow } from "@/lib/relay-lists-schema";
+import { z } from "zod";
 
 const DB_NAME = "nc-keys";
 const STORE = "keys";
@@ -170,7 +171,7 @@ export async function openMacLists(row: RelayListsRow) {
   if (!key) return { needsScan: true as const };
   try {
     const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: base64ToBytes(row.nonce), additionalData: new TextEncoder().encode(`nc-lists-v1|${row.key_id}`) }, key, base64ToBytes(row.ciphertext));
-    const parsed = macListsDocumentSchema.safeParse(JSON.parse(new TextDecoder().decode(plain).replace(/ +$/, "")));
+    const parsed = macListsDocumentSchema.passthrough().safeParse(JSON.parse(new TextDecoder().decode(plain).replace(/ +$/, "")));
     return parsed.success ? { doc: parsed.data, row } : null;
   } catch { return null; }
 }
@@ -197,4 +198,48 @@ export function dayWords(due: string, today: string): string {
   if (days === 1) return "tomorrow";
   const date = new Date(`${due}T12:00:00`);
   return days <= 6 ? date.toLocaleDateString("en-GB", { weekday: "short" }) : date.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+const foundDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).or(z.literal(""));
+const foundItemSchema = z.object({
+  ref: z.string().regex(/^[0-9a-f]{24}$/).nullable(),
+  type: z.enum(["weekly", "event", "forward", "closure"]),
+  title: z.string().max(200), child: z.string().max(40),
+  date: foundDate, endDate: foundDate, time: z.string().max(40),
+  weekdays: z.array(z.number().int().min(0).max(6)).max(7),
+  needsDate: z.boolean(), from: z.enum(["email", "shared"]), private: z.boolean(),
+});
+const foundSchema = z.object({ found: z.array(foundItemSchema).max(10), foundMore: z.number().int().min(0).max(1000) });
+export type MacFoundItem = z.infer<typeof foundItemSchema>;
+export function foundIn(doc: unknown): { items: MacFoundItem[]; more: number } | null {
+  if (!doc || typeof doc !== "object" || !("found" in doc)) return null;
+  const parsed = foundSchema.safeParse(doc);
+  return parsed.success ? { items: parsed.data.found, more: parsed.data.foundMore } : null;
+}
+export async function answerFound(row: RelayListsRow, ref: string, action: "add" | "skip") {
+  const key = await getKey(row.key_id);
+  if (!key || !canAnswer(key)) return { needsScan: true as const };
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await encryptAnswer(makeAnswer(ref, action), key, row.key_id, nonce);
+  return sendRelayAnswer({ data: { deviceId: row.device_id, keyId: row.key_id, ref, nonce: toBase64(nonce), ciphertext } });
+}
+export function foundWhen(item: MacFoundItem, today: string): string {
+  if (item.needsDate) return "No date yet";
+  if (item.type === "weekly") {
+    const names = item.weekdays.map(day => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][day]);
+    return `Every ${names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names.join("")}`;
+  }
+  if (!item.date) return "";
+  const start = new Date(`${item.date}T12:00:00`);
+  const format = (date: Date, options: Intl.DateTimeFormatOptions) => date.toLocaleDateString("en-GB", options);
+  const relative = dayWords(item.date, today);
+  const date = relative === "today" || relative === "tomorrow" ? relative : format(start, { weekday: "short", day: "numeric", month: "short" });
+  if (item.type === "closure" && item.endDate > item.date) {
+    const end = new Date(`${item.endDate}T12:00:00`);
+    return item.date.slice(0, 7) === item.endDate.slice(0, 7)
+      ? `${start.getDate()}–${format(end, { day: "numeric", month: "short" })}`
+      : `${format(start, { day: "numeric", month: "short" })} – ${format(end, { day: "numeric", month: "short" })}`;
+  }
+  if (item.type === "forward") return `By ${date}`;
+  return item.type === "event" && item.time ? `${date} · ${item.time}` : date;
 }

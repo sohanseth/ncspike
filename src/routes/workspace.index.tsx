@@ -4,6 +4,7 @@ import MainApp from "@/components/workspace/MainApp";
 import { WorkspaceLocalNav } from "@/components/workspace/WorkspaceLocalNav";
 import { MacWorthKnowing } from "@/components/workspace/MacWorthKnowing";
 import { MacLists } from "@/components/workspace/MacLists";
+import { MacFound } from "@/components/workspace/MacFound";
 import { PrivateDefaultNotice } from "@/components/workspace/PrivateDefaultNotice";
 import { useAuth } from "@/lib/auth-context";
 
@@ -47,6 +48,7 @@ function WorkspaceLayout() {
       <PrivateDefaultNotice />
       <MacWorthKnowing />
       <MacLists />
+      <MacFound />
       <MainApp />
     </>
   );

@@ -5,6 +5,7 @@
 - Relay logic lives in a server-only module; RPC wrappers import privileged clients only inside authenticated handlers so secrets never enter the browser bundle.
 - Encrypted Mac answers use a separate server-only handler and browser-only encryption; answer polling never updates device last-seen timestamps.
 - Encrypted Mac lists use separate schemas, handlers and panels; browser-only decryption and ticks share the existing key and answer envelope to preserve card behavior.
+- Mac-found items use an additive browser-only panel with local answer suppression and the existing encrypted list/answer envelope; top-level list fields pass through validation so invalid optional found data never hides the original lists.
 - Relay tables use plain owner UUIDs and an auth lifecycle deletion trigger instead of new auth foreign keys to follow Cloud schema conventions while preserving account-removal cleanup.
 - External relay handlers are also exposed under `/api/public/relay/*` because published hosting only bypasses site authentication for that prefix; `/api/relay/*` retains the requested contract locally.
 - No page may load third-party scripts; Mac card keys live in browser IndexedDB and any page script could read them.

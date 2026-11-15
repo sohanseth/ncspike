@@ -1,5 +1,10 @@
 # Encrypted Mac relay
 
+## Prompt H — found items
+- [x] Preserve unknown list fields and add browser-only found validation, date words and encrypted answers.
+- [x] Add MacFound after MacLists; only change the three private title displays in MacLists and extend the G2 allowlist.
+- [x] Run vector, interaction, database and preservation checks plus the whole test suite (520 passed, 43 existing gated skips); real Mac processing and the broad checklist's live external/native flows remain unverified.
+
 ## Prompt G2 — display-only privacy boundary
 - [x] Audit existing consumers and add import/network boundary tests without changing runtime behavior; 25 targeted tests passed, with the strict import invariant expected-failing for three reported existing consumers.
 

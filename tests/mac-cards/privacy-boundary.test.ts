@@ -8,6 +8,7 @@ const macModule = "src/lib/mac-cards.ts";
 const allowedConsumers = new Set([
   "src/components/workspace/MacCards.tsx",
   "src/components/workspace/MacLists.tsx",
+  "src/components/workspace/MacFound.tsx",
   "src/routes/link.ts",
 ]);
 const allowedNetwork = new Set([
