@@ -15,6 +15,11 @@
 		504EC30F1FED79650016851F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 504EC30E1FED79650016851F /* Assets.xcassets */; };
 		504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 504EC3101FED79650016851F /* LaunchScreen.storyboard */; };
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
+		F13F91A3408EDF4423BEACFC /* MainViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051E2D2FC810184467CC3BC4 /* MainViewController.swift */; };
+		FB9ADDF5A0D72F13231EFA67 /* FoundItemsPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 554979D5EA6D8781B8E34D88 /* FoundItemsPlugin.swift */; };
+		E74DC3C2BC9EB7C6B275FD5D /* LetterTextPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC599A02C99090F78C4B60D7 /* LetterTextPlugin.swift */; };
+		B1B5D3F1AF5576FC9FB8B05A /* OnDeviceLLMPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BADB4DE9D13CA04171C9719A /* OnDeviceLLMPlugin.swift */; };
+		2A7B3CBF81CD44EAE9F8F4F9 /* SharedInboxPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988E9507CF109A571BE715A2 /* SharedInboxPlugin.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,6 +33,11 @@
 		504EC3131FED79650016851F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		50B271D01FEDC1A000F3C39B /* public */ = {isa = PBXFileReference; lastKnownFileType = folder; path = public; sourceTree = "<group>"; };
 		958DCC722DB07C7200EA8C5F /* debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = debug.xcconfig; path = ../debug.xcconfig; sourceTree = SOURCE_ROOT; };
+		051E2D2FC810184467CC3BC4 /* MainViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainViewController.swift; sourceTree = "<group>"; };
+		554979D5EA6D8781B8E34D88 /* FoundItemsPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoundItemsPlugin.swift; sourceTree = "<group>"; };
+		EC599A02C99090F78C4B60D7 /* LetterTextPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LetterTextPlugin.swift; sourceTree = "<group>"; };
+		BADB4DE9D13CA04171C9719A /* OnDeviceLLMPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnDeviceLLMPlugin.swift; sourceTree = "<group>"; };
+		988E9507CF109A571BE715A2 /* SharedInboxPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedInboxPlugin.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,14 +74,27 @@
 			children = (
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				051E2D2FC810184467CC3BC4 /* MainViewController.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				F9FFFE88A7E4558392DD02B6 /* Plugins */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		F9FFFE88A7E4558392DD02B6 /* Plugins */ = {
+			isa = PBXGroup;
+			children = (
+				554979D5EA6D8781B8E34D88 /* FoundItemsPlugin.swift */,
+				EC599A02C99090F78C4B60D7 /* LetterTextPlugin.swift */,
+				BADB4DE9D13CA04171C9719A /* OnDeviceLLMPlugin.swift */,
+				988E9507CF109A571BE715A2 /* SharedInboxPlugin.swift */,
+			);
+			path = Plugins;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -156,6 +179,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				F13F91A3408EDF4423BEACFC /* MainViewController.swift in Sources */,
+				FB9ADDF5A0D72F13231EFA67 /* FoundItemsPlugin.swift in Sources */,
+				E74DC3C2BC9EB7C6B275FD5D /* LetterTextPlugin.swift in Sources */,
+				B1B5D3F1AF5576FC9FB8B05A /* OnDeviceLLMPlugin.swift in Sources */,
+				2A7B3CBF81CD44EAE9F8F4F9 /* SharedInboxPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

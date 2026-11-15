@@ -1,0 +1,213 @@
+{
+  "note": "Invented messages (no real people, schools or data) for the phone engine's tests and score. today is the day the message is read; expect lists what a parent would want proposed: type, then date (and endDate) or weekdays (0 = Monday), and words the title must contain. maybe: proposals that are fine but not required.",
+  "messages": [
+    {
+      "id": "newsletter",
+      "today": "2026-11-14",
+      "text": "St Brigid's Primary - Newsletter\n\nBake sale. Friday 20 November after school in the hall. Please send in cakes in a named tub.\n\nNon-uniform day. Friday 27 November: £1 donation for Children in Need.\n\nYear 3 trip. The trip to the Science Centre is on Wednesday 2 December. Please return the consent form and pay £12 on ParentPay by Friday 27 November. Children need a packed lunch and a waterproof coat.\n\nINSET day. School is closed on Monday 30 November.",
+      "expect": [
+        {"type": "event", "date": "2026-11-20", "title": ["bake sale"]},
+        {"type": "event", "date": "2026-11-27", "title": ["non-uniform"]},
+        {"type": "event", "date": "2026-12-02", "title": ["trip"]},
+        {"type": "forward", "date": "2026-11-27", "title": ["consent"]},
+        {"type": "closure", "date": "2026-11-30", "title": ["closed", "inset"]}
+      ]
+    },
+    {
+      "id": "whatsapp-pe",
+      "today": "2026-11-14",
+      "text": "[12/11/2026, 19:05] Lucy: Reminder PE is on Tuesdays and Thursdays from next week, kids need to come in their PE kit\n[12/11/2026, 19:07] Sam: thanks!\n[12/11/2026, 19:10] Lucy: Also Christmas jumper day is 11 December",
+      "expect": [
+        {"type": "weekly", "weekdays": [1, 3], "title": ["pe"]},
+        {"type": "event", "date": "2026-12-11", "title": ["jumper"]}
+      ]
+    },
+    {
+      "id": "party-invite",
+      "today": "2026-11-14",
+      "text": "Hi all! Maya is turning 7 and we'd love Ella to come to her party on Saturday 21 November, 2-4pm at Jump Zone. Please RSVP by Wednesday 18 November. Grip socks needed!",
+      "children": ["Ella"],
+      "expect": [
+        {"type": "event", "date": "2026-11-21", "title": ["party"]},
+        {"type": "forward", "date": "2026-11-18", "title": ["rsvp"]}
+      ]
+    },
+    {
+      "id": "swimming-moves",
+      "today": "2026-11-14",
+      "text": "Swimming lessons move to Thursdays at 4:30pm from 3 December. Please bring goggles and a towel.",
+      "expect": [
+        {"type": "weekly", "weekdays": [3], "title": ["swimming"]}
+      ],
+      "maybe": [{"type": "event", "date": "2026-12-03"}]
+    },
+    {
+      "id": "flu-letter",
+      "today": "2026-11-14",
+      "text": "Dear Parents,\nFlu vaccinations will take place on Tuesday 24 November. Please complete the online consent form by Friday 20 November.\nKind regards,\nMrs Smith",
+      "expect": [
+        {"type": "event", "date": "2026-11-24", "title": ["flu"]},
+        {"type": "forward", "date": "2026-11-20", "title": ["consent"]}
+      ]
+    },
+    {
+      "id": "half-term",
+      "today": "2026-11-14",
+      "text": "Half term is from 15-19 February. School reopens on Monday 22 February.",
+      "expect": [
+        {"type": "closure", "date": "2027-02-15", "endDate": "2027-02-19", "title": ["half term"]}
+      ],
+      "maybe": [{"type": "event", "date": "2027-02-22"}]
+    },
+    {
+      "id": "dentist",
+      "today": "2026-11-14",
+      "text": "Reminder: Zara's dental check-up is on 25 November at 3:15pm.",
+      "children": ["Zara"],
+      "expect": [
+        {"type": "event", "date": "2026-11-25", "title": ["dental"]}
+      ]
+    },
+    {
+      "id": "clubs",
+      "today": "2026-11-14",
+      "text": "Football club runs every Monday 3:30-4:30. Ballet is on Wednesdays.",
+      "expect": [
+        {"type": "weekly", "weekdays": [0], "title": ["football"]},
+        {"type": "weekly", "weekdays": [2], "title": ["ballet"]}
+      ]
+    },
+    {
+      "id": "tomorrow",
+      "today": "2026-11-14",
+      "text": "Don't forget tomorrow is dress up as a book character day!",
+      "expect": [
+        {"type": "event", "date": "2026-11-15", "title": ["book"]}
+      ]
+    },
+    {
+      "id": "next-week",
+      "today": "2026-11-14",
+      "text": "Next week we start our topic on space; please send in any space books.",
+      "expect": [],
+      "maybe": [{"type": "forward", "date": "2026-11-16"}, {"type": "event", "date": "2026-11-16"}]
+    },
+    {
+      "id": "parents-evening",
+      "today": "2026-11-14",
+      "text": "Parents' evening appointments are on 1 and 2 December. Please book a slot on the school app by 26 November.",
+      "expect": [
+        {"type": "event", "date": "2026-12-01", "title": ["parents"]},
+        {"type": "forward", "date": "2026-11-26", "title": ["book"]}
+      ]
+    },
+    {
+      "id": "end-of-term",
+      "today": "2026-11-14",
+      "text": "The last day of term is Friday 18 December, school finishes at 1:30pm.",
+      "expect": [
+        {"type": "event", "date": "2026-12-18", "title": ["last day"]}
+      ]
+    },
+    {
+      "id": "chit-chat",
+      "today": "2026-11-14",
+      "text": "Thanks everyone for coming to the assembly, the children were wonderful!",
+      "expect": []
+    },
+    {
+      "id": "school-email",
+      "today": "2026-11-14",
+      "text": "From: School Office <office@stbrigids.example>\nSubject: Harvest festival\nDate: Thu, 12 Nov 2026, 09:12\n\nOur harvest festival is on Friday 27 November. Please send in tins or packets for the food bank.",
+      "expect": [
+        {"type": "event", "date": "2026-11-27", "title": ["harvest"]}
+      ]
+    },
+    {
+      "id": "photos",
+      "today": "2026-11-14",
+      "text": "School photos on 26/11. Sibling photos are before school at 8:30am.",
+      "expect": [
+        {"type": "event", "date": "2026-11-26", "title": ["photo"]}
+      ]
+    },
+    {
+      "id": "pe-moved",
+      "today": "2026-11-14",
+      "text": "PE is moved to Thursday this week because of the trip.",
+      "expect": [
+        {"type": "event", "date": "2026-11-19", "title": ["pe"]}
+      ]
+    },
+    {
+      "id": "dinners",
+      "today": "2026-11-14",
+      "text": "Please pay for school dinners by the end of the month.",
+      "expect": [],
+      "maybe": [{"type": "forward"}]
+    },
+    {
+      "id": "january",
+      "today": "2026-12-15",
+      "text": "Back to school on 6 January. Have a lovely break!",
+      "expect": [
+        {"type": "event", "date": "2027-01-06", "title": ["back to school"]}
+      ]
+    },
+    {
+      "id": "nativity",
+      "today": "2026-11-14",
+      "text": "Nativity performances are on 9 and 10 December at 2pm. Children need a white T-shirt.",
+      "expect": [
+        {"type": "event", "date": "2026-12-09", "title": ["nativity"]}
+      ]
+    },
+    {
+      "id": "whatsapp-trip",
+      "today": "2026-11-14",
+      "text": "[13/11/2026, 08:01] Priya: What do they need for the trip on Wednesday 2 December?\n[13/11/2026, 08:03] Lucy: packed lunch, wellies and a waterproof. £12 on ParentPay by Friday 27 November",
+      "expect": [
+        {"type": "event", "date": "2026-12-02", "title": ["trip"]},
+        {"type": "forward", "date": "2026-11-27", "title": ["£12"]}
+      ]
+    },
+    {
+      "id": "christmas-fair",
+      "today": "2026-11-14",
+      "text": "Christmas fair. Saturday 5 December, 11am to 2pm. We need volunteers for the tombola - please sign up on the sheet by the office.",
+      "expect": [
+        {"type": "event", "date": "2026-12-05", "title": ["christmas fair"]}
+      ]
+    },
+    {
+      "id": "closure-snow",
+      "today": "2026-11-14",
+      "text": "Due to the heating repairs the school will be closed tomorrow. Please keep children at home.",
+      "expect": [
+        {"type": "closure", "date": "2026-11-15", "title": ["closed"]}
+      ]
+    },
+    {
+      "id": "reading-days",
+      "today": "2026-11-14",
+      "text": "Library books are changed every Friday, please make sure they're in book bags.",
+      "expect": [
+        {"type": "weekly", "weekdays": [4], "title": ["library"]}
+      ]
+    },
+    {
+      "id": "deadline-only-weekday",
+      "today": "2026-11-14",
+      "text": "Please return the reading record by Friday.",
+      "expect": [
+        {"type": "forward", "date": "2026-11-20", "title": ["reading record"]}
+      ]
+    },
+    {
+      "id": "advert",
+      "today": "2026-11-14",
+      "text": "Looking for a cleaner? Sparkle Clean has 20% off for school families. Call us any time!",
+      "expect": []
+    }
+  ]
+}

@@ -6,6 +6,12 @@ external).
 Drafted: 2026-05-08. Phase: targets Phase 3 / D6 per
 `docs/04-native-shell-runbook.md` line 138.
 
+**Changed on 2026-11-15 for the phone-first MVP** (`docs/26-phone-reader.md`): shared items are read on the phone
+by the message reader (`src/lib/reader`, the `SharedInbox` plugin) and removed from `captures/pending/` once the
+app has kept what it found. The server intake (§6 steps c–f and §7) is not built: nothing shared leaves the phone.
+Identity, payload and storage layout (§3–§5) are as below, except that text may be up to 64 KB and a photo is saved
+again as a JPEG at most 3,000 pixels across.
+
 ---
 
 ## 1. Why this exists

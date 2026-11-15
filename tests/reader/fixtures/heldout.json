@@ -1,0 +1,128 @@
+{
+  "note": "A second set of invented messages, written after the rules and never used to tune them: the honest score. Same format as messages.json.",
+  "messages": [
+    {
+      "id": "parentmail",
+      "today": "2026-11-16",
+      "text": "Dear Parent/Carer,\n\nWe are delighted to invite you to our Year 1 Christmas performance on Thursday 10th December at 9.15am in the school hall. Tickets are limited to two per family and can be requested through the school office before Friday 4th December.\n\nChildren should come to school in their costumes on the day.",
+      "expect": [
+        {"type": "event", "date": "2026-12-10", "title": ["performance", "christmas"]},
+        {"type": "forward", "date": "2026-12-04", "title": ["ticket"]}
+      ]
+    },
+    {
+      "id": "nursery",
+      "today": "2026-11-16",
+      "text": "Hi parents, just a heads up that nursery will be closed on Friday 27th November for staff training. Also, could you please label all coats and wellies? Thanks, Jo",
+      "expect": [
+        {"type": "closure", "date": "2026-11-27", "title": ["closed", "nursery", "training"]}
+      ]
+    },
+    {
+      "id": "term-dates",
+      "today": "2026-11-16",
+      "text": "Term dates 2026/27\nChristmas holidays: 21 December - 1 January\nSpring term starts: Monday 4 January\nFebruary half term: 15-19 February",
+      "expect": [
+        {"type": "closure", "date": "2026-12-21", "endDate": "2027-01-01", "title": ["christmas"]},
+        {"type": "closure", "date": "2027-02-15", "endDate": "2027-02-19", "title": ["half term"]}
+      ],
+      "maybe": [{"type": "event", "date": "2027-01-04"}]
+    },
+    {
+      "id": "football-text",
+      "today": "2026-11-16",
+      "text": "Football training is cancelled this Saturday because the pitches are waterlogged. See you the week after!",
+      "expect": [
+        {"type": "closure", "date": "2026-11-21", "title": ["football"]}
+      ]
+    },
+    {
+      "id": "invite-text",
+      "today": "2026-11-16",
+      "text": "Hiya! Leo's 6th birthday party is at Little Gym on Sunday 29 Nov from 1pm til 3pm. Would be great if Arjun can make it, let me know by Thurs 26th x",
+      "children": ["Arjun"],
+      "expect": [
+        {"type": "event", "date": "2026-11-29", "title": ["party", "birthday"]},
+        {"type": "forward", "date": "2026-11-26", "title": ["let", "know", "reply", "rsvp"]}
+      ]
+    },
+    {
+      "id": "gp",
+      "today": "2026-11-16",
+      "text": "Your appointment with Dr Patel is confirmed for Wednesday 18 November at 10:40. Please arrive 10 minutes early.",
+      "expect": [
+        {"type": "event", "date": "2026-11-18", "title": ["appointment"]}
+      ]
+    },
+    {
+      "id": "lost-property",
+      "today": "2026-11-16",
+      "text": "Lost property will be put out on the playground on Friday afternoon. Anything not collected goes to charity.",
+      "expect": [
+        {"type": "event", "date": "2026-11-20", "title": ["lost property"]}
+      ]
+    },
+    {
+      "id": "spelling",
+      "today": "2026-11-16",
+      "text": "Spelling tests will now be on Fridays. Homework is due back every Wednesday.",
+      "expect": [
+        {"type": "weekly", "weekdays": [4], "title": ["spelling"]},
+        {"type": "weekly", "weekdays": [2], "title": ["homework"]}
+      ]
+    },
+    {
+      "id": "swim-gala",
+      "today": "2026-11-16",
+      "text": "Year 5 swimming gala - Tuesday 1st December. Coach leaves at 12:30. Swimmers must bring a costume, towel and goggles.",
+      "expect": [
+        {"type": "event", "date": "2026-12-01", "title": ["swimming gala", "gala"]}
+      ]
+    },
+    {
+      "id": "pyjama",
+      "today": "2026-11-16",
+      "text": "Friday is pyjama day for Children in Need! Bring £1 if you can.",
+      "expect": [
+        {"type": "event", "date": "2026-11-20", "title": ["pyjama"]}
+      ]
+    },
+    {
+      "id": "flu-reply",
+      "today": "2026-11-16",
+      "text": "[15/11/2026, 20:11] Amy: has anyone done the flu spray consent form yet?\n[15/11/2026, 20:15] Ben: yes it's online, deadline is this Thursday",
+      "expect": [
+        {"type": "forward", "date": "2026-11-19", "title": ["flu", "consent", "form"]}
+      ]
+    },
+    {
+      "id": "menu",
+      "today": "2026-11-16",
+      "text": "This week's lunch menu: Monday pasta bake, Tuesday roast chicken, Wednesday fish fingers, Thursday curry, Friday pizza.",
+      "expect": [],
+      "maybe": [{"type": "weekly"}, {"type": "event"}]
+    },
+    {
+      "id": "club-change",
+      "today": "2026-11-16",
+      "text": "From January, Coding Club will run on Tuesdays instead of Mondays, 3.15 to 4.15pm.",
+      "expect": [
+        {"type": "weekly", "weekdays": [1], "title": ["coding"]}
+      ]
+    },
+    {
+      "id": "photo-order",
+      "today": "2026-11-16",
+      "text": "School photo proofs have gone home today. Orders must be placed online by 30th November to get free delivery.",
+      "expect": [
+        {"type": "forward", "date": "2026-11-30", "title": ["order", "photo"]}
+      ]
+    },
+    {
+      "id": "thanks",
+      "today": "2026-11-16",
+      "text": "A huge thank you to everyone who donated to the food bank last week, we collected over 200 items!",
+      "expect": []
+    }
+  ]
+}

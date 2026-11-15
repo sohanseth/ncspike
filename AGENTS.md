@@ -17,3 +17,5 @@
 - Logs never carry raw provider bodies, request payloads, push titles or whole error objects — log error class + HTTP status, using scrubErrorMessage where it fits.
 - Live Privacy confirmation tests use Python Playwright with managed preview auth and owner-scoped persisted read-back; use voice replies and restore its original state to avoid deleting user content.
 - Mac privacy boundary tests recursively audit display imports and allow only the four named relay RPCs; keep the strict consumer invariant expected-failing with a separately asserted exception inventory until existing consumers may be changed, because the requested audit must not refactor runtime features.
+- The message reader (src/lib/reader) runs only on the device: a message's text never goes to a server, any AI, storage off the device or a log. family-engine.ts must not use regex lookbehind (iOS 15 can't parse it; a test enforces it).
+- Native plugins written in ios/App/App must be in the App target and registered in MainViewController.swift; Capacitor 8 doesn't find in-app plugins by itself.

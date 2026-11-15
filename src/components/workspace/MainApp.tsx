@@ -594,6 +594,13 @@ function MobileQuickBar({ onChat, onCompose, onYou, onTest, onSignOut }: {
   onSignOut: () => void;
 }) {
   const [moreOpen, setMoreOpen] = useState(false);
+  // The message reader is shown only in the iPhone app, where it reads on the phone.
+  const [inNativeApp, setInNativeApp] = useState(false);
+  useEffect(() => {
+    void import("@capacitor/core")
+      .then(({ Capacitor }) => setInNativeApp(Capacitor.isNativePlatform()))
+      .catch(() => setInNativeApp(false));
+  }, []);
 
   // Same Google prompt the desktop header's Search pill runs.
   const onSearch = () => {
@@ -679,6 +686,12 @@ function MobileQuickBar({ onChat, onCompose, onYou, onTest, onSignOut }: {
                 className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
                 <Plug size={16} style={{ color: "var(--professional)" }} /> Connect
               </Link>
+              {inNativeApp && (
+                <Link to="/workspace/reader" onClick={close}
+                  className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
+                  <ListTodo size={16} style={{ color: "var(--family)" }} /> Message reader
+                </Link>
+              )}
               <button type="button" onClick={act(onTest)}
                 className="flex items-center gap-3 rounded-xl px-3 py-3 text-[14px] text-foreground/90 active:bg-secondary">
                 <Sparkles size={16} style={{ color: "var(--family)" }} /> Test

@@ -47,5 +47,15 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>NeuralConnexions uses the camera when you photograph a letter to read on your phone, or a photo to add to a chat.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NeuralConnexions opens a photo you choose, such as a letter to read on your phone.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NeuralConnexions saves a photo to your library only when you ask it to.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>NeuralConnexions uses the microphone when you speak to it.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>NeuralConnexions turns what you say into text when you speak to it.</string>
 </dict>
 </plist>

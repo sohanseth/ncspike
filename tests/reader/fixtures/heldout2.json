@@ -1,0 +1,131 @@
+{
+  "note": "A third set of invented messages, written after the rules were widened and never used to tune them: the honest score as of 15 Nov 2026. Same format as messages.json.",
+  "messages": [
+    {
+      "id": "scouts",
+      "today": "2026-11-17",
+      "text": "Beavers update: our sleepover at the scout hut is on the weekend of 5th-6th December. Drop off 5pm Saturday. Kids will need a sleeping bag, torch and pyjamas. Please pay the £15 via OSM by 28th Nov.",
+      "expect": [
+        {"type": "event", "date": "2026-12-05", "title": ["sleepover"]},
+        {"type": "forward", "date": "2026-11-28", "title": ["pay", "£15"]}
+      ]
+    },
+    {
+      "id": "class-dojo",
+      "today": "2026-11-17",
+      "text": "Good afternoon Year 2! A reminder that our class assembly is this Friday at 2.45pm and you are all welcome to come and watch.",
+      "expect": [
+        {"type": "event", "date": "2026-11-20", "title": ["assembly"]}
+      ]
+    },
+    {
+      "id": "brownies-weekly",
+      "today": "2026-11-17",
+      "text": "Brownies meets every Tuesday in the church hall from 6 till 7.30pm. No meeting on 22nd December.",
+      "expect": [
+        {"type": "weekly", "weekdays": [1], "title": ["brownies"]},
+        {"type": "closure", "date": "2026-12-22", "title": ["brownies", "no meeting", "meeting"]}
+      ]
+    },
+    {
+      "id": "secondary",
+      "today": "2026-11-17",
+      "text": "Year 7 parents' information evening will be held on Tuesday 24 November from 6pm. Please confirm attendance by replying to this email.",
+      "expect": [
+        {"type": "event", "date": "2026-11-24", "title": ["information evening", "evening"]}
+      ]
+    },
+    {
+      "id": "bake-off",
+      "today": "2026-11-17",
+      "text": "[16/11/2026, 21:02] Hannah: Can someone remind me when the PTA bake off is?\n[16/11/2026, 21:04] Kate: it's next Thursday after school!",
+      "expect": [
+        {"type": "event", "date": "2026-11-26", "title": ["bake off"]}
+      ]
+    },
+    {
+      "id": "school-trip-letter",
+      "today": "2026-11-17",
+      "text": "Dear Parents and Carers\nOn Monday 7th December Year 4 will be visiting the National Museum as part of their Romans topic. The cost of the trip is £8.50, which should be paid on ParentPay no later than Monday 30th November. Children will need a packed lunch in a disposable bag.\nYours sincerely\nMr Hughes",
+      "expect": [
+        {"type": "event", "date": "2026-12-07", "title": ["museum", "visit", "trip"]},
+        {"type": "forward", "date": "2026-11-30", "title": ["£8.50", "pay", "trip", "cost"]}
+      ]
+    },
+    {
+      "id": "dentist-change",
+      "today": "2026-11-17",
+      "text": "Hi, this is Smile Dental. Your son's appointment has been moved to Monday 23rd November at 4pm. Reply YES to confirm.",
+      "expect": [
+        {"type": "event", "date": "2026-11-23", "title": ["appointment"]}
+      ]
+    },
+    {
+      "id": "after-school",
+      "today": "2026-11-17",
+      "text": "After school clubs finish for the term on 11th December and restart the week beginning 11th January.",
+      "expect": [
+        {"type": "event", "date": "2026-12-11", "title": ["club"]}
+      ],
+      "maybe": [{"type": "closure"}, {"type": "event", "date": "2027-01-11"}]
+    },
+    {
+      "id": "christmas-lunch",
+      "today": "2026-11-17",
+      "text": "Christmas lunch is on Wednesday 16th December. If your child usually has a packed lunch and would like Christmas lunch, please order it on the app by 2nd December.",
+      "expect": [
+        {"type": "event", "date": "2026-12-16", "title": ["christmas lunch"]},
+        {"type": "forward", "date": "2026-12-02", "title": ["order"]}
+      ]
+    },
+    {
+      "id": "playdate",
+      "today": "2026-11-17",
+      "text": "Hey! Would Zara like to come over to ours on Saturday afternoon to play? Mia's been asking all week",
+      "children": ["Zara"],
+      "expect": [
+        {"type": "event", "date": "2026-11-21", "title": ["play", "come over"]}
+      ]
+    },
+    {
+      "id": "flu-cancelled",
+      "today": "2026-11-17",
+      "text": "Please note the flu vaccinations planned for tomorrow have been postponed. A new date will be confirmed soon.",
+      "expect": [
+        {"type": "closure", "date": "2026-11-18", "title": ["flu", "postponed"]}
+      ]
+    },
+    {
+      "id": "uniform",
+      "today": "2026-11-17",
+      "text": "Can we remind everyone that hoodies are not part of the school uniform. Thank you for your support.",
+      "expect": []
+    },
+    {
+      "id": "sports-day-dates",
+      "today": "2026-11-17",
+      "text": "Dates for your diary:\nNativity - 9th December\nCarol concert - 15th December, 6pm at St John's\nLast day of term - 18th December (finishes 1.30pm)",
+      "expect": [
+        {"type": "event", "date": "2026-12-09", "title": ["nativity"]},
+        {"type": "event", "date": "2026-12-15", "title": ["carol"]},
+        {"type": "event", "date": "2026-12-18", "title": ["last day"]}
+      ]
+    },
+    {
+      "id": "swim-weekly-change",
+      "today": "2026-11-17",
+      "text": "From next week, swimming will be on Wednesday mornings for Year 3, so please send kits in on Wednesdays.",
+      "expect": [
+        {"type": "weekly", "weekdays": [2], "title": ["swimming"]}
+      ]
+    },
+    {
+      "id": "money-tonight",
+      "today": "2026-11-17",
+      "text": "Reminder - school disco tickets go on sale tonight at 7pm on the PTA website, £4 each.",
+      "expect": [
+        {"type": "event", "date": "2026-11-17", "title": ["disco", "tickets"]}
+      ]
+    }
+  ]
+}

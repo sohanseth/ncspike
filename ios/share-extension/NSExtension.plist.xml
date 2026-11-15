@@ -1,0 +1,22 @@
+<!-- Paste over the NSExtension entry in NCShare's Info.plist (right-click Info.plist → Open As → Source Code).
+     Xcode's template says TRUEPREDICATE, which App Review rejects; this offers NeuralConnexions in the share sheet
+     for text (a message, an email's text), one photo (a letter) or a link. -->
+<key>NSExtension</key>
+<dict>
+	<key>NSExtensionAttributes</key>
+	<dict>
+		<key>NSExtensionActivationRule</key>
+		<dict>
+			<key>NSExtensionActivationSupportsText</key>
+			<true/>
+			<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+			<integer>1</integer>
+			<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+			<integer>1</integer>
+		</dict>
+	</dict>
+	<key>NSExtensionMainStoryboard</key>
+	<string>MainInterface</string>
+	<key>NSExtensionPointIdentifier</key>
+	<string>com.apple.share-services</string>
+</dict>

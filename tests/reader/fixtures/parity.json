@@ -1,0 +1,3502 @@
+{
+ "note": "Made by the Mac's own nc/app/family.py (make_parity.py): what the port must give.",
+ "parseWhen": [
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-20",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-11-20",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-20",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-20",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Friday 20 November",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "by Friday 27 November",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     4
+    ]
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "27/11",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-10-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-10-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-10-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-10-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "16/10/2026",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "21 December - 1 January",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-15",
+    "end_date": "2027-02-19",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-15",
+    "end_date": "2027-02-19",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-02-15",
+    "end_date": "2026-02-19",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-15",
+    "end_date": "2027-02-19",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "15-19 February",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-15",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-29",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-02-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "tomorrow",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-14",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-02-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-21",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "this weekend",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-04",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-03-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-23",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next week",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-24",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-05",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-03-10",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-01",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "next Tuesday",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-17",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-29",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-03-03",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-24",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesday",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1
+    ]
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1,
+     3
+    ]
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1,
+     3
+    ]
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1,
+     3
+    ]
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Tuesdays and Thursdays",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     1,
+     3
+    ]
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-16",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-03-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-23",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "every Monday",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "1 and 2 December",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "9th December",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-09",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "December 9",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2027-01-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "2 Jan",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "31/02",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-14",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-02-27",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-20",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "today",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-19",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     3
+    ]
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-31",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     3
+    ]
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-03-05",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     3
+    ]
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-26",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "on Thursday this week",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     3
+    ]
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-03",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-03",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-03",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-03",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "from 3 December",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-22",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-22",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-02-22",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2027-02-22",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Monday 22 February",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     0
+    ]
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-05",
+    "end_date": "2026-12-06",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-05",
+    "end_date": "2026-12-06",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-05",
+    "end_date": "2026-12-06",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-05",
+    "end_date": "2026-12-06",
+    "weekdays": []
+   }
+  },
+  {
+   "when": "the weekend of 5th-6th December",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-11-28",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "28th Nov",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     2
+    ]
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     2
+    ]
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     2
+    ]
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": "2026-12-02",
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "Wed 2nd Dec",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": [
+     2
+    ]
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-11-14",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-11-14",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-12-28",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-12-28",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-02-27",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-02-27",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-11-20",
+   "weekly": false,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  },
+  {
+   "when": "",
+   "ref": "2026-11-20",
+   "weekly": true,
+   "out": {
+    "date": null,
+    "end_date": null,
+    "weekdays": []
+   }
+  }
+ ],
+ "sweepDates": [
+  {
+   "id": "newsletter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Bake sale",
+     "child": "",
+     "time": "",
+     "prep": "cakes in a named tub",
+     "quote": "Friday 20 November after school in the hall.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-20",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "Non-uniform day",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Friday 27 November: £1 donation for Children in Need.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-27",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "Year 3 trip",
+     "child": "",
+     "time": "",
+     "prep": "a packed lunch and a waterproof coat",
+     "quote": "The trip to the Science Centre is on Wednesday 2 December.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-02",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "INSET day",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "School is closed on Monday 30 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-30",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "whatsapp-pe",
+   "out": [
+    {
+     "type": "event",
+     "title": "Reminder PE is on Tuesdays and Thursdays from next week, kids…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Reminder PE is on Tuesdays and Thursdays from next week, kids need to come in their PE kit",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-16",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "Also Christmas jumper day is 11 December",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Also Christmas jumper day is 11 December",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-11",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "party-invite",
+   "out": [
+    {
+     "type": "event",
+     "title": "Maya is turning 7 and we'd love Ella to come to…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Maya is turning 7 and we'd love Ella to come to her party on Saturday 21 November, 2-4pm at Jump Zone.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-21",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "forward",
+     "title": "Please RSVP by Wednesday 18 November",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please RSVP by Wednesday 18 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-18",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "swimming-moves",
+   "out": [
+    {
+     "type": "event",
+     "title": "Swimming lessons move to Thursdays at 4:30pm from 3 December",
+     "child": "",
+     "time": "",
+     "prep": "goggles and a towel",
+     "quote": "Swimming lessons move to Thursdays at 4:30pm from 3 December.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-03",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "flu-letter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Dear Parents, Flu vaccinations will take place on Tuesday 24 November",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Dear Parents, Flu vaccinations will take place on Tuesday 24 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-24",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "forward",
+     "title": "Please complete the online consent form by Friday 20 November",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please complete the online consent form by Friday 20 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-20",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "half-term",
+   "out": [
+    {
+     "type": "event",
+     "title": "Half term is from 15-19 February",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Half term is from 15-19 February.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2027-02-15",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "School reopens on Monday 22 February",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "School reopens on Monday 22 February.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2027-02-22",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "dentist",
+   "out": [
+    {
+     "type": "forward",
+     "title": "Reminder: Zara's dental check-up is on 25 November at 3:15pm",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Reminder: Zara's dental check-up is on 25 November at 3:15pm.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-25",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "clubs",
+   "out": []
+  },
+  {
+   "id": "tomorrow",
+   "out": [
+    {
+     "type": "forward",
+     "title": "Don't forget tomorrow is dress up as a book character day",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Don't forget tomorrow is dress up as a book character day!",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-15",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "next-week",
+   "out": [
+    {
+     "type": "event",
+     "title": "Next week we start our topic on space",
+     "child": "",
+     "time": "",
+     "prep": "any space books",
+     "quote": "Next week we start our topic on space;",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-16",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "parents-evening",
+   "out": [
+    {
+     "type": "event",
+     "title": "Parents' evening appointments are on 1 and 2 December",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Parents' evening appointments are on 1 and 2 December.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-02",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "forward",
+     "title": "Please book a slot on the school app by 26 November",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please book a slot on the school app by 26 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-26",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "end-of-term",
+   "out": [
+    {
+     "type": "event",
+     "title": "The last day of term is Friday 18 December, school finishes…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "The last day of term is Friday 18 December, school finishes at 1:30pm.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-18",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "chit-chat",
+   "out": []
+  },
+  {
+   "id": "school-email",
+   "out": [
+    {
+     "type": "event",
+     "title": "Our harvest festival is on Friday 27 November",
+     "child": "",
+     "time": "",
+     "prep": "tins or packets for the food bank",
+     "quote": "Our harvest festival is on Friday 27 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-27",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "photos",
+   "out": []
+  },
+  {
+   "id": "pe-moved",
+   "out": []
+  },
+  {
+   "id": "dinners",
+   "out": []
+  },
+  {
+   "id": "january",
+   "out": [
+    {
+     "type": "event",
+     "title": "Back to school on 6 January",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Back to school on 6 January.",
+     "status": "proposed",
+     "added": "2026-12-15",
+     "date": "2027-01-06",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "nativity",
+   "out": [
+    {
+     "type": "event",
+     "title": "Nativity performances are on 9 and 10 December at 2pm",
+     "child": "",
+     "time": "",
+     "prep": "a white T-shirt",
+     "quote": "Nativity performances are on 9 and 10 December at 2pm.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-10",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "whatsapp-trip",
+   "out": [
+    {
+     "type": "event",
+     "title": "What do they need for the trip on Wednesday 2 December?",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "What do they need for the trip on Wednesday 2 December?",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-02",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "£12 on ParentPay by Friday 27 November",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "£12 on ParentPay by Friday 27 November",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-27",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "christmas-fair",
+   "out": [
+    {
+     "type": "event",
+     "title": "Christmas fair",
+     "child": "",
+     "time": "",
+     "prep": "volunteers for the tombola - please sign up on the sheet by the office",
+     "quote": "Saturday 5 December, 11am to 2pm.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-05",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "closure-snow",
+   "out": [
+    {
+     "type": "event",
+     "title": "Due to the heating repairs the school will be closed tomorrow",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Due to the heating repairs the school will be closed tomorrow.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-15",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "reading-days",
+   "out": []
+  },
+  {
+   "id": "deadline-only-weekday",
+   "out": []
+  },
+  {
+   "id": "advert",
+   "out": []
+  },
+  {
+   "id": "parentmail",
+   "out": [
+    {
+     "type": "event",
+     "title": "We are delighted to invite you to our Year 1 Christmas…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "We are delighted to invite you to our Year 1 Christmas performance on Thursday 10th December at 9.15am in the school hall.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-12-10",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "Tickets are limited to two per family and can be requested…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Tickets are limited to two per family and can be requested through the school office before Friday 4th December.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-12-04",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "nursery",
+   "out": [
+    {
+     "type": "event",
+     "title": "Hi parents, just a heads up that nursery will be closed…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Hi parents, just a heads up that nursery will be closed on Friday 27th November for staff training.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-27",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "term-dates",
+   "out": [
+    {
+     "type": "event",
+     "title": "Term dates 2026/27 Christmas holidays: 21 December - 1 January Spring…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Term dates 2026/27 Christmas holidays: 21 December - 1 January Spring term starts: Monday 4 January February half term: 15-19 February",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2027-02-15",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "football-text",
+   "out": [
+    {
+     "type": "event",
+     "title": "Football training is cancelled this Saturday because the pitches are waterlogged",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Football training is cancelled this Saturday because the pitches are waterlogged.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-21",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "invite-text",
+   "out": [
+    {
+     "type": "event",
+     "title": "Leo's 6th birthday party is at Little Gym on Sunday 29…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Leo's 6th birthday party is at Little Gym on Sunday 29 Nov from 1pm til 3pm.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-29",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "gp",
+   "out": [
+    {
+     "type": "event",
+     "title": "Your appointment with Dr Patel is confirmed for Wednesday 18 November…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Your appointment with Dr Patel is confirmed for Wednesday 18 November at 10:40.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-18",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "lost-property",
+   "out": []
+  },
+  {
+   "id": "spelling",
+   "out": []
+  },
+  {
+   "id": "swim-gala",
+   "out": [
+    {
+     "type": "event",
+     "title": "Year 5 swimming gala - Tuesday 1st December",
+     "child": "",
+     "time": "",
+     "prep": "a costume, towel and goggles",
+     "quote": "Year 5 swimming gala - Tuesday 1st December.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-12-01",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "pyjama",
+   "out": []
+  },
+  {
+   "id": "flu-reply",
+   "out": [
+    {
+     "type": "event",
+     "title": "yes it's online, deadline is this Thursday",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "yes it's online, deadline is this Thursday",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-19",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "menu",
+   "out": []
+  },
+  {
+   "id": "club-change",
+   "out": []
+  },
+  {
+   "id": "photo-order",
+   "out": [
+    {
+     "type": "event",
+     "title": "Orders must be placed online by 30th November to get free…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Orders must be placed online by 30th November to get free delivery.",
+     "status": "proposed",
+     "added": "2026-11-16",
+     "date": "2026-11-30",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "thanks",
+   "out": []
+  },
+  {
+   "id": "scouts",
+   "out": [
+    {
+     "type": "event",
+     "title": "Beavers update: our sleepover at the scout hut is on the…",
+     "child": "",
+     "time": "",
+     "prep": "a sleeping bag, torch and pyjamas",
+     "quote": "Beavers update: our sleepover at the scout hut is on the weekend of 5th-6th December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-05",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "forward",
+     "title": "Please pay the £15 via OSM by 28th Nov",
+     "child": "",
+     "time": "",
+     "prep": "a sleeping bag, torch and pyjamas",
+     "quote": "Please pay the £15 via OSM by 28th Nov.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-28",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "class-dojo",
+   "out": [
+    {
+     "type": "event",
+     "title": "A reminder that our class assembly is this Friday at 2.45pm…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "A reminder that our class assembly is this Friday at 2.45pm and you are all welcome to come and watch.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-20",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "brownies-weekly",
+   "out": [
+    {
+     "type": "event",
+     "title": "No meeting on 22nd December",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "No meeting on 22nd December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-22",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "secondary",
+   "out": [
+    {
+     "type": "event",
+     "title": "Year 7 parents' information evening will be held on Tuesday 24…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Year 7 parents' information evening will be held on Tuesday 24 November from 6pm.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-24",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "bake-off",
+   "out": []
+  },
+  {
+   "id": "school-trip-letter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Dear Parents and Carers On Monday 7th December Year 4 will…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Dear Parents and Carers On Monday 7th December Year 4 will be visiting the National Museum as part of their Romans topic.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-07",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "event",
+     "title": "The cost of the trip is £8.50, which should be paid…",
+     "child": "",
+     "time": "",
+     "prep": "a packed lunch in a disposable bag",
+     "quote": "The cost of the trip is £8.50, which should be paid on ParentPay no later than Monday 30th November.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-30",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "dentist-change",
+   "out": [
+    {
+     "type": "event",
+     "title": "Your son's appointment has been moved to Monday 23rd November at…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Your son's appointment has been moved to Monday 23rd November at 4pm.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-23",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "after-school",
+   "out": [
+    {
+     "type": "event",
+     "title": "After school clubs finish for the term on 11th December and…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "After school clubs finish for the term on 11th December and restart the week beginning 11th January.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-11",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "christmas-lunch",
+   "out": [
+    {
+     "type": "event",
+     "title": "Christmas lunch is on Wednesday 16th December",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Christmas lunch is on Wednesday 16th December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-16",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    },
+    {
+     "type": "forward",
+     "title": "If your child usually has a packed lunch and would like…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "If your child usually has a packed lunch and would like Christmas lunch, please order it on the app by 2nd December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-02",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "playdate",
+   "out": []
+  },
+  {
+   "id": "flu-cancelled",
+   "out": [
+    {
+     "type": "forward",
+     "title": "Please note the flu vaccinations planned for tomorrow have been postponed",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please note the flu vaccinations planned for tomorrow have been postponed.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-18",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "uniform",
+   "out": []
+  },
+  {
+   "id": "sports-day-dates",
+   "out": [
+    {
+     "type": "event",
+     "title": "Dates for your diary: Nativity - 9th December Carol concert -…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Dates for your diary: Nativity - 9th December Carol concert - 15th December, 6pm at St John's Last day of term - 18th December (finishes 1.30pm)",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-09",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "swim-weekly-change",
+   "out": [
+    {
+     "type": "forward",
+     "title": "From next week, swimming will be on Wednesday mornings for Year…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "From next week, swimming will be on Wednesday mornings for Year 3, so please send kits in on Wednesdays.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-23",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  },
+  {
+   "id": "money-tonight",
+   "out": [
+    {
+     "type": "event",
+     "title": "Reminder - school disco tickets go on sale tonight at 7pm…",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Reminder - school disco tickets go on sale tonight at 7pm on the PTA website, £4 each.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-17",
+     "end_date": "",
+     "found_by": "date check",
+     "named": "quote"
+    }
+   ]
+  }
+ ],
+ "checkItems": [
+  {
+   "id": "newsletter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Bake sale",
+     "child": "",
+     "time": "",
+     "prep": "cakes in a named tub",
+     "quote": "Friday 20 November after school in the hall.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-20",
+     "end_date": ""
+    },
+    {
+     "type": "event",
+     "title": "Non-uniform day",
+     "child": "",
+     "time": "",
+     "prep": "£1 donation",
+     "quote": "Friday 27 November: £1 donation for Children in Need.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-27",
+     "end_date": ""
+    },
+    {
+     "type": "event",
+     "title": "Year 3 trip to the Science Centre",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "The trip to the Science Centre is on Wednesday 2 December.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-02",
+     "end_date": ""
+    },
+    {
+     "type": "forward",
+     "title": "Pay £12 and return the consent form",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please return the consent form and pay £12 on ParentPay by Friday 27 November",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-27",
+     "end_date": ""
+    },
+    {
+     "type": "closure",
+     "title": "INSET day",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "School is closed on Monday 30 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-30",
+     "end_date": ""
+    }
+   ],
+   "rejected": [
+    {
+     "title": "Sports day",
+     "why": "the quote isn't in what you shared"
+    }
+   ]
+  },
+  {
+   "id": "whatsapp-pe",
+   "out": [
+    {
+     "type": "weekly",
+     "title": "PE",
+     "child": "",
+     "time": "",
+     "prep": "PE kit",
+     "quote": "Reminder PE is on Tuesdays and Thursdays from next week, kids need to come in their PE kit",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "weekdays": [
+      1,
+      3
+     ]
+    },
+    {
+     "type": "event",
+     "title": "Christmas jumper day",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Also Christmas jumper day is 11 December",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-12-11",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "party-invite",
+   "out": [
+    {
+     "type": "event",
+     "title": "Maya's 7th birthday party at Jump Zone",
+     "child": "Ella",
+     "time": "2-4pm",
+     "prep": "Grip socks",
+     "quote": "Maya is turning 7 and we'd love Ella to come to her party on Saturday 21 November, 2-4pm at Jump Zone.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-21",
+     "end_date": ""
+    },
+    {
+     "type": "forward",
+     "title": "RSVP to Maya's party",
+     "child": "Ella",
+     "time": "",
+     "prep": "",
+     "quote": "Please RSVP by Wednesday 18 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-18",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "flu-letter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Flu vaccinations",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Flu vaccinations will take place on Tuesday 24 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-24",
+     "end_date": ""
+    },
+    {
+     "type": "forward",
+     "title": "Complete the flu consent form",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please complete the online consent form by Friday 20 November.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-20",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "dentist",
+   "out": [
+    {
+     "type": "event",
+     "title": "Zara's dental check-up",
+     "child": "Zara",
+     "time": "3:15pm",
+     "prep": "",
+     "quote": "Reminder: Zara's dental check-up is on 25 November at 3:15pm.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-25",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "clubs",
+   "out": [
+    {
+     "type": "weekly",
+     "title": "Football club",
+     "child": "",
+     "time": "3:30-4:30",
+     "prep": "",
+     "quote": "Football club runs every Monday 3:30-4:30.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "weekdays": [
+      0
+     ]
+    },
+    {
+     "type": "weekly",
+     "title": "Ballet",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Ballet is on Wednesdays.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "weekdays": [
+      2
+     ]
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "chit-chat",
+   "out": [],
+   "rejected": []
+  },
+  {
+   "id": "pe-moved",
+   "out": [
+    {
+     "type": "event",
+     "title": "PE moved to Thursday",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "PE is moved to Thursday this week because of the trip.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "date": "2026-11-19",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "advert",
+   "out": [
+    {
+     "type": "event",
+     "title": "Sparkle Clean has 20% off for school families",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Sparkle Clean has 20% off for school families.",
+     "status": "proposed",
+     "added": "2026-11-14",
+     "named": "quote",
+     "date": "",
+     "end_date": "",
+     "needs": "date"
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "scouts",
+   "out": [
+    {
+     "type": "event",
+     "title": "Beavers sleepover at the scout hut",
+     "child": "",
+     "time": "5pm Saturday",
+     "prep": "a sleeping bag, torch and pyjamas",
+     "quote": "Beavers update: our sleepover at the scout hut is on the weekend of 5th-6th December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-05",
+     "end_date": "2026-12-06"
+    },
+    {
+     "type": "forward",
+     "title": "Pay £15 via OSM",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "Please pay the £15 via OSM by 28th Nov.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-28",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "brownies-weekly",
+   "out": [
+    {
+     "type": "weekly",
+     "title": "Brownies",
+     "child": "",
+     "time": "6 till 7.30pm",
+     "prep": "",
+     "quote": "Brownies meets every Tuesday in the church hall from 6 till 7.30pm.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "weekdays": [
+      1
+     ]
+    },
+    {
+     "type": "closure",
+     "title": "No Brownies",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "No meeting on 22nd December.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-22",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "bake-off",
+   "out": [
+    {
+     "type": "event",
+     "title": "PTA bake off",
+     "child": "",
+     "time": "after school",
+     "prep": "",
+     "quote": "it's next Thursday after school!",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-26",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  },
+  {
+   "id": "school-trip-letter",
+   "out": [
+    {
+     "type": "event",
+     "title": "Year 4 trip to the National Museum",
+     "child": "",
+     "time": "",
+     "prep": "a packed lunch in a disposable bag",
+     "quote": "On Monday 7th December Year 4 will be visiting the National Museum as part of their Romans topic.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-12-07",
+     "end_date": ""
+    },
+    {
+     "type": "forward",
+     "title": "Pay £8.50 for the trip on ParentPay",
+     "child": "",
+     "time": "",
+     "prep": "",
+     "quote": "The cost of the trip is £8.50, which should be paid on ParentPay no later than Monday 30th November.",
+     "status": "proposed",
+     "added": "2026-11-17",
+     "date": "2026-11-30",
+     "end_date": ""
+    }
+   ],
+   "rejected": []
+  }
+ ]
+}

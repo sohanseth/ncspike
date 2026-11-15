@@ -1,0 +1,54 @@
+{
+  "note": "Replies written to look like a small on-device model's, mistakes included (a date in its own words, a trimmed quote, a child or a thing to bring the message doesn't name, a sentence that isn't there, a fancy title). They test that the engine keeps what the message supports and drops the rest. They are not a measure of Apple's model: that is measured on an iPhone in week 2.",
+  "replies": {
+    "newsletter": [
+      {"type": "event", "title": "Bake sale", "child": "", "when": "Friday 20 November", "time": "", "prep": "cakes in a named tub", "quote": "Friday 20 November after school in the hall."},
+      {"type": "event", "title": "Non-uniform day", "child": "", "when": "27/11", "time": "", "prep": "£1 donation", "quote": "Friday 27 November: £1 donation for Children in Need."},
+      {"type": "event", "title": "Year 3 trip to the Science Centre", "child": "Tom", "when": "Wednesday 2 December", "time": "", "prep": "a packed lunch and a raincoat and wellies", "quote": "The trip to the Science Centre is on Wednesday 2 December."},
+      {"type": "forward", "title": "Pay £12 and return the consent form", "child": "", "when": "by Friday 27 November", "time": "", "prep": "", "quote": "Please return the consent form and pay £12 on ParentPay by Friday 27 November"},
+      {"type": "closure", "title": "INSET day", "child": "", "when": "Monday 30 November", "time": "", "prep": "", "quote": "School is closed on Monday 30 November."},
+      {"type": "event", "title": "Sports day", "child": "", "when": "3 July", "time": "", "prep": "", "quote": "Sports day is on Friday 3 July."}
+    ],
+    "whatsapp-pe": [
+      {"type": "weekly", "title": "PE", "child": "", "when": "Tuesdays and Thursdays", "time": "", "prep": "PE kit", "quote": "Reminder PE is on Tuesdays and Thursdays from next week, kids need to come in their PE kit"},
+      {"type": "event", "title": "Christmas jumper day", "child": "", "when": "11 December", "time": "", "prep": "", "quote": "Also Christmas jumper day is 11 December"}
+    ],
+    "party-invite": [
+      {"type": "event", "title": "Maya's 7th birthday party at Jump Zone", "child": "Ella", "when": "Saturday 21 November", "time": "2-4pm", "prep": "Grip socks", "quote": "Maya is turning 7 and we'd love Ella to come to her party on Saturday 21 November, 2-4pm at Jump Zone."},
+      {"type": "forward", "title": "RSVP to Maya's party", "child": "Ella", "when": "by Wednesday 18 November", "time": "", "prep": "", "quote": "Please RSVP by Wednesday 18 November."}
+    ],
+    "flu-letter": [
+      {"type": "event", "title": "Flu vaccinations", "child": "", "when": "24/11/2026", "time": "", "prep": "", "quote": "Flu vaccinations will take place on Tuesday 24 November."},
+      {"type": "forward", "title": "Complete the flu consent form", "child": "", "when": "by Friday 20 November", "time": "", "prep": "", "quote": "Please complete the online consent form by Friday 20 November."}
+    ],
+    "dentist": [
+      {"type": "event", "title": "Zara's dental check-up", "child": "Zara", "when": "25 November", "time": "3:15pm", "prep": "", "quote": "Reminder: Zara's dental check-up is on 25 November at 3:15pm."}
+    ],
+    "clubs": [
+      {"type": "weekly", "title": "Football club", "child": "", "when": "every Monday", "time": "3:30-4:30", "prep": "", "quote": "Football club runs every Monday 3:30-4:30."},
+      {"type": "weekly", "title": "Ballet", "child": "", "when": "Wednesdays", "time": "", "prep": "", "quote": "Ballet is on Wednesdays."}
+    ],
+    "pe-moved": [
+      {"type": "weekly", "title": "PE moved to Thursday", "child": "", "when": "Thursday this week", "time": "", "prep": "", "quote": "PE is moved to Thursday this week because of the trip."}
+    ],
+    "chit-chat": [],
+    "advert": [
+      {"type": "event", "title": "Exciting fun cleaning discount extravaganza", "child": "", "when": "any time", "time": "", "prep": "", "quote": "Sparkle Clean has 20% off for school families."}
+    ],
+    "scouts": [
+      {"type": "event", "title": "Beavers sleepover at the scout hut", "child": "", "when": "the weekend of 5th-6th December", "time": "5pm Saturday", "prep": "a sleeping bag, torch and pyjamas", "quote": "Beavers update: our sleepover at the scout hut is on the weekend of 5th-6th December."},
+      {"type": "forward", "title": "Pay £15 via OSM", "child": "", "when": "by 28th Nov", "time": "", "prep": "", "quote": "Please pay the £15 via OSM by 28th Nov."}
+    ],
+    "bake-off": [
+      {"type": "event", "title": "PTA bake off", "child": "", "when": "next Thursday", "time": "after school", "prep": "", "quote": "it's next Thursday after school!"}
+    ],
+    "school-trip-letter": [
+      {"type": "event", "title": "Year 4 trip to the National Museum", "child": "", "when": "Monday 7th December", "time": "", "prep": "a packed lunch in a disposable bag", "quote": "On Monday 7th December Year 4 will be visiting the National Museum as part of their Romans topic."},
+      {"type": "forward", "title": "Pay £8.50 for the trip on ParentPay", "child": "", "when": "no later than Monday 30th November", "time": "", "prep": "", "quote": "The cost of the trip is £8.50, which should be paid on ParentPay no later than Monday 30th November."}
+    ],
+    "brownies-weekly": [
+      {"type": "weekly", "title": "Brownies", "child": "", "when": "every Tuesday", "time": "6 till 7.30pm", "prep": "", "quote": "Brownies meets every Tuesday in the church hall from 6 till 7.30pm."},
+      {"type": "closure", "title": "No Brownies", "child": "", "when": "22nd December", "time": "", "prep": "", "quote": "No meeting on 22nd December."}
+    ]
+  }
+}
